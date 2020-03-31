@@ -1,6 +1,6 @@
 mod lexer;
 
-use lexer::Lexer;
+use lexer::{Lexer, LexErr};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -9,12 +9,15 @@ fn main() {
     let mut lexer = Lexer::new(contents.as_bytes());
     loop {
         match lexer.next() {
-            Err(err) => {
-                println!("{:#?}", err);
+            Err(LexErr::EndOfInput) => {
                 break;
             }
+            Err(err) => {
+                println!("{:#?}", err);
+                return std::process::exit(1);
+            }
             Ok(token) => {
-                println!("{:#?}", token);
+                println!("{:?}", token);
             }
         }
     }

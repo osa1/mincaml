@@ -29,6 +29,7 @@ pub enum Token {
     Dot,
     Comma,
     Semicolon,
+    Underscore,
     ArrayCreate,
     Id(String),
     Int(u64),
@@ -167,6 +168,10 @@ impl<'a> Lexer<'a> {
                     self.consume();
                     return Ok(Token::Semicolon);
                 }
+                b'_' => {
+                    self.consume();
+                    return Ok(Token::Underscore);
+                }
                 _ => {
                     return self.expect_kw_or_id();
                 }
@@ -202,13 +207,15 @@ impl<'a> Lexer<'a> {
         } else {
             // Array.create or Array.make
             let rest = &self.input[self.byte_idx..];
-            if rest.len() < ARRAY_CREATE_LEN
-                && &rest[0..ARRAY_CREATE_LEN] == ARRAY_CREATE_STR.as_bytes()
+            if rest.len() >= ARRAY_CREATE_LEN
+                && &rest[..ARRAY_CREATE_LEN] == ARRAY_CREATE_STR.as_bytes()
             {
+                self.byte_idx += ARRAY_CREATE_LEN;
                 Ok(Token::ArrayCreate)
-            } else if rest.len() < ARRAY_MAKE_LEN
-                && &rest[0..ARRAY_MAKE_LEN] == ARRAY_MAKE_STR.as_bytes()
+            } else if rest.len() >= ARRAY_MAKE_LEN
+                && &rest[..ARRAY_MAKE_LEN] == ARRAY_MAKE_STR.as_bytes()
             {
+                self.byte_idx += ARRAY_MAKE_LEN;
                 Ok(Token::ArrayCreate)
             } else {
                 Err(LexErr::UnexpectedUppercaseChar { found: next })
