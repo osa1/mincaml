@@ -39,7 +39,7 @@ pub enum Token {
 #[derive(Debug)]
 pub enum LexErr {
     EndOfInput,
-    UnterminatedComment,
+    // UnterminatedComment,
     UnexpectedChar { expected: u8, found: u8 },
     UnexpectedUppercaseChar { found: u8 },
     InvalidFloat { found: String },

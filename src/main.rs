@@ -1,6 +1,6 @@
 mod lexer;
 
-use lexer::{Lexer, LexErr};
+use lexer::{LexErr, Lexer};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -14,7 +14,7 @@ fn main() {
             }
             Err(err) => {
                 println!("{:#?}", err);
-                return std::process::exit(1);
+                std::process::exit(1);
             }
             Ok(token) => {
                 println!("{:?}", token);
