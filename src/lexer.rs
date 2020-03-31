@@ -1,4 +1,6 @@
-#[derive(Debug, PartialEq, Eq)]
+use std::str::FromStr;
+
+#[derive(Debug, PartialEq)]
 pub enum Token {
     LParen,
     RParen,
@@ -11,7 +13,6 @@ pub enum Token {
     Let,
     Rec,
     In,
-    Number(u64),
     Minus,
     MinusDot,
     Plus,
@@ -30,6 +31,8 @@ pub enum Token {
     Semicolon,
     ArrayCreate,
     Id(String),
+    Int(u64),
+    Float(f64),
 }
 
 #[derive(Debug)]
@@ -38,13 +41,15 @@ pub enum LexErr {
     UnterminatedComment,
     UnexpectedChar { expected: u8, found: u8 },
     UnexpectedUppercaseChar { found: u8 },
+    InvalidFloat { found: String },
+    InvalidInt { found: String },
 }
 
 pub struct Lexer<'a> {
     input: &'a [u8],
     // Current position in `input`
     byte_idx: usize,
-    id_buf: String,
+    buf: String,
 }
 
 static ARRAY_CREATE_STR: &str = "Array.create";
@@ -58,7 +63,7 @@ impl<'a> Lexer<'a> {
         Lexer {
             input,
             byte_idx: 0,
-            id_buf: String::with_capacity(20),
+            buf: String::with_capacity(20),
         }
     }
 
@@ -67,6 +72,9 @@ impl<'a> Lexer<'a> {
             match self.next_byte()? {
                 next if next.is_ascii_whitespace() => {
                     self.consume();
+                }
+                next if next.is_ascii_digit() => {
+                    return self.expect_int_or_float();
                 }
                 b'(' => {
                     self.consume();
@@ -170,7 +178,7 @@ impl<'a> Lexer<'a> {
         let next = self.next_byte()?;
         if next.is_ascii_lowercase() {
             self.consume();
-            self.id_buf.push(char::from(next));
+            self.buf.push(char::from(next));
             loop {
                 let next = self.next_byte();
                 match next {
@@ -184,7 +192,7 @@ impl<'a> Lexer<'a> {
                             || next == b'_'
                         {
                             self.consume();
-                            self.id_buf.push(char::from(next));
+                            self.buf.push(char::from(next));
                         } else {
                             return Ok(self.process_id());
                         }
@@ -209,8 +217,8 @@ impl<'a> Lexer<'a> {
     }
 
     fn process_id(&mut self) -> Token {
-        debug_assert!(!self.id_buf.is_empty());
-        let id = ::std::mem::replace(&mut self.id_buf, String::with_capacity(20));
+        debug_assert!(!self.buf.is_empty());
+        let id = self.flush_buf();
         match id.as_str() {
             "if" => Token::If,
             "then" => Token::Then,
@@ -222,6 +230,56 @@ impl<'a> Lexer<'a> {
             "false" => Token::False,
             "not" => Token::Not,
             _ => Token::Id(id),
+        }
+    }
+
+    fn expect_int_or_float(&mut self) -> Result<Token, LexErr> {
+        let mut dot_seen = false;
+        loop {
+            let next = self.next_byte();
+            match next {
+                Err(_) => {
+                    break;
+                }
+                Ok(b'.') => {
+                    if dot_seen {
+                        let invalid = self.flush_buf();
+                        return Err(LexErr::InvalidFloat { found: invalid });
+                    } else {
+                        self.consume();
+                        dot_seen = true;
+                    }
+                }
+                Ok(next) if next.is_ascii_digit() => {
+                    self.consume();
+                    self.buf.push(char::from(next));
+                }
+                _ => {
+                    break;
+                }
+            }
+        }
+
+        if dot_seen {
+            self.process_float()
+        } else {
+            self.process_int()
+        }
+    }
+
+    fn process_float(&mut self) -> Result<Token, LexErr> {
+        let str = self.flush_buf();
+        match f64::from_str(&str) {
+            Ok(f) => Ok(Token::Float(f)),
+            Err(_) => Err(LexErr::InvalidFloat { found: str }),
+        }
+    }
+
+    fn process_int(&mut self) -> Result<Token, LexErr> {
+        let str = self.flush_buf();
+        match u64::from_str(&str) {
+            Ok(i) => Ok(Token::Int(i)),
+            Err(_) => Err(LexErr::InvalidInt { found: str }),
         }
     }
 
@@ -273,6 +331,10 @@ impl<'a> Lexer<'a> {
 
     fn consume(&mut self) {
         self.byte_idx += 1;
+    }
+
+    fn flush_buf(&mut self) -> String {
+        ::std::mem::replace(&mut self.buf, String::with_capacity(20))
     }
 }
 
