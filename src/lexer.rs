@@ -4,8 +4,7 @@ use std::str::FromStr;
 pub enum Token {
     LParen,
     RParen,
-    True,
-    False,
+    Bool(bool),
     Not,
     If,
     Then,
@@ -60,7 +59,7 @@ static ARRAY_MAKE_STR: &str = "Array.make";
 static ARRAY_MAKE_LEN: usize = ARRAY_MAKE_STR.len();
 
 impl<'a> Lexer<'a> {
-    pub fn new(input: &'a [u8]) -> Lexer {
+    pub fn new(input: &[u8]) -> Lexer {
         Lexer {
             input,
             byte_idx: 0,
@@ -233,8 +232,8 @@ impl<'a> Lexer<'a> {
             "let" => Token::Let,
             "in" => Token::In,
             "rec" => Token::Rec,
-            "true" => Token::True,
-            "false" => Token::False,
+            "true" => Token::Bool(true),
+            "false" => Token::Bool(false),
             "not" => Token::Not,
             _ => Token::Id(id),
         }
@@ -329,10 +328,9 @@ impl<'a> Lexer<'a> {
     }
 
     fn next_byte(&self) -> Result<u8, LexErr> {
-        if self.byte_idx == self.input.len() {
-            Err(LexErr::EndOfInput)
-        } else {
-            Ok(self.input[self.byte_idx])
+        match self.input.get(self.byte_idx) {
+            None => Err(LexErr::EndOfInput),
+            Some(next) => Ok(*next),
         }
     }
 
