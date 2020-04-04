@@ -68,12 +68,10 @@ pub enum Expr {
     Put(Box<Expr>, Box<Expr>, Box<Expr>),
 }
 
+#[derive(Debug)]
 pub enum ParseErr {
     EndOfInput,
-    Unexpected {
-        seen: Token,
-        expected: &'static str,
-    }
+    Unexpected { seen: Token, expected: &'static str },
 }
 
 pub struct Parser<'a> {
@@ -86,7 +84,7 @@ impl<'a> Parser<'a> {
         Parser { tokens, tok_idx: 0 }
     }
 
-    fn expr0(&mut self) -> Result<Expr, ParseErr> {
+    pub fn expr0(&mut self) -> Result<Expr, ParseErr> {
         match self.next_token()? {
             //
             // Single-token expressions
@@ -115,7 +113,6 @@ impl<'a> Parser<'a> {
             //
             // Other stuff
             //
-
             Token::LParen => {
                 self.consume();
                 match self.next_token()? {
@@ -152,15 +149,9 @@ impl<'a> Parser<'a> {
             Token::Let => {
                 self.consume();
                 match self.next_token()? {
-                    Token::Rec => {
-                        todo!()
-                    }
-                    Token::LParen => {
-                        todo!()
-                    }
-                    Token::Id(var) => {
-                        todo!()
-                    }
+                    Token::Rec => todo!(),
+                    Token::LParen => todo!(),
+                    Token::Id(var) => todo!(),
                     other => {
                         Err(ParseErr::Unexpected {
                             // TODO: remove cloning
@@ -173,12 +164,16 @@ impl<'a> Parser<'a> {
             other => Err(ParseErr::Unexpected {
                 seen: other.clone(),
                 expected: "",
-            })
+            }),
         }
     }
 
-    fn expr1(&mut self) -> Result<Expr, ParseErr> {
-        todo!()
+    pub fn expr1(&mut self) -> Result<Expr, ParseErr> {
+        let expr = self.expr0()?;
+        match self.next_token() {
+            Err(_) => Ok(expr),
+            Ok(tok) => todo!(),
+        }
     }
 
     fn expect(&mut self, tok: Token) -> Result<(), ParseErr> {

@@ -7,3 +7,6 @@ edition = "2018"
 [[bin]]
 name = "mc"
 path = "src/main.rs"
+
+[dependencies]
+rustyline = "6.0"
