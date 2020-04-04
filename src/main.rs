@@ -4,7 +4,7 @@ mod lexer;
 mod parser;
 
 use lexer::{LexErr, Lexer, Token};
-use parser::{Parser, Expr};
+use parser::{Expr, Parser};
 
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
@@ -36,7 +36,7 @@ fn repl() {
 
     loop {
         match rl.readline(">>> ") {
-            Ok(line) =>  {
+            Ok(line) => {
                 let mut lexer = Lexer::new(line.as_bytes());
                 let mut tokens = vec![];
                 loop {

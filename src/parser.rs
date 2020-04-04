@@ -151,7 +151,15 @@ impl<'a> Parser<'a> {
                 match self.next_token()? {
                     Token::Rec => todo!(),
                     Token::LParen => todo!(),
-                    Token::Id(var) => todo!(),
+                    Token::Id(var) => {
+                        let id = var.clone();
+                        self.consume();
+                        self.expect(Token::Equal)?;
+                        let rhs = Box::new(self.expr1()?);
+                        self.expect(Token::In)?;
+                        let body = Box::new(self.expr1()?);
+                        Ok(Expr::Let { id, rhs, body })
+                    }
                     other => {
                         Err(ParseErr::Unexpected {
                             // TODO: remove cloning
@@ -160,6 +168,15 @@ impl<'a> Parser<'a> {
                         })
                     }
                 }
+            }
+            Token::If => {
+                self.consume();
+                let e1 = self.expr1()?;
+                self.expect(Token::Then)?;
+                let e2 = self.expr1()?;
+                self.expect(Token::Else)?;
+                let e3 = self.expr1()?;
+                Ok(Expr::If(Box::new(e1), Box::new(e2), Box::new(e3)))
             }
             other => Err(ParseErr::Unexpected {
                 seen: other.clone(),
@@ -171,13 +188,33 @@ impl<'a> Parser<'a> {
     pub fn expr1(&mut self) -> Result<Expr, ParseErr> {
         let expr = self.expr0()?;
         match self.next_token() {
-            Err(_) => Ok(expr),
-            Ok(tok) => todo!(),
+            Ok(Token::Plus) => {
+                self.consume();
+                let expr2 = self.expr1()?;
+                Ok(Expr::Add(Box::new(expr), Box::new(expr2)))
+            }
+            Ok(Token::Minus) => {
+                self.consume();
+                let expr2 = self.expr1()?;
+                Ok(Expr::Sub(Box::new(expr), Box::new(expr2)))
+            }
+            _ => Ok(expr),
+        }
+    }
+
+    fn ident(&mut self) -> Result<String, ParseErr> {
+        match self.next_token()? {
+            Token::Id(str) => Ok(str.clone()),
+            other => Err(ParseErr::Unexpected {
+                seen: other.clone(),
+                expected: "identifier",
+            }),
         }
     }
 
     fn expect(&mut self, tok: Token) -> Result<(), ParseErr> {
         if *self.next_token()? == tok {
+            self.consume();
             Ok(())
         } else {
             todo!()
