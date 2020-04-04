@@ -67,3 +67,136 @@ pub enum Expr {
     // <expr> . ( <expr> ) <- <expr>
     Put(Box<Expr>, Box<Expr>, Box<Expr>),
 }
+
+pub enum ParseErr {
+    EndOfInput,
+    Unexpected {
+        seen: Token,
+        expected: &'static str,
+    }
+}
+
+pub struct Parser<'a> {
+    tokens: &'a [Token],
+    tok_idx: usize,
+}
+
+impl<'a> Parser<'a> {
+    pub fn new(tokens: &[Token]) -> Parser {
+        Parser { tokens, tok_idx: 0 }
+    }
+
+    fn expr0(&mut self) -> Result<Expr, ParseErr> {
+        match self.next_token()? {
+            //
+            // Single-token expressions
+            //
+            Token::Bool(bool) => {
+                let b = *bool;
+                self.consume();
+                Ok(Expr::Bool(b))
+            }
+            Token::Int(int) => {
+                let i = *int;
+                self.consume();
+                Ok(Expr::Int(i))
+            }
+            Token::Float(float) => {
+                let f = *float;
+                self.consume();
+                Ok(Expr::Float(f))
+            }
+            Token::Id(id) => {
+                let id = id.to_owned();
+                self.consume();
+                Ok(Expr::Var(id))
+            }
+
+            //
+            // Other stuff
+            //
+
+            Token::LParen => {
+                self.consume();
+                match self.next_token()? {
+                    Token::RParen => {
+                        self.consume();
+                        Ok(Expr::Unit)
+                    }
+                    _ => {
+                        let expr = self.expr1()?;
+                        self.expect(Token::RParen)?;
+                        Ok(expr)
+                    }
+                }
+            }
+            Token::Not => {
+                self.consume();
+                Ok(Expr::Not(Box::new(self.expr1()?)))
+            }
+            Token::Minus => {
+                self.consume();
+                if let Ok(Token::Dot) = self.next_token() {
+                    self.consume();
+                    Ok(Expr::FNeg(Box::new(self.expr1()?)))
+                } else {
+                    Ok(Expr::Neg(Box::new(self.expr1()?)))
+                }
+            }
+            Token::ArrayCreate => {
+                self.consume();
+                let expr1 = self.expr1()?;
+                let expr2 = self.expr1()?;
+                Ok(Expr::Array(Box::new(expr1), Box::new(expr2)))
+            }
+            Token::Let => {
+                self.consume();
+                match self.next_token()? {
+                    Token::Rec => {
+                        todo!()
+                    }
+                    Token::LParen => {
+                        todo!()
+                    }
+                    Token::Id(var) => {
+                        todo!()
+                    }
+                    other => {
+                        Err(ParseErr::Unexpected {
+                            // TODO: remove cloning
+                            seen: other.clone(),
+                            expected: "'rec', '(', or identifier",
+                        })
+                    }
+                }
+            }
+            other => Err(ParseErr::Unexpected {
+                seen: other.clone(),
+                expected: "",
+            })
+        }
+    }
+
+    fn expr1(&mut self) -> Result<Expr, ParseErr> {
+        todo!()
+    }
+
+    fn expect(&mut self, tok: Token) -> Result<(), ParseErr> {
+        if *self.next_token()? == tok {
+            Ok(())
+        } else {
+            todo!()
+        }
+    }
+
+    fn consume(&mut self) {
+        self.tok_idx += 1;
+    }
+
+    fn next_token(&self) -> Result<&Token, ParseErr> {
+        match self.tokens.get(self.tok_idx) {
+            None => Err(ParseErr::EndOfInput),
+            Some(next) => Ok(next),
+        }
+    }
+}
