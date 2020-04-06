@@ -333,6 +333,18 @@ impl<'a> Parser<'a> {
                     let expr2 = self.expr1(CMP_PREC)?;
                     expr = Expr::Not(Box::new(Expr::Le(Box::new(expr), Box::new(expr2))));
                 }
+                Ok(Token::Comma) if prec <= COMMA_PREC => {
+                    self.consume();
+                    let expr2 = self.expr1(COMMA_PREC)?;
+                    match expr {
+                        Expr::Tuple(ref mut vec) => {
+                            vec.push(expr2);
+                        }
+                        _ => {
+                            expr = Expr::Tuple(vec![expr, expr2]);
+                        }
+                    }
+                }
                 Ok(_) if prec < APP_PREC => {
                     println!("Parsing argument");
                     match self.expr0(APP_PREC) {
