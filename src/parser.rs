@@ -254,7 +254,6 @@ impl<'a> Parser<'a> {
                 Ok(Token::Semicolon) if prec <= SEMICOLON_PREC => {
                     self.consume();
                     let sym = self.gensym();
-                    // TODO: prec??
                     let expr2 = self.expr1(prec)?;
                     expr = Expr::Let {
                         id: sym,
@@ -262,7 +261,7 @@ impl<'a> Parser<'a> {
                         body: Box::new(expr2),
                     };
                 }
-                Ok(Token::Dot) if prec <= DOT_PREC => {
+                Ok(Token::Dot) if prec < DOT_PREC => {
                     self.consume();
                     self.expect(Token::LParen, "'('")?;
                     let expr1 = self.expr1(INIT_PREC)?;
@@ -278,52 +277,52 @@ impl<'a> Parser<'a> {
                         }
                     }
                 }
-                Ok(Token::Plus) if prec <= PLUS_MINUS_PREC => {
+                Ok(Token::Plus) if prec < PLUS_MINUS_PREC => {
                     self.consume();
                     let expr2 = self.expr1(PLUS_MINUS_PREC)?;
                     expr = Expr::Add(Box::new(expr), Box::new(expr2));
                 }
-                Ok(Token::Minus) if prec <= PLUS_MINUS_PREC => {
+                Ok(Token::Minus) if prec < PLUS_MINUS_PREC => {
                     self.consume();
                     let expr2 = self.expr1(PLUS_MINUS_PREC)?;
                     expr = Expr::Sub(Box::new(expr), Box::new(expr2));
                 }
-                Ok(Token::PlusDot) if prec <= PLUS_MINUS_PREC => {
+                Ok(Token::PlusDot) if prec < PLUS_MINUS_PREC => {
                     self.consume();
                     let expr2 = self.expr1(PLUS_MINUS_PREC)?;
                     expr = Expr::FAdd(Box::new(expr), Box::new(expr2));
                 }
-                Ok(Token::MinusDot) if prec <= PLUS_MINUS_PREC => {
+                Ok(Token::MinusDot) if prec < PLUS_MINUS_PREC => {
                     self.consume();
                     let expr2 = self.expr1(PLUS_MINUS_PREC)?;
                     expr = Expr::FSub(Box::new(expr), Box::new(expr2));
                 }
-                Ok(Token::AstDot) if prec <= DIV_MULT_PREC => {
+                Ok(Token::AstDot) if prec < DIV_MULT_PREC => {
                     self.consume();
                     let expr2 = self.expr1(DIV_MULT_PREC)?;
                     expr = Expr::FMul(Box::new(expr), Box::new(expr2));
                 }
-                Ok(Token::SlashDot) if prec <= DIV_MULT_PREC => {
+                Ok(Token::SlashDot) if prec < DIV_MULT_PREC => {
                     self.consume();
                     let expr2 = self.expr1(DIV_MULT_PREC)?;
                     expr = Expr::FDiv(Box::new(expr), Box::new(expr2));
                 }
-                Ok(Token::LessGreater) if prec <= CMP_PREC => {
+                Ok(Token::LessGreater) if prec < CMP_PREC => {
                     self.consume();
                     let expr2 = self.expr1(CMP_PREC)?;
                     expr = Expr::Not(Box::new(Expr::Eq(Box::new(expr), Box::new(expr2))));
                 }
-                Ok(Token::LessEqual) if prec <= CMP_PREC => {
+                Ok(Token::LessEqual) if prec < CMP_PREC => {
                     self.consume();
                     let expr2 = self.expr1(CMP_PREC)?;
                     expr = Expr::Le(Box::new(expr), Box::new(expr2));
                 }
-                Ok(Token::Less) if prec <= CMP_PREC => {
+                Ok(Token::Less) if prec < CMP_PREC => {
                     self.consume();
                     let expr2 = self.expr1(CMP_PREC)?;
                     expr = Expr::Le(Box::new(expr), Box::new(expr2));
                 }
-                Ok(Token::Equal) if prec <= CMP_PREC => {
+                Ok(Token::Equal) if prec < CMP_PREC => {
                     self.consume();
                     let expr2 = self.expr1(CMP_PREC)?;
                     expr = Expr::Eq(Box::new(expr), Box::new(expr2));
@@ -358,8 +357,8 @@ impl<'a> Parser<'a> {
                             }
                             _ => {
                                 expr = Expr::App {
-                                    fun: Box::new(expr_),
-                                    args: vec![],
+                                    fun: Box::new(expr),
+                                    args: vec![expr_],
                                 };
                             }
                         },
