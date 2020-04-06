@@ -153,11 +153,11 @@ impl<'a> Parser<'a> {
                     }
                 }
             }
-            Token::Not => {
+            Token::Not if prec <= APP_PREC => {
                 self.consume();
                 Ok(Expr::Not(Box::new(self.expr1(APP_PREC)?)))
             }
-            Token::Minus => {
+            Token::Minus if prec <= UNARY_MINUS_PREC => {
                 self.consume();
                 if let Ok(Token::Dot) = self.next_token() {
                     self.consume();
@@ -166,7 +166,7 @@ impl<'a> Parser<'a> {
                     Ok(Expr::Neg(Box::new(self.expr1(UNARY_MINUS_PREC)?)))
                 }
             }
-            Token::ArrayCreate => {
+            Token::ArrayCreate if prec <= APP_PREC => {
                 self.consume();
                 let expr1 = self.expr1(APP_PREC)?;
                 let expr2 = self.expr1(APP_PREC)?;
@@ -345,10 +345,8 @@ impl<'a> Parser<'a> {
                     }
                 }
                 Ok(_) if prec < APP_PREC => {
-                    println!("Parsing argument");
                     match self.expr0(APP_PREC) {
                         Err(_) => {
-                            println!("err");
                             break;
                         }
                         Ok(expr_) => match expr {
