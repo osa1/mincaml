@@ -15,48 +15,14 @@ fn main() {
         [_] => {
             repl();
         }
-        [_, file] => {
-            let contents = std::fs::read_to_string(file).unwrap();
-            let mut lexer = Lexer::new(contents.as_bytes());
-            let mut tokens = vec![];
-            loop {
-                match lexer.next() {
-                    Err(LexErr::EndOfInput) => {
-                        break;
-                    }
-                    Err(err) => {
-                        println!("Lexer error: {:#?}", err);
-                        break;
-                    }
-                    Ok(tok) => {
-                        tokens.push(tok);
-                    }
-                }
-            }
-            println!("Tokens: {:?}", tokens);
-            let mut parser = Parser::new(&tokens);
-            println!("{:#?}", parser.expr());
+        [_, ref file] => {
+            do_file(file);
         }
-        _ => {}
+        _ => {
+            println!("What do you mean?");
+            ::std::process::exit(1);
+        }
     }
-
-    // let contents = std::fs::read_to_string(&args[1]).unwrap();
-
-    // let mut lexer = Lexer::new(contents.as_bytes());
-    // loop {
-    //     match lexer.next() {
-    //         Err(LexErr::EndOfInput) => {
-    //             break;
-    //         }
-    //         Err(err) => {
-    //             println!("{:#?}", err);
-    //             std::process::exit(1);
-    //         }
-    //         Ok(token) => {
-    //             println!("{:?}", token);
-    //         }
-    //     }
-    // }
 }
 
 fn repl() {
@@ -99,4 +65,27 @@ fn repl() {
             }
         }
     }
+}
+
+fn do_file(file: &str) {
+    let contents = std::fs::read_to_string(file).unwrap();
+    let mut lexer = Lexer::new(contents.as_bytes());
+    let mut tokens = vec![];
+    loop {
+        match lexer.next() {
+            Err(LexErr::EndOfInput) => {
+                break;
+            }
+            Err(err) => {
+                println!("Lexer error: {:#?}", err);
+                break;
+            }
+            Ok(tok) => {
+                tokens.push(tok);
+            }
+        }
+    }
+    println!("Tokens: {:?}", tokens);
+    let mut parser = Parser::new(&tokens);
+    println!("{:#?}", parser.expr());
 }
