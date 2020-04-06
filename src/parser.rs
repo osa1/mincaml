@@ -194,7 +194,25 @@ impl<'a> Parser<'a> {
                             body,
                         })
                     }
-                    Token::LParen => todo!(),
+                    Token::LParen => {
+                        self.consume();
+                        let mut bndrs = vec![];
+                        bndrs.push(self.expect_id()?);
+                        while let Ok(Token::Comma) = self.next_token() {
+                            self.consume();
+                            bndrs.push(self.expect_id()?);
+                        }
+                        self.expect(Token::RParen, "')'")?;
+                        self.expect(Token::Equal, "'='")?;
+                        let rhs = self.expr1(LET_PREC)?;
+                        self.expect(Token::In, "in")?;
+                        let body = self.expr1(INIT_PREC)?;
+                        Ok(Expr::LetTuple {
+                            bndrs,
+                            rhs: Box::new(rhs),
+                            body: Box::new(body),
+                        })
+                    }
                     Token::Id(var) => {
                         let id = var.clone();
                         self.consume();
@@ -310,6 +328,11 @@ impl<'a> Parser<'a> {
                     let expr2 = self.expr1(CMP_PREC)?;
                     expr = Expr::Eq(Box::new(expr), Box::new(expr2));
                 }
+                Ok(Token::Greater) if prec <= CMP_PREC => {
+                    self.consume();
+                    let expr2 = self.expr1(CMP_PREC)?;
+                    expr = Expr::Not(Box::new(Expr::Le(Box::new(expr), Box::new(expr2))));
+                }
                 Ok(_) if prec < APP_PREC => {
                     println!("Parsing argument");
                     match self.expr0(APP_PREC) {
@@ -372,7 +395,11 @@ impl<'a> Parser<'a> {
 
     fn expect_id(&mut self) -> Result<String, ParseErr> {
         match self.next_token()? {
-            Token::Id(id) => Ok(id.clone()),
+            Token::Id(id) => {
+                let id = id.clone();
+                self.consume();
+                Ok(id)
+            }
             other => Err(ParseErr::Unexpected {
                 seen: other.clone(),
                 expected: "identifier",
