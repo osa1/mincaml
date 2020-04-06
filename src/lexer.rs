@@ -110,11 +110,13 @@ impl<'a> Lexer<'a> {
                 b'*' => {
                     self.consume();
                     self.expect_char(b'.')?;
+                    self.consume();
                     return Ok(Token::AstDot);
                 }
                 b'/' => {
                     self.consume();
                     self.expect_char(b'.')?;
+                    self.consume();
                     return Ok(Token::SlashDot);
                 }
                 b'=' => {

@@ -3,15 +3,43 @@
 mod lexer;
 mod parser;
 
-use lexer::{LexErr, Lexer, Token};
-use parser::{Expr, Parser};
+use lexer::{LexErr, Lexer};
+use parser::Parser;
 
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 
 fn main() {
-    repl();
-    // let args: Vec<String> = std::env::args().collect();
+    let args: Vec<String> = std::env::args().collect();
+    match args.as_slice() {
+        [_] => {
+            repl();
+        }
+        [_, file] => {
+            let contents = std::fs::read_to_string(file).unwrap();
+            let mut lexer = Lexer::new(contents.as_bytes());
+            let mut tokens = vec![];
+            loop {
+                match lexer.next() {
+                    Err(LexErr::EndOfInput) => {
+                        break;
+                    }
+                    Err(err) => {
+                        println!("Lexer error: {:#?}", err);
+                        break;
+                    }
+                    Ok(tok) => {
+                        tokens.push(tok);
+                    }
+                }
+            }
+            println!("Tokens: {:?}", tokens);
+            let mut parser = Parser::new(&tokens);
+            println!("{:#?}", parser.expr());
+        }
+        _ => {}
+    }
+
     // let contents = std::fs::read_to_string(&args[1]).unwrap();
 
     // let mut lexer = Lexer::new(contents.as_bytes());
@@ -55,7 +83,10 @@ fn repl() {
                 }
                 println!("Tokens: {:?}", tokens);
                 let mut parser = Parser::new(&tokens);
-                println!("{:#?}", parser.expr1());
+                println!("{:#?}", parser.expr());
+
+                // Add it to the history after using to avoid cloning
+                rl.history_mut().add(line);
             }
             Err(ReadlineError::Interrupted | ReadlineError::Eof) => {
                 break;
