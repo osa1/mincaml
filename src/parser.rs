@@ -103,7 +103,11 @@ const DOT_PREC: usize = 12;
 
 impl<'a> Parser<'a> {
     pub fn new(tokens: &[Token]) -> Parser {
-        Parser { tokens, tok_idx: 0, gensym_count: 0 }
+        Parser {
+            tokens,
+            tok_idx: 0,
+            gensym_count: 0,
+        }
     }
 
     pub fn expr0(&mut self, prec: usize) -> Result<Expr, ParseErr> {
@@ -183,7 +187,12 @@ impl<'a> Parser<'a> {
                         let rhs = Box::new(self.expr1(LET_PREC)?);
                         self.expect(Token::In, "'in'")?;
                         let body = Box::new(self.expr1(LET_PREC)?);
-                        Ok(Expr::LetRec { name, args, rhs, body })
+                        Ok(Expr::LetRec {
+                            name,
+                            args,
+                            rhs,
+                            body,
+                        })
                     }
                     Token::LParen => todo!(),
                     Token::Id(var) => {
@@ -229,7 +238,11 @@ impl<'a> Parser<'a> {
                     let sym = self.gensym();
                     // TODO: prec??
                     let expr2 = self.expr1(prec)?;
-                    expr = Expr::Let { id: sym, rhs: Box::new(expr), body: Box::new(expr2) };
+                    expr = Expr::Let {
+                        id: sym,
+                        rhs: Box::new(expr),
+                        body: Box::new(expr2),
+                    };
                 }
                 Ok(Token::Dot) if prec <= DOT_PREC => {
                     self.consume();
@@ -304,16 +317,17 @@ impl<'a> Parser<'a> {
                             println!("err");
                             break;
                         }
-                        Ok(expr_) => {
-                            match expr {
-                                Expr::App { ref mut args, .. } => {
-                                    args.push(expr_);
-                                }
-                                _ => {
-                                    expr = Expr::App { fun: Box::new(expr_), args: vec![] };
-                                }
+                        Ok(expr_) => match expr {
+                            Expr::App { ref mut args, .. } => {
+                                args.push(expr_);
                             }
-                        }
+                            _ => {
+                                expr = Expr::App {
+                                    fun: Box::new(expr_),
+                                    args: vec![],
+                                };
+                            }
+                        },
                     }
                 }
                 _ => {
@@ -330,7 +344,10 @@ impl<'a> Parser<'a> {
         let ret = self.expr1(INIT_PREC)?;
         match self.next_token() {
             Err(_) => Ok(ret),
-            Ok(next) => Err(ParseErr::Unexpected { seen: next.clone(), expected: "EOF" }),
+            Ok(next) => Err(ParseErr::Unexpected {
+                seen: next.clone(),
+                expected: "EOF",
+            }),
         }
     }
 
@@ -356,7 +373,10 @@ impl<'a> Parser<'a> {
     fn expect_id(&mut self) -> Result<String, ParseErr> {
         match self.next_token()? {
             Token::Id(id) => Ok(id.clone()),
-            other => Err(ParseErr::Unexpected { seen: other.clone(), expected: "identifier" }),
+            other => Err(ParseErr::Unexpected {
+                seen: other.clone(),
+                expected: "identifier",
+            }),
         }
     }
 
