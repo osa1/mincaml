@@ -332,7 +332,7 @@ impl<'a> Parser<'a> {
                     let expr2 = self.expr1(CMP_PREC)?;
                     expr = Expr::Not(Box::new(Expr::Le(Box::new(expr), Box::new(expr2))));
                 }
-                Ok(Token::Comma) if prec <= COMMA_PREC => {
+                Ok(Token::Comma) if prec <= TUPLE_PREC => {
                     self.consume();
                     let expr2 = self.expr1(COMMA_PREC)?;
                     match expr {
@@ -344,24 +344,22 @@ impl<'a> Parser<'a> {
                         }
                     }
                 }
-                Ok(_) if prec < APP_PREC => {
-                    match self.expr0(APP_PREC) {
-                        Err(_) => {
-                            break;
-                        }
-                        Ok(expr_) => match expr {
-                            Expr::App { ref mut args, .. } => {
-                                args.push(expr_);
-                            }
-                            _ => {
-                                expr = Expr::App {
-                                    fun: Box::new(expr),
-                                    args: vec![expr_],
-                                };
-                            }
-                        },
+                Ok(_) if prec < APP_PREC => match self.expr0(APP_PREC) {
+                    Err(_) => {
+                        break;
                     }
-                }
+                    Ok(expr_) => match expr {
+                        Expr::App { ref mut args, .. } => {
+                            args.push(expr_);
+                        }
+                        _ => {
+                            expr = Expr::App {
+                                fun: Box::new(expr),
+                                args: vec![expr_],
+                            };
+                        }
+                    },
+                },
                 _ => {
                     break;
                 }

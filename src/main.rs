@@ -2,6 +2,7 @@
 
 mod lexer;
 mod parser;
+mod type_check;
 
 use lexer::{LexErr, Lexer};
 use parser::Parser;
