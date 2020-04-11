@@ -107,7 +107,7 @@ fn type_check_(env: &mut HashMap<String, Type>, expr: &Expr) -> Result<Type, Typ
             body,
         } => {
             // Type variables for the arguments
-            let mut arg_tys: Vec<Type> = vec![];
+            let mut arg_tys: Vec<Type> = Vec::with_capacity(args.len());
             for _ in args {
                 arg_tys.push(new_tyvar());
             }
@@ -115,11 +115,14 @@ fn type_check_(env: &mut HashMap<String, Type>, expr: &Expr) -> Result<Type, Typ
             let rhs_ty = new_tyvar();
             // We can now give type to the recursive function
             let fun_ty = Type::Fun {
-                args: arg_tys,
+                args: arg_tys.clone(),
                 ret: Box::new(rhs_ty.clone()),
             };
-            // RHS and body will be type checked with `name` in scope
+            // RHS and body will be type checked with `name` and args in scope
             env.insert(name.clone(), fun_ty.clone());
+            for (arg, arg_ty) in args.iter().zip(arg_tys.iter()) {
+                env.insert(arg.clone(), arg_ty.clone());
+            }
             // Type check RHS
             let rhs_ty_ = type_check_(env, rhs)?;
             unify(&rhs_ty, &rhs_ty_)?;
@@ -127,7 +130,9 @@ fn type_check_(env: &mut HashMap<String, Type>, expr: &Expr) -> Result<Type, Typ
             let ret = type_check_(env, body);
             // Reset environment
             env.remove(name);
-
+            for arg in args.iter() {
+                env.remove(arg);
+            }
             ret
         }
         Expr::App { fun, args } => {
