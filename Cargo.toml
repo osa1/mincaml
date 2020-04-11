@@ -10,3 +10,6 @@ path = "src/main.rs"
 
 [dependencies]
 rustyline = "6.0"
+
+[profile.release]
+lto = true

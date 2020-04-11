@@ -6,6 +6,7 @@ mod type_check;
 
 use lexer::{LexErr, Lexer};
 use parser::Parser;
+use type_check::type_check;
 
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
@@ -32,25 +33,7 @@ fn repl() {
     loop {
         match rl.readline(">>> ") {
             Ok(line) => {
-                let mut lexer = Lexer::new(line.as_bytes());
-                let mut tokens = vec![];
-                loop {
-                    match lexer.next() {
-                        Err(LexErr::EndOfInput) => {
-                            break;
-                        }
-                        Err(err) => {
-                            println!("Lexer error: {:#?}", err);
-                            break;
-                        }
-                        Ok(tok) => {
-                            tokens.push(tok);
-                        }
-                    }
-                }
-                println!("Tokens: {:?}", tokens);
-                let mut parser = Parser::new(&tokens);
-                println!("{:#?}", parser.expr());
+                do_expr(&line);
 
                 // Add it to the history after using to avoid cloning
                 rl.history_mut().add(line);
@@ -68,9 +51,8 @@ fn repl() {
     }
 }
 
-fn do_file(file: &str) {
-    let contents = std::fs::read_to_string(file).unwrap();
-    let mut lexer = Lexer::new(contents.as_bytes());
+fn do_expr(expr_str: &str) {
+    let mut lexer = Lexer::new(expr_str.as_bytes());
     let mut tokens = vec![];
     loop {
         match lexer.next() {
@@ -88,5 +70,14 @@ fn do_file(file: &str) {
     }
     println!("Tokens: {:?}", tokens);
     let mut parser = Parser::new(&tokens);
-    println!("{:#?}", parser.expr());
+    let expr = parser.expr();
+    println!("Expr: {:#?}", expr);
+    if let Ok(ref expr) = expr {
+        println!("Type: {:#?}", type_check(expr));
+    }
+}
+
+fn do_file(file: &str) {
+    let contents = std::fs::read_to_string(file).unwrap();
+    do_expr(&contents)
 }
