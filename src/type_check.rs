@@ -17,7 +17,9 @@ pub enum Type {
 }
 
 fn mk_type_env() -> HashMap<String, Type> {
-    HashMap::new()
+    let mut env = HashMap::new();
+    env.insert("print_int".to_owned(), Type::Fun { args: vec![Type::Int], ret: Box::new(Type::Unit) });
+    env
 }
 
 fn new_tyvar() -> Type {

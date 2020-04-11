@@ -159,12 +159,11 @@ impl<'a> Parser<'a> {
             }
             Token::Minus if prec <= UNARY_MINUS_PREC => {
                 self.consume();
-                if let Ok(Token::Dot) = self.next_token() {
-                    self.consume();
-                    Ok(Expr::FNeg(Box::new(self.expr1(PLUS_MINUS_PREC)?)))
-                } else {
-                    Ok(Expr::Neg(Box::new(self.expr1(UNARY_MINUS_PREC)?)))
-                }
+                Ok(Expr::Neg(Box::new(self.expr1(UNARY_MINUS_PREC)?)))
+            }
+            Token::MinusDot if prec <= UNARY_MINUS_PREC => {
+                self.consume();
+                Ok(Expr::FNeg(Box::new(self.expr1(PLUS_MINUS_PREC)?)))
             }
             Token::ArrayCreate if prec <= APP_PREC => {
                 self.consume();
