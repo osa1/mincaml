@@ -1,6 +1,6 @@
 use crate::lexer::Token;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Expr {
     // ()
     Unit,
@@ -66,6 +66,10 @@ pub enum Expr {
     Get(Box<Expr>, Box<Expr>),
     // <expr> . ( <expr> ) <- <expr>
     Put(Box<Expr>, Box<Expr>, Box<Expr>),
+}
+
+pub fn parse(tokens: &[Token]) -> Result<Expr, ParseErr> {
+    Parser::new(tokens).expr()
 }
 
 #[derive(Debug)]
@@ -167,8 +171,8 @@ impl<'a> Parser<'a> {
             }
             Token::ArrayCreate if prec <= APP_PREC => {
                 self.consume();
-                let expr1 = self.expr1(APP_PREC)?;
-                let expr2 = self.expr1(APP_PREC)?;
+                let expr1 = self.expr0(APP_PREC)?;
+                let expr2 = self.expr0(APP_PREC)?;
                 Ok(Expr::Array(Box::new(expr1), Box::new(expr2)))
             }
             Token::Let if prec <= LET_PREC => {
@@ -248,6 +252,7 @@ impl<'a> Parser<'a> {
 
     pub fn expr1(&mut self, prec: usize) -> Result<Expr, ParseErr> {
         let mut expr = self.expr0(prec)?;
+        let mut parsing_app = false;
         loop {
             match self.next_token() {
                 Ok(Token::Semicolon) if prec <= SEMICOLON_PREC => {
@@ -259,22 +264,6 @@ impl<'a> Parser<'a> {
                         rhs: Box::new(expr),
                         body: Box::new(expr2),
                     };
-                }
-                Ok(Token::Dot) if prec < DOT_PREC => {
-                    self.consume();
-                    self.expect(Token::LParen, "'('")?;
-                    let expr1 = self.expr1(INIT_PREC)?;
-                    self.expect(Token::RParen, "')'")?;
-                    match self.next_token() {
-                        Ok(Token::LessMinus) => {
-                            self.consume();
-                            let expr2 = self.expr1(LESS_MINUS_PREC)?;
-                            expr = Expr::Put(Box::new(expr), Box::new(expr1), Box::new(expr2));
-                        }
-                        _ => {
-                            expr = Expr::Get(Box::new(expr), Box::new(expr1));
-                        }
-                    }
                 }
                 Ok(Token::Plus) if prec < PLUS_MINUS_PREC => {
                     self.consume();
@@ -343,15 +332,57 @@ impl<'a> Parser<'a> {
                         }
                     }
                 }
-                Ok(_) if prec < APP_PREC => match self.expr0(APP_PREC) {
+                Ok(Token::Dot) if prec < DOT_PREC => {
+                    self.consume();
+                    self.expect(Token::LParen, "'('")?;
+                    let expr1 = self.expr1(INIT_PREC)?;
+                    self.expect(Token::RParen, "')'")?;
+                    match self.next_token() {
+                        Ok(Token::LessMinus) => {
+                            self.consume();
+                            let expr2 = self.expr1(LESS_MINUS_PREC)?;
+                            match expr {
+                                Expr::App { mut args, fun } if parsing_app => {
+                                    let arg = args.pop().unwrap();
+                                    expr = Expr::App {
+                                        fun,
+                                        args: vec![Expr::Put(
+                                            Box::new(arg),
+                                            Box::new(expr1),
+                                            Box::new(expr2),
+                                        )],
+                                    };
+                                }
+                                _ => {
+                                    expr =
+                                        Expr::Put(Box::new(expr), Box::new(expr1), Box::new(expr2));
+                                }
+                            }
+                        }
+                        _ => match expr {
+                            Expr::App { mut args, fun } if parsing_app => {
+                                let arg = args.pop().unwrap();
+                                expr = Expr::App {
+                                    fun,
+                                    args: vec![Expr::Get(Box::new(arg), Box::new(expr1))],
+                                };
+                            }
+                            _ => {
+                                expr = Expr::Get(Box::new(expr), Box::new(expr1));
+                            }
+                        },
+                    }
+                }
+                Ok(_) if prec <= APP_PREC => match self.expr0(APP_PREC) {
                     Err(_) => {
                         break;
                     }
                     Ok(expr_) => match expr {
-                        Expr::App { ref mut args, .. } => {
+                        Expr::App { ref mut args, .. } if parsing_app => {
                             args.push(expr_);
                         }
                         _ => {
+                            parsing_app = true;
                             expr = Expr::App {
                                 fun: Box::new(expr),
                                 args: vec![expr_],
@@ -423,4 +454,78 @@ impl<'a> Parser<'a> {
             Some(next) => Ok(next),
         }
     }
+}
+
+/*
+Not sure about whether this should parse of not...
+#[test]
+fn app_parsing() {
+    let code = "f Array.create 1 2";
+    let tokens = crate::lexer::tokenize(code).unwrap();
+    let expr = parse(&tokens).unwrap();
+    // eprintln!("{:#?}", expr);
+}
+*/
+
+#[test]
+fn app_parsing_1() {
+    let code = "f 1 2";
+    let tokens = crate::lexer::tokenize(code).unwrap();
+    let expr = parse(&tokens).unwrap();
+    assert_eq!(
+        expr,
+        Expr::App {
+            fun: Box::new(Expr::Var("f".to_string())),
+            args: vec![Expr::Int(1), Expr::Int(2)]
+        }
+    );
+}
+
+#[test]
+fn app_parsing_2() {
+    let code = "(f 1) 2";
+    let tokens = crate::lexer::tokenize(code).unwrap();
+    let expr = parse(&tokens).unwrap();
+    assert_eq!(
+        expr,
+        Expr::App {
+            fun: Box::new(Expr::App {
+                fun: Box::new(Expr::Var("f".to_string())),
+                args: vec![Expr::Int(1)]
+            }),
+            args: vec![Expr::Int(2)]
+        }
+    );
+}
+
+#[test]
+fn app_parsing_3() {
+    let code = "f x.(1) 2";
+    let tokens = crate::lexer::tokenize(code).unwrap();
+    let expr = parse(&tokens).unwrap();
+    assert_eq!(
+        expr,
+        Expr::App {
+            fun: Box::new(Expr::Var("f".to_string())),
+            args: vec![
+                Expr::Get(Box::new(Expr::Var("x".to_string())), Box::new(Expr::Int(1))),
+                Expr::Int(2),
+            ]
+        }
+    );
+}
+
+#[test]
+fn app_parsing_4() {
+    let code = "let a = Array.make 1 2 in 3";
+    let tokens = crate::lexer::tokenize(code).unwrap();
+    let expr = parse(&tokens).unwrap();
+
+    let expr_ = Expr::Let {
+        id: "a".to_string(),
+        rhs: Box::new(Expr::Array(Box::new(Expr::Int(1)), Box::new(Expr::Int(2)))),
+        body: Box::new(Expr::Int(3)),
+    };
+
+    assert_eq!(expr, expr_);
 }

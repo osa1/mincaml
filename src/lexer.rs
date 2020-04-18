@@ -58,6 +58,25 @@ static ARRAY_CREATE_LEN: usize = ARRAY_CREATE_STR.len();
 static ARRAY_MAKE_STR: &str = "Array.make";
 static ARRAY_MAKE_LEN: usize = ARRAY_MAKE_STR.len();
 
+pub fn tokenize(expr_str: &str) -> Result<Vec<Token>, LexErr> {
+    let mut lexer = Lexer::new(expr_str.as_bytes());
+    let mut tokens = vec![];
+    loop {
+        match lexer.next() {
+            Err(LexErr::EndOfInput) => {
+                break;
+            }
+            Err(err) => {
+                return Err(err);
+            }
+            Ok(tok) => {
+                tokens.push(tok);
+            }
+        }
+    }
+    Ok(tokens)
+}
+
 impl<'a> Lexer<'a> {
     pub fn new(input: &[u8]) -> Lexer {
         Lexer {

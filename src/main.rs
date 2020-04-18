@@ -4,8 +4,8 @@ mod lexer;
 mod parser;
 mod type_check;
 
-use lexer::{LexErr, Lexer};
-use parser::Parser;
+use lexer::{tokenize, Token};
+use parser::parse;
 use type_check::type_check;
 
 use rustyline::error::ReadlineError;
@@ -52,28 +52,19 @@ fn repl() {
 }
 
 fn do_expr(expr_str: &str) {
-    let mut lexer = Lexer::new(expr_str.as_bytes());
-    let mut tokens = vec![];
-    loop {
-        match lexer.next() {
-            Err(LexErr::EndOfInput) => {
-                break;
-            }
-            Err(err) => {
-                println!("Lexer error: {:#?}", err);
-                break;
-            }
-            Ok(tok) => {
-                tokens.push(tok);
-            }
+    let tokens: Vec<Token> = match tokenize(expr_str) {
+        Err(err) => {
+            println!("Lexer error: {:#?}", err);
+            return;
         }
-    }
+        Ok(tokens) => tokens,
+    };
+
     println!("Tokens: {:?}", tokens);
-    let mut parser = Parser::new(&tokens);
-    let expr = parser.expr();
+    let expr = parse(&tokens);
     println!("Expr: {:#?}", expr);
     if let Ok(ref expr) = expr {
-        println!("Type: {:#?}", type_check(expr));
+        println!("Type: {:?}", type_check(expr));
     }
 }
 

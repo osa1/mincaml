@@ -7,9 +7,7 @@ Find substitutions that make two types the same.
 
  */
 
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::Rc;
 
 use crate::parser::Expr;
 
@@ -38,6 +36,13 @@ fn mk_type_env() -> HashMap<String, Type> {
             ret: Box::new(Type::Unit),
         },
     );
+    env.insert(
+        "print_newline".to_owned(),
+        Type::Fun {
+            args: vec![Type::Unit],
+            ret: Box::new(Type::Unit),
+        },
+    );
     env
 }
 
@@ -59,7 +64,20 @@ pub fn type_check(expr: &Expr) -> Result<Type, TypeErr> {
     let mut tyvar_cnt = 0;
     let mut env = mk_type_env();
     let mut substs = HashMap::new();
-    type_check_(&mut tyvar_cnt, &mut substs, &mut env, expr)
+    type_check_(&mut tyvar_cnt, &mut substs, &mut env, expr).map(|ty| norm_ty(&substs, ty))
+}
+
+fn norm_ty(substs: &HashMap<TyVar, Type>, ty: Type) -> Type {
+    match ty {
+        Type::Unit | Type::Bool | Type::Int | Type::Float => ty.clone(),
+        Type::Fun { args, ret } => Type::Fun {
+            args: args.into_iter().map(|ty| norm_ty(substs, ty)).collect(),
+            ret: Box::new(norm_ty(substs, *ret)),
+        },
+        Type::Tuple(args) => Type::Tuple(args.into_iter().map(|ty| norm_ty(substs, ty)).collect()),
+        Type::Array(ty) => Type::Array(Box::new(norm_ty(substs, *ty))),
+        Type::Var(_) => deref_ty(substs, &ty).clone(),
+    }
 }
 
 fn type_check_(
@@ -145,6 +163,9 @@ fn type_check_(
             for _ in args {
                 arg_tys.push(new_tyvar(tyvar_cnt));
             }
+
+            // println!("name={}, args={:?}, arg_tys={:?}", name, args, arg_tys);
+
             // Type variable for the RHS
             let rhs_ty = new_tyvar(tyvar_cnt);
             // We can now give type to the recursive function
@@ -236,23 +257,7 @@ fn type_check_(
     }
 }
 
-fn deref_tyvar(substs: &mut HashMap<TyVar, Type>, mut tyvar: TyVar) -> Type {
-    loop {
-        match substs.get(&tyvar) {
-            None => {
-                return Type::Var(tyvar);
-            }
-            Some(Type::Var(tyvar_)) => {
-                tyvar = *tyvar_;
-            }
-            Some(other) => {
-                return other.clone();
-            }
-        }
-    }
-}
-
-fn norm_ty<'a>(subst: &'a HashMap<TyVar, Type>, mut ty: &'a Type) -> &'a Type {
+fn deref_ty<'a>(subst: &'a HashMap<TyVar, Type>, mut ty: &'a Type) -> &'a Type {
     loop {
         match ty {
             Type::Var(tyvar) => match subst.get(tyvar) {
@@ -271,8 +276,8 @@ fn norm_ty<'a>(subst: &'a HashMap<TyVar, Type>, mut ty: &'a Type) -> &'a Type {
 }
 
 fn unify(substs: &mut HashMap<TyVar, Type>, ty1: &Type, ty2: &Type) -> Result<(), TypeErr> {
-    let ty1 = norm_ty(substs, ty1).clone();
-    let ty2 = norm_ty(substs, ty2).clone();
+    let ty1 = deref_ty(substs, ty1).clone();
+    let ty2 = deref_ty(substs, ty2).clone();
     match (&ty1, &ty2) {
         (Type::Unit, Type::Unit)
         | (Type::Bool, Type::Bool)
@@ -325,13 +330,13 @@ fn unify_test_1() {
     let ty1 = Type::Int;
     let ty2 = new_tyvar(&mut tyvar_cnt);
     unify(&mut substs, &ty1, &ty2).unwrap();
-    assert_eq!(norm_ty(&substs, &ty2), &Type::Int);
-    assert_eq!(norm_ty(&substs, &ty1), &Type::Int);
+    assert_eq!(deref_ty(&substs, &ty2), &Type::Int);
+    assert_eq!(deref_ty(&substs, &ty1), &Type::Int);
 
     let ty3 = new_tyvar(&mut tyvar_cnt);
     unify(&mut substs, &ty2, &ty3).unwrap();
-    assert_eq!(norm_ty(&substs, &ty2), &Type::Int);
-    assert_eq!(norm_ty(&substs, &ty3), &Type::Int);
+    assert_eq!(deref_ty(&substs, &ty2), &Type::Int);
+    assert_eq!(deref_ty(&substs, &ty3), &Type::Int);
 }
 
 #[test]
@@ -350,9 +355,9 @@ fn unify_test_2() {
     unify(&mut substs, &ty2, &ty5).unwrap();
     unify(&mut substs, &ty5, &ty1).unwrap();
 
-    assert_eq!(norm_ty(&substs, &ty1), &Type::Int);
-    assert_eq!(norm_ty(&substs, &ty2), &Type::Int);
-    assert_eq!(norm_ty(&substs, &ty3), &Type::Int);
-    assert_eq!(norm_ty(&substs, &ty4), &Type::Int);
-    assert_eq!(norm_ty(&substs, &ty5), &Type::Int);
+    assert_eq!(deref_ty(&substs, &ty1), &Type::Int);
+    assert_eq!(deref_ty(&substs, &ty2), &Type::Int);
+    assert_eq!(deref_ty(&substs, &ty3), &Type::Int);
+    assert_eq!(deref_ty(&substs, &ty4), &Type::Int);
+    assert_eq!(deref_ty(&substs, &ty5), &Type::Int);
 }
