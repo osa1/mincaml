@@ -29,6 +29,19 @@ pub enum Type {
 /// Create initial type environment with built-is stuff.
 fn mk_type_env() -> HashMap<String, Type> {
     let mut env = HashMap::new();
+
+    // float -> float
+    let float_float = Type::Fun {
+        args: vec![Type::Float],
+        ret: Box::new(Type::Float),
+    };
+
+    // float -> int
+    let float_int = Type::Fun {
+        args: vec![Type::Float],
+        ret: Box::new(Type::Int),
+    };
+
     env.insert(
         "print_int".to_owned(),
         Type::Fun {
@@ -43,6 +56,19 @@ fn mk_type_env() -> HashMap<String, Type> {
             ret: Box::new(Type::Unit),
         },
     );
+    env.insert(
+        "float_of_int".to_owned(),
+        Type::Fun {
+            args: vec![Type::Int],
+            ret: Box::new(Type::Float),
+        },
+    );
+    env.insert("int_of_float".to_owned(), float_int.clone());
+    env.insert("truncate".to_owned(), float_int.clone());
+    env.insert("abs_float".to_owned(), float_float.clone());
+    env.insert("sqrt".to_owned(), float_float.clone());
+    env.insert("sin".to_owned(), float_float.clone());
+    env.insert("cos".to_owned(), float_float.clone());
     env
 }
 

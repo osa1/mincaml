@@ -163,7 +163,15 @@ impl<'a> Parser<'a> {
             }
             Token::Minus if prec <= UNARY_MINUS_PREC => {
                 self.consume();
-                Ok(Expr::Neg(Box::new(self.expr1(UNARY_MINUS_PREC)?)))
+                let expr = self.expr1(UNARY_MINUS_PREC)?;
+                match expr {
+                    Expr::Float(f) =>
+                    // Hacky, but this is how the original min-caml parses this as well.
+                    {
+                        Ok(Expr::FNeg(Box::new(expr)))
+                    }
+                    _ => Ok(expr),
+                }
             }
             Token::MinusDot if prec <= UNARY_MINUS_PREC => {
                 self.consume();
