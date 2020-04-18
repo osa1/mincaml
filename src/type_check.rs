@@ -9,7 +9,7 @@ Find substitutions that make two types the same.
 
 use std::collections::HashMap;
 
-use crate::parser::Expr;
+use crate::parser::{Binder, Expr};
 
 /// Type variables are represented as unique integers.
 pub type TyVar = u64;
@@ -186,8 +186,11 @@ fn type_check_(
         } => {
             // Type variables for the arguments
             let mut arg_tys: Vec<Type> = Vec::with_capacity(args.len());
-            for _ in args {
-                arg_tys.push(new_tyvar(tyvar_cnt));
+            for binder in args {
+                arg_tys.push(match binder {
+                    Binder::Id(_) => new_tyvar(tyvar_cnt),
+                    Binder::Unit => Type::Unit,
+                });
             }
 
             // println!("name={}, args={:?}, arg_tys={:?}", name, args, arg_tys);
@@ -201,8 +204,13 @@ fn type_check_(
             };
             // RHS and body will be type checked with `name` and args in scope
             env.insert(name.clone(), fun_ty.clone());
-            for (arg, arg_ty) in args.iter().zip(arg_tys.iter()) {
-                env.insert(arg.clone(), arg_ty.clone());
+            for (binder, arg_ty) in args.iter().zip(arg_tys.iter()) {
+                match binder {
+                    Binder::Unit => {}
+                    Binder::Id(id) => {
+                        env.insert(id.clone(), arg_ty.clone());
+                    }
+                }
             }
             // Type check RHS
             let rhs_ty_ = type_check_(tyvar_cnt, substs, env, rhs)?;
@@ -211,8 +219,13 @@ fn type_check_(
             let ret = type_check_(tyvar_cnt, substs, env, body);
             // Reset environment
             env.remove(name);
-            for arg in args.iter() {
-                env.remove(arg);
+            for binder in args.iter() {
+                match binder {
+                    Binder::Unit => {}
+                    Binder::Id(id) => {
+                        env.remove(id);
+                    }
+                }
             }
             ret
         }

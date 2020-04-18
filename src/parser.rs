@@ -1,5 +1,11 @@
 use crate::lexer::Token;
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum Binder {
+    Id(String),
+    Unit,
+}
+
 #[derive(Debug, PartialEq)]
 pub enum Expr {
     // ()
@@ -43,7 +49,7 @@ pub enum Expr {
     // let rec <ident> <ident>+ = <expr> in <expr>
     LetRec {
         name: String,
-        args: Vec<String>,
+        args: Vec<Binder>,
         rhs: Box<Expr>,
         body: Box<Expr>,
     },
@@ -190,9 +196,26 @@ impl<'a> Parser<'a> {
                         self.consume();
                         let name = self.expect_id()?;
                         let mut args = vec![];
-                        while let Ok(Token::Id(arg)) = self.next_token() {
-                            args.push(arg.clone());
-                            self.consume();
+                        loop {
+                            match self.next_token()? {
+                                Token::Underscore => {
+                                    args.push(Binder::Unit);
+                                    self.consume();
+                                }
+                                Token::Id(arg) => {
+                                    args.push(Binder::Id(arg.clone()));
+                                    self.consume();
+                                }
+                                Token::Equal => {
+                                    break;
+                                }
+                                other => {
+                                    return Err(ParseErr::Unexpected {
+                                        expected: "binder or '='",
+                                        seen: other.clone(),
+                                    });
+                                }
+                            }
                         }
                         self.expect(Token::Equal, "'='")?;
                         let rhs = Box::new(self.expr1(LET_PREC)?);
