@@ -5,15 +5,12 @@ Unification
 
 Find substitutions that make two types the same.
 
-
-FIXME: Environment updates are not quite right. When we push a local `f` and then pop it we
-currently override any `f`s in the parent scope.
-
  */
 
 use std::collections::HashMap;
 
 use crate::parser::{Binder, Expr};
+use crate::type_check_env::Locals;
 
 /// Type variables are represented as unique integers.
 pub type TyVar = u64;
@@ -92,7 +89,7 @@ pub enum TypeErr {
 
 pub fn type_check(expr: &Expr) -> Result<Type, TypeErr> {
     let mut tyvar_cnt = 0;
-    let mut env = mk_type_env();
+    let mut env = Locals::new(mk_type_env());
     let mut substs = HashMap::new();
     type_check_(&mut tyvar_cnt, &mut substs, &mut env, expr).map(|ty| norm_ty(&substs, ty))
 }
@@ -113,7 +110,7 @@ fn norm_ty(substs: &HashMap<TyVar, Type>, ty: Type) -> Type {
 fn type_check_(
     tyvar_cnt: &mut u64,
     substs: &mut HashMap<TyVar, Type>,
-    env: &mut HashMap<String, Type>,
+    env: &mut Locals,
     expr: &Expr,
 ) -> Result<Type, TypeErr> {
     match expr {
@@ -173,9 +170,10 @@ fn type_check_(
             let rhs_type = type_check_(tyvar_cnt, substs, env, rhs)?;
             unify(substs, &bndr_type, &rhs_type)?;
             // FIXME: string clone
-            env.insert(id.clone(), bndr_type);
+            env.new_scope();
+            env.add(id.clone(), bndr_type);
             let ret = type_check_(tyvar_cnt, substs, env, body);
-            env.remove(id);
+            env.pop_scope();
             ret
         }
         Expr::Var(var) => match env.get(var) {
@@ -207,30 +205,25 @@ fn type_check_(
                 ret: Box::new(rhs_ty.clone()),
             };
             // RHS and body will be type checked with `name` and args in scope
-            env.insert(name.clone(), fun_ty.clone());
+            env.new_scope(); // new scope for function
+            env.add(name.clone(), fun_ty.clone());
+            env.new_scope(); // new scope for args
             for (binder, arg_ty) in args.iter().zip(arg_tys.iter()) {
                 match binder {
                     Binder::Unit => {}
                     Binder::Id(id) => {
-                        env.insert(id.clone(), arg_ty.clone());
+                        env.add(id.clone(), arg_ty.clone());
                     }
                 }
             }
-            // Type check RHS
+            // Type check RHS with fun and args in scope
             let rhs_ty_ = type_check_(tyvar_cnt, substs, env, rhs)?;
             unify(substs, &rhs_ty, &rhs_ty_)?;
-            // Type check body
+            // Type check body with just the fun in scope
+            env.pop_scope();
             let ret = type_check_(tyvar_cnt, substs, env, body);
             // Reset environment
-            env.remove(name);
-            for binder in args.iter() {
-                match binder {
-                    Binder::Unit => {}
-                    Binder::Id(id) => {
-                        env.remove(id);
-                    }
-                }
-            }
+            env.pop_scope();
             ret
         }
         Expr::App { fun, args } => {
@@ -262,13 +255,12 @@ fn type_check_(
             let tuple_ty = Type::Tuple(bndr_tys.clone());
             let rhs_ty = type_check_(tyvar_cnt, substs, env, rhs)?;
             unify(substs, &rhs_ty, &tuple_ty)?;
+            env.new_scope();
             for (bndr, bndr_type) in bndrs.iter().zip(bndr_tys.into_iter()) {
-                env.insert(bndr.clone(), bndr_type);
+                env.add(bndr.clone(), bndr_type);
             }
             let ret = type_check_(tyvar_cnt, substs, env, body);
-            for bndr in bndrs.iter() {
-                env.remove(bndr);
-            }
+            env.pop_scope();
             ret
         }
         Expr::Array(e1, e2) => {

@@ -3,6 +3,7 @@
 mod lexer;
 mod parser;
 mod type_check;
+mod type_check_env;
 
 use lexer::{tokenize, Token};
 use parser::parse;
