@@ -269,9 +269,9 @@ impl<'a> Parser<'a> {
                 self.consume();
                 let e1 = self.expr1(IF_PREC)?;
                 self.expect(Token::Then, "'then'")?;
-                let e2 = self.expr1(IF_PREC)?;
+                let e2 = self.expr1(INIT_PREC)?;
                 self.expect(Token::Else, "'else'")?;
-                let e3 = self.expr1(IF_PREC)?;
+                let e3 = self.expr1(INIT_PREC)?;
                 Ok(Expr::If(Box::new(e1), Box::new(e2), Box::new(e3)))
             }
             other => Err(ParseErr::Unexpected {
@@ -557,6 +557,24 @@ fn app_parsing_4() {
         rhs: Box::new(Expr::Array(Box::new(Expr::Int(1)), Box::new(Expr::Int(2)))),
         body: Box::new(Expr::Int(3)),
     };
+
+    assert_eq!(expr, expr_);
+}
+
+#[test]
+fn if_let_parsing() {
+    let code = "if true then 1 else let x = 2 in x";
+    let tokens = crate::lexer::tokenize(code).unwrap();
+    let expr = parse(&tokens).unwrap();
+
+    let then = Expr::Int(1);
+    let else_ = Expr::Let {
+        id: "x".to_string(),
+        rhs: Box::new(Expr::Int(2)),
+        body: Box::new(Expr::Var("x".to_string())),
+    };
+
+    let expr_ = Expr::If(Box::new(Expr::Bool(true)), Box::new(then), Box::new(else_));
 
     assert_eq!(expr, expr_);
 }

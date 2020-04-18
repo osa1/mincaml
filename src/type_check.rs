@@ -5,6 +5,10 @@ Unification
 
 Find substitutions that make two types the same.
 
+
+FIXME: Environment updates are not quite right. When we push a local `f` and then pop it we
+currently override any `f`s in the parent scope.
+
  */
 
 use std::collections::HashMap;
