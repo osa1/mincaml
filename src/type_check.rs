@@ -65,17 +65,17 @@ fn mk_type_env() -> HashMap<String, Type> {
         },
     );
     env.insert("int_of_float".to_owned(), float_int.clone());
-    env.insert("truncate".to_owned(), float_int.clone());
+    env.insert("truncate".to_owned(), float_int);
     env.insert("abs_float".to_owned(), float_float.clone());
     env.insert("sqrt".to_owned(), float_float.clone());
     env.insert("sin".to_owned(), float_float.clone());
-    env.insert("cos".to_owned(), float_float.clone());
+    env.insert("cos".to_owned(), float_float);
     env
 }
 
 fn new_tyvar(tyvar_cnt: &mut u64) -> Type {
     let tyvar = *tyvar_cnt;
-    *tyvar_cnt = *tyvar_cnt + 1;
+    *tyvar_cnt += 1;
     Type::Var(tyvar)
 }
 
@@ -109,7 +109,7 @@ pub fn type_check_pgm(expr: &Expr) -> Result<(), TypeErr> {
 
 fn norm_ty(substs: &HashMap<TyVar, Type>, ty: Type) -> Type {
     match ty {
-        Type::Unit | Type::Bool | Type::Int | Type::Float => ty.clone(),
+        Type::Unit | Type::Bool | Type::Int | Type::Float => ty,
         Type::Fun { args, ret } => Type::Fun {
             args: args.into_iter().map(|ty| norm_ty(substs, ty)).collect(),
             ret: Box::new(norm_ty(substs, *ret)),
@@ -249,7 +249,7 @@ fn type_check_(
             };
             // RHS and body will be type checked with `name` and args in scope
             env.new_scope(); // new scope for function
-            env.add(name.clone(), fun_ty.clone());
+            env.add(name.clone(), fun_ty);
             env.new_scope(); // new scope for args
             for (binder, arg_ty) in args.iter().zip(arg_tys.iter()) {
                 match binder {
