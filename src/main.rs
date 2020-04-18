@@ -64,7 +64,7 @@ fn do_expr(expr_str: &str) -> i32 {
 
     println!("{:#?}", tokens);
 
-    let expr = match parse(&tokens) {
+    let (expr, bndr_count) = match parse(&tokens) {
         Err(err) => {
             println!("Parser error: {:#?}", err);
             return 1;
@@ -74,12 +74,15 @@ fn do_expr(expr_str: &str) -> i32 {
 
     println!("{:#?}", expr);
 
-    match type_check_pgm(&expr) {
+    match type_check_pgm(&expr, bndr_count) {
         Err(err) => {
             println!("Type error: {:#?}", err);
             1
         }
-        Ok(()) => 0,
+        Ok(bndr_tys) => {
+            println!("Binder types: {:?}", bndr_tys);
+            0
+        }
     }
 }
 

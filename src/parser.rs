@@ -1,8 +1,14 @@
 use crate::lexer::Token;
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum Binder {
-    Id(String),
+pub struct Binder {
+    pub binder: String,
+    pub id: usize,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum BinderOrUnit {
+    Binder(Binder),
     Unit,
 }
 
@@ -40,7 +46,7 @@ pub enum Expr {
     If(Box<Expr>, Box<Expr>, Box<Expr>),
     // let <ident> = <expr> in <expr>
     Let {
-        id: String,
+        bndr: Binder,
         rhs: Box<Expr>,
         body: Box<Expr>,
     },
@@ -48,8 +54,8 @@ pub enum Expr {
     Var(String),
     // let rec <ident> <ident>+ = <expr> in <expr>
     LetRec {
-        name: String,
-        args: Vec<Binder>,
+        bndr: Binder,
+        args: Vec<BinderOrUnit>,
         rhs: Box<Expr>,
         body: Box<Expr>,
     },
@@ -62,7 +68,7 @@ pub enum Expr {
     Tuple(Vec<Expr>),
     // let ( <ident> (, <ident>)+ ) = <expr> in <expr>
     LetTuple {
-        bndrs: Vec<String>,
+        bndrs: Vec<Binder>,
         rhs: Box<Expr>,
         body: Box<Expr>,
     },
@@ -74,8 +80,11 @@ pub enum Expr {
     Put(Box<Expr>, Box<Expr>, Box<Expr>),
 }
 
-pub fn parse(tokens: &[Token]) -> Result<Expr, ParseErr> {
-    Parser::new(tokens).expr()
+pub fn parse(tokens: &[Token]) -> Result<(Expr, usize), ParseErr> {
+    let mut parser = Parser::new(tokens);
+    let expr = parser.expr()?;
+    let bndr_count = parser.bndr_count;
+    Ok((expr, bndr_count))
 }
 
 #[derive(Debug)]
@@ -88,6 +97,7 @@ pub struct Parser<'a> {
     tokens: &'a [Token],
     tok_idx: usize,
     gensym_count: usize,
+    bndr_count: usize,
 }
 
 const INIT_PREC: usize = 0;
@@ -117,6 +127,7 @@ impl<'a> Parser<'a> {
             tokens,
             tok_idx: 0,
             gensym_count: 0,
+            bndr_count: 0,
         }
     }
 
@@ -194,16 +205,18 @@ impl<'a> Parser<'a> {
                 match self.next_token()? {
                     Token::Rec => {
                         self.consume();
-                        let name = self.expect_id()?;
+                        let bndr = self.expect_id()?;
+                        let bndr = self.genbndr(bndr);
                         let mut args = vec![];
                         loop {
                             match self.next_token()? {
                                 Token::Underscore => {
-                                    args.push(Binder::Unit);
+                                    args.push(BinderOrUnit::Unit);
                                     self.consume();
                                 }
                                 Token::Id(arg) => {
-                                    args.push(Binder::Id(arg.clone()));
+                                    let arg = arg.clone();
+                                    args.push(BinderOrUnit::Binder(self.genbndr(arg)));
                                     self.consume();
                                 }
                                 Token::Equal => {
@@ -222,7 +235,7 @@ impl<'a> Parser<'a> {
                         self.expect(Token::In, "'in'")?;
                         let body = Box::new(self.expr1(LET_PREC)?);
                         Ok(Expr::LetRec {
-                            name,
+                            bndr,
                             args,
                             rhs,
                             body,
@@ -231,10 +244,16 @@ impl<'a> Parser<'a> {
                     Token::LParen => {
                         self.consume();
                         let mut bndrs = vec![];
-                        bndrs.push(self.expect_id()?);
+                        {
+                            let bndr = self.expect_id()?;
+                            bndrs.push(self.genbndr(bndr));
+                        }
                         while let Ok(Token::Comma) = self.next_token() {
                             self.consume();
-                            bndrs.push(self.expect_id()?);
+                            {
+                                let bndr = self.expect_id()?;
+                                bndrs.push(self.genbndr(bndr));
+                            }
                         }
                         self.expect(Token::RParen, "')'")?;
                         self.expect(Token::Equal, "'='")?;
@@ -248,13 +267,14 @@ impl<'a> Parser<'a> {
                         })
                     }
                     Token::Id(var) => {
-                        let id = var.clone();
+                        let bndr = var.clone();
+                        let bndr = self.genbndr(bndr);
                         self.consume();
                         self.expect(Token::Equal, "'='")?;
                         let rhs = Box::new(self.expr1(LET_PREC)?);
                         self.expect(Token::In, "'in'")?;
                         let body = Box::new(self.expr1(IN_PREC)?);
-                        Ok(Expr::Let { id, rhs, body })
+                        Ok(Expr::Let { bndr, rhs, body })
                     }
                     other => {
                         Err(ParseErr::Unexpected {
@@ -291,7 +311,7 @@ impl<'a> Parser<'a> {
                     let sym = self.gensym();
                     let expr2 = self.expr1(prec)?;
                     expr = Expr::Let {
-                        id: sym,
+                        bndr: self.genbndr(sym),
                         rhs: Box::new(expr),
                         body: Box::new(expr2),
                     };
@@ -446,6 +466,12 @@ impl<'a> Parser<'a> {
         let i = self.gensym_count;
         self.gensym_count += 1;
         format!("__{}", i)
+    }
+
+    fn genbndr(&mut self, binder: String) -> Binder {
+        let i = self.bndr_count;
+        self.bndr_count += 1;
+        Binder { binder, id: i }
     }
 
     fn expect(&mut self, tok: Token, str: &'static str) -> Result<(), ParseErr> {
