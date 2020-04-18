@@ -11,6 +11,7 @@ use type_check::type_check;
 
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
+use std::process::exit;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -19,11 +20,11 @@ fn main() {
             repl();
         }
         [_, ref file] => {
-            do_file(file);
+            exit(do_file(file));
         }
         _ => {
             println!("What do you mean?");
-            ::std::process::exit(1);
+            exit(1);
         }
     }
 }
@@ -52,24 +53,41 @@ fn repl() {
     }
 }
 
-fn do_expr(expr_str: &str) {
+fn do_expr(expr_str: &str) -> i32 {
     let tokens: Vec<Token> = match tokenize(expr_str) {
         Err(err) => {
             println!("Lexer error: {:#?}", err);
-            return;
+            return 1;
         }
         Ok(tokens) => tokens,
     };
 
-    println!("Tokens: {:?}", tokens);
-    let expr = parse(&tokens);
-    println!("Expr: {:#?}", expr);
-    if let Ok(ref expr) = expr {
-        println!("Type: {:?}", type_check(expr));
-    }
+    println!("{:#?}", tokens);
+
+    let expr = match parse(&tokens) {
+        Err(err) => {
+            println!("Parser error: {:#?}", err);
+            return 1;
+        }
+        Ok(expr) => expr,
+    };
+
+    println!("{:#?}", expr);
+
+    let ty = match type_check(&expr) {
+        Err(err) => {
+            println!("Type error: {:#?}", err);
+            return 1;
+        }
+        Ok(ty) => ty,
+    };
+
+    println!("{:#?}", ty);
+
+    0
 }
 
-fn do_file(file: &str) {
+fn do_file(file: &str) -> i32 {
     let contents = std::fs::read_to_string(file).unwrap();
     do_expr(&contents)
 }
