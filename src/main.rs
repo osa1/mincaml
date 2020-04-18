@@ -7,7 +7,7 @@ mod type_check_env;
 
 use lexer::{tokenize, Token};
 use parser::parse;
-use type_check::type_check;
+use type_check::type_check_pgm;
 
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
@@ -74,17 +74,13 @@ fn do_expr(expr_str: &str) -> i32 {
 
     println!("{:#?}", expr);
 
-    let ty = match type_check(&expr) {
+    match type_check_pgm(&expr) {
         Err(err) => {
             println!("Type error: {:#?}", err);
-            return 1;
+            1
         }
-        Ok(ty) => ty,
-    };
-
-    println!("{:#?}", ty);
-
-    0
+        Ok(()) => 0,
+    }
 }
 
 fn do_file(file: &str) -> i32 {

@@ -83,15 +83,28 @@ fn new_tyvar(tyvar_cnt: &mut u64) -> Type {
 pub enum TypeErr {
     /// Can't unify these two types
     UnifyError(Type, Type),
+    /// Occurs check failed
+    InfiniteType(Type, Type),
     /// Unbound variable
     UnboundVar(String),
 }
 
+/*
 pub fn type_check(expr: &Expr) -> Result<Type, TypeErr> {
     let mut tyvar_cnt = 0;
     let mut env = Locals::new(mk_type_env());
     let mut substs = HashMap::new();
     type_check_(&mut tyvar_cnt, &mut substs, &mut env, expr).map(|ty| norm_ty(&substs, ty))
+}
+*/
+
+pub fn type_check_pgm(expr: &Expr) -> Result<(), TypeErr> {
+    let mut tyvar_cnt = 0;
+    let mut env = Locals::new(mk_type_env());
+    let mut substs = HashMap::new();
+    let ty =
+        type_check_(&mut tyvar_cnt, &mut substs, &mut env, expr).map(|ty| norm_ty(&substs, ty))?;
+    unify(&mut substs, &Type::Unit, &ty)
 }
 
 fn norm_ty(substs: &HashMap<TyVar, Type>, ty: Type) -> Type {
@@ -104,6 +117,36 @@ fn norm_ty(substs: &HashMap<TyVar, Type>, ty: Type) -> Type {
         Type::Tuple(args) => Type::Tuple(args.into_iter().map(|ty| norm_ty(substs, ty)).collect()),
         Type::Array(ty) => Type::Array(Box::new(norm_ty(substs, *ty))),
         Type::Var(_) => deref_ty(substs, &ty).clone(),
+    }
+}
+
+fn deref_ty<'a>(subst: &'a HashMap<TyVar, Type>, mut ty: &'a Type) -> &'a Type {
+    loop {
+        match ty {
+            Type::Var(tyvar) => match subst.get(tyvar) {
+                None => {
+                    return ty;
+                }
+                Some(ty_) => {
+                    ty = ty_;
+                }
+            },
+            _ => {
+                return ty;
+            }
+        }
+    }
+}
+
+fn occurs_check(subst: &HashMap<TyVar, Type>, var: TyVar, ty: &Type) -> bool {
+    match deref_ty(subst, ty) {
+        Type::Unit | Type::Bool | Type::Int | Type::Float => false,
+        Type::Fun { args, ret } => {
+            args.iter().any(|ty| occurs_check(subst, var, ty)) || occurs_check(subst, var, ret)
+        }
+        Type::Tuple(args) => args.iter().any(|ty| occurs_check(subst, var, ty)),
+        Type::Array(ty) => occurs_check(subst, var, ty),
+        Type::Var(var_) => var == *var_,
     }
 }
 
@@ -292,27 +335,13 @@ fn type_check_(
     }
 }
 
-fn deref_ty<'a>(subst: &'a HashMap<TyVar, Type>, mut ty: &'a Type) -> &'a Type {
-    loop {
-        match ty {
-            Type::Var(tyvar) => match subst.get(tyvar) {
-                None => {
-                    return ty;
-                }
-                Some(ty_) => {
-                    ty = ty_;
-                }
-            },
-            _ => {
-                return ty;
-            }
-        }
-    }
-}
-
 fn unify(substs: &mut HashMap<TyVar, Type>, ty1: &Type, ty2: &Type) -> Result<(), TypeErr> {
     let ty1 = deref_ty(substs, ty1).clone();
     let ty2 = deref_ty(substs, ty2).clone();
+
+    // println!("substs: {:?}", substs);
+    // println!("unify {:?} ~ {:?}", ty1, ty2);
+
     match (&ty1, &ty2) {
         (Type::Unit, Type::Unit)
         | (Type::Bool, Type::Bool)
@@ -337,8 +366,12 @@ fn unify(substs: &mut HashMap<TyVar, Type>, ty1: &Type, ty2: &Type) -> Result<()
             unify(substs, &*ret1, &*ret2)
         }
 
+        (Type::Var(var1), Type::Var(var2)) if var1 == var2 => Ok(()),
+
         (Type::Var(var), ty) | (ty, Type::Var(var)) => {
-            // TODO occurs check
+            if occurs_check(substs, *var, ty) {
+                return Err(TypeErr::InfiniteType(ty1, ty2));
+            }
             substs.insert(*var, ty.clone());
             Ok(())
         }
