@@ -6,6 +6,7 @@ mod locals;
 mod parser;
 mod type_check;
 
+use knormal::KNormal;
 use lexer::{tokenize, Token};
 use parser::parse;
 use type_check::type_check_pgm;
@@ -75,16 +76,23 @@ fn do_expr(expr_str: &str) -> i32 {
 
     println!("{:#?}", expr);
 
-    match type_check_pgm(&expr, bndr_count) {
+    let bndr_tys = match type_check_pgm(&expr, bndr_count) {
         Err(err) => {
             println!("Type error: {:#?}", err);
-            1
+            return 1;
         }
         Ok(bndr_tys) => {
             println!("Binder types: {:?}", bndr_tys);
-            0
+            bndr_tys
         }
-    }
+    };
+
+    let k_expr = KNormal::new(&bndr_tys).knormal_(expr);
+
+    println!("K normalized:");
+    println!("{:?}", k_expr);
+
+    0
 }
 
 fn do_file(file: &str) -> i32 {
