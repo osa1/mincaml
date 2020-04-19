@@ -1,5 +1,6 @@
 #![feature(or_patterns)]
 
+mod knormal;
 mod lexer;
 mod parser;
 mod type_check;
