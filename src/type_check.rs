@@ -9,8 +9,8 @@ Find substitutions that make two types the same.
 
 use std::collections::HashMap;
 
+use crate::locals::Locals;
 use crate::parser::{BinderOrUnit, Expr};
-use crate::type_check_env::Locals;
 
 /// Type variables are represented as unique integers.
 pub type TyVar = u64;
@@ -164,7 +164,7 @@ fn type_check_(
     tyvar_cnt: &mut u64,
     substs: &mut HashMap<TyVar, Type>,
     bndr_tys: &mut Vec<Option<Type>>,
-    env: &mut Locals,
+    env: &mut Locals<Type>,
     expr: &Expr,
 ) -> Result<Type, TypeErr> {
     match expr {

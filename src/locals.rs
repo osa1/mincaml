@@ -1,17 +1,15 @@
 use std::collections::HashMap;
 use std::mem::replace;
 
-use crate::type_check::Type;
-
-pub(crate) struct Locals {
-    env: HashMap<String, Type>,
-    // Type below is the Type we override, not the type of the binder in the current scope!
-    current_scope: Vec<(String, Option<Type>)>,
-    scopes: Vec<Vec<(String, Option<Type>)>>,
+pub struct Locals<A> {
+    env: HashMap<String, A>,
+    // `A` below is the `A` we override, not the `A` of the binder in the current scope!
+    current_scope: Vec<(String, Option<A>)>,
+    scopes: Vec<Vec<(String, Option<A>)>>,
 }
 
-impl Locals {
-    pub(crate) fn new(globals: HashMap<String, Type>) -> Locals {
+impl<A: Clone> Locals<A> {
+    pub fn new(globals: HashMap<String, A>) -> Locals<A> {
         Locals {
             env: globals,
             current_scope: vec![],
@@ -19,11 +17,11 @@ impl Locals {
         }
     }
 
-    pub(crate) fn new_scope(&mut self) {
+    pub fn new_scope(&mut self) {
         self.scopes.push(replace(&mut self.current_scope, vec![]));
     }
 
-    pub(crate) fn pop_scope(&mut self) {
+    pub fn pop_scope(&mut self) {
         assert!(!self.scopes.is_empty());
         for (id, old_ty) in self.current_scope.drain(..) {
             self.env.remove(&id);
@@ -34,13 +32,13 @@ impl Locals {
         self.current_scope = self.scopes.pop().unwrap();
     }
 
-    pub(crate) fn add(&mut self, id: String, ty: Type) {
+    pub fn add(&mut self, id: String, ty: A) {
         let old_ty = self.env.get(&id).cloned();
         self.current_scope.push((id.clone(), old_ty));
         self.env.insert(id, ty);
     }
 
-    pub(crate) fn get(&self, id: &str) -> Option<&Type> {
+    pub fn get(&self, id: &str) -> Option<&A> {
         self.env.get(id)
     }
 }

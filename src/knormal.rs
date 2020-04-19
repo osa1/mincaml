@@ -231,33 +231,20 @@ impl<'a> KNormal<'a> {
                     Box::new(else_),
                 )))
             }
-            parser::Expr::Let { bndr, rhs, body } => {
-                todo!()
-            }
-            parser::Expr::Var(var) => {
-                todo!()
-            }
-            parser::Expr::LetRec { bndr, args, rhs, body } => {
-                todo!()
-            }
-            parser::Expr::App { fun, args } => {
-                todo!()
-            }
-            parser::Expr::Tuple(args) => {
-                todo!()
-            }
-            parser::Expr::LetTuple { bndrs, rhs, body } => {
-                todo!()
-            }
-            parser::Expr::Array(e1, e2) => {
-                todo!()
-            }
-            parser::Expr::Get(e1, e2) => {
-                todo!()
-            }
-            parser::Expr::Put(e1, e2, e3) => {
-                todo!()
-            }
+            parser::Expr::Let { bndr, rhs, body } => todo!(),
+            parser::Expr::Var(var) => todo!(),
+            parser::Expr::LetRec {
+                bndr,
+                args,
+                rhs,
+                body,
+            } => todo!(),
+            parser::Expr::App { fun, args } => todo!(),
+            parser::Expr::Tuple(args) => todo!(),
+            parser::Expr::LetTuple { bndrs, rhs, body } => todo!(),
+            parser::Expr::Array(e1, e2) => todo!(),
+            parser::Expr::Get(e1, e2) => todo!(),
+            parser::Expr::Put(e1, e2, e3) => todo!(),
         }
     }
 }
