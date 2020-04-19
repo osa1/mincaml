@@ -264,6 +264,7 @@ fn type_check_(
                 args: arg_tys.clone(),
                 ret: Box::new(rhs_ty.clone()),
             };
+            bndr_tys[bndr.id] = Some(fun_ty.clone());
             // RHS and body will be type checked with `name` and args in scope
             env.new_scope(); // new scope for function
             env.add(bndr.binder.clone(), fun_ty);
