@@ -103,6 +103,20 @@ impl<'a> KNormal<'a> {
         }
     }
 
+    fn id_type(&self, id: usize) -> Type {
+        match self.bndr_tys.get(id) {
+            None => {
+                panic!("Unknown id: {}", id);
+            }
+            Some(None) => {
+                panic!("Id type unknown: {}", id);
+            }
+            Some(Some(ty)) => {
+                ty.clone()
+            }
+        }
+    }
+
     // Creates a let with body initialized as `()` (Unit). Make sure to update it after normalizing
     // the body!
     fn insert_let(&mut self, rhs: Expr, ty: Type) -> (TmpLet, String) {
@@ -260,7 +274,7 @@ impl<'a> KNormal<'a> {
             }
             parser::Expr::Let { bndr, rhs, body } => {
                 let parser::Binder { binder, id } = bndr;
-                let bndr_ty = self.bndr_tys[id].as_ref().cloned().unwrap();
+                let bndr_ty = self.id_type(id);
                 let rhs = self.knormal_(*rhs);
                 self.locals.new_scope();
                 self.locals.add(binder.clone(), bndr_ty.clone());
@@ -289,7 +303,7 @@ impl<'a> KNormal<'a> {
                 body,
             } => {
                 let parser::Binder { binder, id } = bndr;
-                let bndr_ty = self.bndr_tys[id].as_ref().cloned().unwrap();
+                let bndr_ty = self.id_type(id);
 
                 // First scope for the binder
                 self.locals.new_scope();
@@ -300,7 +314,7 @@ impl<'a> KNormal<'a> {
                 for arg in args {
                     match arg {
                         parser::BinderOrUnit::Binder(parser::Binder { binder, id }) => {
-                            let arg_ty = self.bndr_tys[id].as_ref().cloned().unwrap();
+                            let arg_ty = self.id_type(id);
                             self.locals.add(binder.clone(), arg_ty.clone());
                             kargs.push(BinderOrUnit::Binder(Binder {
                                 binder: binder,
@@ -386,7 +400,7 @@ impl<'a> KNormal<'a> {
 
                 for bndr in bndrs {
                     let parser::Binder { binder, id } = bndr;
-                    let bndr_ty = self.bndr_tys[id].as_ref().cloned().unwrap();
+                    let bndr_ty = self.id_type(id);
                     kbndrs.push((binder, bndr_ty));
                 }
 
