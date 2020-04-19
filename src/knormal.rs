@@ -1,13 +1,22 @@
 use crate::locals::Locals;
 use crate::parser;
-use crate::parser::Binder;
 use crate::type_check::Type;
 
 use std::collections::HashMap;
 
 pub type Id = String;
 
-// TODO: Should we use parsre::Binder for the binders below?
+#[derive(Debug, PartialEq, Eq)]
+pub struct Binder {
+    pub binder: String,
+    pub ty: Type,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum BinderOrUnit {
+    Binder(Binder),
+    Unit,
+}
 
 #[derive(Debug)]
 pub enum Expr {
@@ -30,7 +39,7 @@ pub enum Expr {
     LetRec {
         name: Id,
         ty: Type,
-        args: Vec<(Id, Type)>,
+        args: Vec<BinderOrUnit>,
         rhs: Box<Expr>,
         body: Box<Expr>,
     },
@@ -209,11 +218,10 @@ impl<'a> KNormal<'a> {
                 (e, Type::Float)
             }
             parser::Expr::Eq(e1, e2) => {
-                let e1 = self.knormal_(*e1);
-                // TODO: Eq arg types?
-                let (tmp1, var1) = self.insert_let(e1, Type::Int);
-                let e1 = self.knormal_(*e2);
-                let (tmp2, var2) = self.insert_let(e1, Type::Int);
+                let (e1, e1_ty) = self.knormal(*e1);
+                let (tmp1, var1) = self.insert_let(e1, e1_ty);
+                let (e2, e2_ty) = self.knormal(*e2);
+                let (tmp2, var2) = self.insert_let(e2, e2_ty);
                 let e = tmp1.finish(tmp2.finish(Expr::IfEq(
                     var1,
                     var2,
@@ -223,11 +231,10 @@ impl<'a> KNormal<'a> {
                 (e, Type::Int)
             }
             parser::Expr::Le(e1, e2) => {
-                let e1 = self.knormal_(*e1);
-                // TODO: Eq arg types?
-                let (tmp1, var1) = self.insert_let(e1, Type::Int);
-                let e1 = self.knormal_(*e2);
-                let (tmp2, var2) = self.insert_let(e1, Type::Int);
+                let (e1, e1_ty) = self.knormal(*e1);
+                let (tmp1, var1) = self.insert_let(e1, e1_ty);
+                let (e2, e2_ty) = self.knormal(*e2);
+                let (tmp2, var2) = self.insert_let(e2, e2_ty);
                 let e = tmp1.finish(tmp2.finish(Expr::IfLE(
                     var1,
                     var2,
@@ -252,7 +259,7 @@ impl<'a> KNormal<'a> {
                 (e, ty)
             }
             parser::Expr::Let { bndr, rhs, body } => {
-                let Binder { binder, id } = bndr;
+                let parser::Binder { binder, id } = bndr;
                 let bndr_ty = self.bndr_tys[id].as_ref().cloned().unwrap();
                 let rhs = self.knormal_(*rhs);
                 self.locals.new_scope();
@@ -274,12 +281,55 @@ impl<'a> KNormal<'a> {
                 };
                 (Expr::Var(var), var_ty.clone())
             }
+
             parser::Expr::LetRec {
-                bndr: _,
-                args: _,
-                rhs: _,
-                body: _,
-            } => todo!(),
+                bndr,
+                args,
+                rhs,
+                body,
+            } => {
+                let parser::Binder { binder, id } = bndr;
+                let bndr_ty = self.bndr_tys[id].as_ref().cloned().unwrap();
+
+                // First scope for the binder
+                self.locals.new_scope();
+                self.locals.add(binder.clone(), bndr_ty.clone());
+                // Second scope for the args
+                self.locals.new_scope();
+                let mut kargs: Vec<BinderOrUnit> = Vec::with_capacity(args.len());
+                for arg in args {
+                    match arg {
+                        parser::BinderOrUnit::Binder(parser::Binder { binder, id }) => {
+                            let arg_ty = self.bndr_tys[id].as_ref().cloned().unwrap();
+                            self.locals.add(binder.clone(), arg_ty.clone());
+                            kargs.push(BinderOrUnit::Binder(Binder {
+                                binder: binder,
+                                ty: arg_ty,
+                            }));
+                        }
+                        parser::BinderOrUnit::Unit => {
+                            kargs.push(BinderOrUnit::Unit);
+                        }
+                    }
+                }
+
+                let rhs = self.knormal_(*rhs);
+
+                self.locals.pop_scope();
+
+                let (body, body_ty) = self.knormal(*body);
+
+                let e = Expr::LetRec {
+                    name: binder,
+                    ty: bndr_ty,
+                    args: kargs,
+                    rhs: Box::new(rhs),
+                    body: Box::new(body),
+                };
+
+                (e, body_ty)
+            }
+
             parser::Expr::App { fun, args } => {
                 let (fun, fun_ty) = self.knormal(*fun);
                 let ret_ty: Type = match &fun_ty {
@@ -307,6 +357,7 @@ impl<'a> KNormal<'a> {
 
                 (e, ret_ty)
             }
+
             parser::Expr::Tuple(args) => {
                 let mut arg_ids: Vec<Id> = Vec::with_capacity(args.len());
                 let mut arg_tmps: Vec<TmpLet> = Vec::with_capacity(args.len());
@@ -329,13 +380,30 @@ impl<'a> KNormal<'a> {
 
                 (e, Type::Tuple(arg_tys))
             }
-            parser::Expr::LetTuple {
-                bndrs: _,
-                rhs: _,
-                body: _,
-            } => todo!(),
+
+            parser::Expr::LetTuple { bndrs, rhs, body } => {
+                let mut kbndrs: Vec<(Id, Type)> = Vec::with_capacity(bndrs.len());
+
+                for bndr in bndrs {
+                    let parser::Binder { binder, id } = bndr;
+                    let bndr_ty = self.bndr_tys[id].as_ref().cloned().unwrap();
+                    kbndrs.push((binder, bndr_ty));
+                }
+
+                let (rhs, rhs_ty) = self.knormal(*rhs);
+                let (rhs_tmp, rhs_id) = self.insert_let(rhs, rhs_ty);
+
+                let (body, body_ty) = self.knormal(*body);
+
+                let e = rhs_tmp.finish(Expr::LetTuple(kbndrs, rhs_id, Box::new(body)));
+
+                (e, body_ty)
+            }
+
             parser::Expr::Array(_e1, _e2) => todo!(),
+
             parser::Expr::Get(_e1, _e2) => todo!(),
+
             parser::Expr::Put(_e1, _e2, _e3) => todo!(),
         }
     }
