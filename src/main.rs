@@ -1,11 +1,13 @@
 #![feature(or_patterns)]
 
+mod anormal;
 mod knormal;
 mod lexer;
 mod locals;
 mod parser;
 mod type_check;
 
+use anormal::anormal;
 use knormal::KNormal;
 use lexer::{tokenize, Token};
 use parser::parse;
@@ -87,10 +89,15 @@ fn do_expr(expr_str: &str) -> i32 {
         }
     };
 
-    let k_expr = KNormal::new(&bndr_tys).knormal_(expr);
+    let mut expr = KNormal::new(&bndr_tys).knormal_(expr);
 
     println!("K normalized:");
-    println!("{:?}", k_expr);
+    println!("{:?}", expr);
+
+    anormal(&mut expr);
+
+    println!("A normalized:");
+    println!("{:?}", expr);
 
     0
 }

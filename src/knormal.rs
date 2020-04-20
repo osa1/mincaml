@@ -52,9 +52,9 @@ pub enum Expr {
 
 #[derive(Debug)]
 pub struct BinOp<A> {
-    op: A,
-    arg1: Id,
-    arg2: Id,
+    pub op: A,
+    pub arg1: Id,
+    pub arg2: Id,
 }
 
 #[derive(Debug)]
