@@ -27,8 +27,17 @@ pub enum Type {
     Var(TyVar),
 }
 
+impl Type {
+    pub fn is_array(&self) -> bool {
+        match self {
+            Type::Array(_) => true,
+            _ => false,
+        }
+    }
+}
+
 /// Create initial type environment with built-is stuff.
-fn mk_type_env() -> HashMap<String, Type> {
+pub fn mk_type_env() -> HashMap<String, Type> {
     let mut env = HashMap::new();
 
     // float -> float
