@@ -1,6 +1,7 @@
 #![feature(or_patterns)]
 
 mod anormal;
+mod closure_convert;
 mod knormal;
 mod lexer;
 mod locals;
