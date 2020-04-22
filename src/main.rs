@@ -9,6 +9,7 @@ mod parser;
 mod type_check;
 
 use anormal::anormal;
+use closure_convert::closure_convert;
 use knormal::KNormal;
 use lexer::{tokenize, Token};
 use parser::parse;
@@ -99,6 +100,8 @@ fn do_expr(expr_str: &str) -> i32 {
 
     println!("A normalized:");
     println!("{:?}", expr);
+
+    let (funs, expr) = closure_convert(expr);
 
     0
 }

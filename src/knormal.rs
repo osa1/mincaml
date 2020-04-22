@@ -4,19 +4,19 @@ use crate::type_check::{mk_type_env, Type};
 
 pub type Id = String;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Binder {
     pub binder: String,
     pub ty: Type,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum BinderOrUnit {
     Binder(Binder),
     Unit,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expr {
     Unit,
     Int(u64),
@@ -50,14 +50,14 @@ pub enum Expr {
     Put(Id, Id, Id),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BinOp<A> {
     pub op: A,
     pub arg1: Id,
     pub arg2: Id,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum FloatBinOp {
     Add,
     Sub,
@@ -65,7 +65,7 @@ pub enum FloatBinOp {
     Div,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum IntBinOp {
     Add,
     Sub,

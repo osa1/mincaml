@@ -20,12 +20,15 @@
 // For this we first do one pass over the AST and annotate functions with free variables.
 
 use crate::knormal;
-use crate::knormal::{BinOp, BinderOrUnit, FloatBinOp, Id, IntBinOp};
+use crate::knormal::{BinOp, Binder, BinderOrUnit, FloatBinOp, Id, IntBinOp};
+use crate::locals::Locals;
 use crate::type_check::Type;
 
+use std::collections::{HashMap, HashSet};
+
 // Same with knormal's Expr type, except this doesn't have LetRec
-#[derive(Debug)]
-enum Expr {
+#[derive(Debug, Clone)]
+pub enum Expr {
     Unit,
     Int(u64),
     Float(f64),
@@ -53,16 +56,115 @@ enum Expr {
 
 // A function. No free variables.
 #[derive(Debug)]
-struct Fun {
-    name: Id,
-    ty: Type,
-    args: Vec<BinderOrUnit>,
-    body: Expr,
+pub struct Fun {
+    pub name: Id,
+    pub ty: Type,
+    pub args: Vec<BinderOrUnit>,
+    pub body: Expr,
+}
+
+pub fn closure_convert(expr: knormal::Expr) -> (Vec<Fun>, Expr) {
+    let mut cc = ClosureConvert::new();
+    let expr = cc.closure_convert(expr);
+    (cc.funs, expr)
 }
 
 struct ClosureConvert {
     // Top-level function definitions without free variables
     funs: Vec<Fun>,
+}
+
+fn fvs(e: &knormal::Expr, acc: &mut HashSet<Id>) {
+    use knormal::Expr::*;
+    match e {
+        Unit | Int(_) | Float(_) => {}
+        IBinOp(BinOp { arg1, arg2, .. }) | FBinOp(BinOp { arg1, arg2, .. }) | Get(arg1, arg2) => {
+            acc.insert(arg1.clone());
+            acc.insert(arg2.clone());
+        }
+        Neg(arg) | FNeg(arg) => {
+            acc.insert(arg.clone());
+        }
+        IfEq(arg1, arg2, expr1, expr2) | IfLE(arg1, arg2, expr1, expr2) => {
+            acc.insert(arg1.clone());
+            acc.insert(arg2.clone());
+            fvs(expr1, acc);
+            fvs(expr2, acc);
+        }
+        Let {
+            id,
+            ty: _,
+            rhs,
+            body,
+        } => {
+            fvs(body, acc);
+            acc.remove(id);
+            fvs(rhs, acc);
+        }
+        Var(id) => {
+            acc.insert(id.clone());
+        }
+        LetRec {
+            name,
+            ty: _,
+            args,
+            rhs,
+            body,
+        } => {
+            letrec_fvs(name, args, &**rhs, &**body, acc);
+        }
+        App(fun, args) => {
+            acc.insert(fun.clone());
+            for arg in args {
+                acc.insert(arg.clone());
+            }
+        }
+        ExtApp(_, args) | Tuple(args) => {
+            for arg in args {
+                acc.insert(arg.clone());
+            }
+        }
+        LetTuple(binders, rhs, body) => {
+            acc.insert(rhs.clone());
+            fvs(body, acc);
+            for (binder, _) in binders {
+                acc.remove(binder);
+            }
+        }
+        Put(arg1, arg2, arg3) => {
+            acc.insert(arg1.clone());
+            acc.insert(arg2.clone());
+            acc.insert(arg3.clone());
+        }
+    }
+}
+
+fn letrec_fvs(
+    name: &Id,
+    args: &[BinderOrUnit],
+    rhs: &knormal::Expr,
+    body: &knormal::Expr,
+    acc: &mut HashSet<Id>,
+) {
+    fvs(rhs, acc);
+    for arg in args {
+        match arg {
+            BinderOrUnit::Unit => {}
+            BinderOrUnit::Binder(Binder { binder, ty: _ }) => {
+                acc.remove(binder);
+            }
+        }
+    }
+    fvs(body, acc);
+    acc.remove(name);
+}
+
+fn mk_closure_id(id: &Id) -> Id {
+    format!("{}.closure", id)
+}
+
+fn mk_arg_expr(idx: usize) -> Expr {
+    todo!()
 }
 
 impl ClosureConvert {
@@ -103,7 +205,16 @@ impl ClosureConvert {
                     body: Box::new(body),
                 }
             }
-            knormal::Expr::Var(id) => Expr::Var(id),
+
+            knormal::Expr::Var(id) => {
+                // If this variable for a closure argument or free variable then we replace it with
+                // tuple access
+                todo!()
+                // match self.exprs.get(&id) {
+                //     None => Expr::Var(id),
+                //     Some(expr) => expr.clone(),
+                // }
+            }
 
             knormal::Expr::LetRec {
                 name,
@@ -111,7 +222,19 @@ impl ClosureConvert {
                 args,
                 rhs,
                 body,
-            } => todo!(),
+            } => {
+                let mut closure_fvs = HashSet::new();
+                letrec_fvs(&name, &args, &*rhs, &*body, &mut closure_fvs);
+
+                // * Allocate closure object (tuple) in a let in `body`, bind it to the name of the
+                //   letrec.
+                // * Introduce a LetTuple in `rhs` to bind captured variables.
+                // * Emit a Fun binding for the function
+                //
+                // In application site we'll replace `f x` with `f[0] f x`
+
+                todo!()
+            }
 
             knormal::Expr::App(fun, args) => todo!(),
 
