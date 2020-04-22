@@ -528,7 +528,7 @@ fn app_parsing() {
 fn app_parsing_1() {
     let code = "f 1 2";
     let tokens = crate::lexer::tokenize(code).unwrap();
-    let expr = parse(&tokens).unwrap();
+    let expr = parse(&tokens).unwrap().0;
     assert_eq!(
         expr,
         Expr::App {
@@ -542,7 +542,7 @@ fn app_parsing_1() {
 fn app_parsing_2() {
     let code = "(f 1) 2";
     let tokens = crate::lexer::tokenize(code).unwrap();
-    let expr = parse(&tokens).unwrap();
+    let expr = parse(&tokens).unwrap().0;
     assert_eq!(
         expr,
         Expr::App {
@@ -559,7 +559,7 @@ fn app_parsing_2() {
 fn app_parsing_3() {
     let code = "f x.(1) 2";
     let tokens = crate::lexer::tokenize(code).unwrap();
-    let expr = parse(&tokens).unwrap();
+    let expr = parse(&tokens).unwrap().0;
     assert_eq!(
         expr,
         Expr::App {
@@ -576,10 +576,10 @@ fn app_parsing_3() {
 fn app_parsing_4() {
     let code = "let a = Array.make 1 2 in 3";
     let tokens = crate::lexer::tokenize(code).unwrap();
-    let expr = parse(&tokens).unwrap();
+    let expr = parse(&tokens).unwrap().0;
 
     let expr_ = Expr::Let {
-        id: "a".to_string(),
+        bndr: Binder { binder: "a".to_string(), id: 0 },
         rhs: Box::new(Expr::Array(Box::new(Expr::Int(1)), Box::new(Expr::Int(2)))),
         body: Box::new(Expr::Int(3)),
     };
@@ -588,14 +588,36 @@ fn app_parsing_4() {
 }
 
 #[test]
-fn if_let_parsing() {
+fn if_let_parsing_1() {
     let code = "if true then 1 else let x = 2 in x";
     let tokens = crate::lexer::tokenize(code).unwrap();
-    let expr = parse(&tokens).unwrap();
+    let expr = parse(&tokens).unwrap().0;
 
     let then = Expr::Int(1);
     let else_ = Expr::Let {
-        id: "x".to_string(),
+        bndr: Binder { binder: "x".to_string(), id: 0 },
+        rhs: Box::new(Expr::Int(2)),
+        body: Box::new(Expr::Var("x".to_string())),
+    };
+
+    let expr_ = Expr::If(Box::new(Expr::Bool(true)), Box::new(then), Box::new(else_));
+
+    assert_eq!(expr, expr_);
+}
+
+#[test]
+fn if_let_parsing_2() {
+    let code = "if true then let x = 1 in x else let x = 2 in x";
+    let tokens = crate::lexer::tokenize(code).unwrap();
+    let expr = parse(&tokens).unwrap().0;
+
+    let then = Expr::Let {
+        bndr: Binder { binder: "x".to_string(), id: 0 },
+        rhs: Box::new(Expr::Int(1)),
+        body: Box::new(Expr::Var("x".to_string())),
+    };
+    let else_ = Expr::Let {
+        bndr: Binder { binder: "x".to_string(), id: 1 },
         rhs: Box::new(Expr::Int(2)),
         body: Box::new(Expr::Var("x".to_string())),
     };
