@@ -1,15 +1,14 @@
 #![feature(or_patterns)]
 
 mod anormal;
-mod closure_convert;
 mod knormal;
 mod lexer;
 mod locals;
 mod parser;
 mod type_check;
+mod closure_convert;
 
 use anormal::anormal;
-use closure_convert::closure_convert;
 use knormal::KNormal;
 use lexer::{tokenize, Token};
 use parser::parse;
@@ -99,9 +98,9 @@ fn do_expr(expr_str: &str) -> i32 {
     anormal(&mut expr);
 
     println!("A normalized:");
-    println!("{:?}", expr);
+    println!("{:#?}", expr);
 
-    let (funs, expr) = closure_convert(expr);
+    // let (funs, expr) = closure_convert(expr);
 
     0
 }

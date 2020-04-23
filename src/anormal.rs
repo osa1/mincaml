@@ -128,14 +128,18 @@ impl ANormal {
                 }
             }
 
-            Expr::LetTuple(bndrs, var, expr) => {
+            // Expr::LetTuple(bndrs, var, expr) => {
+            //     self.update_use(var);
+            //     self.new_scope();
+            //     for (bndr, _) in bndrs {
+            //         self.update_binder(bndr);
+            //     }
+            //     self.anormal(expr);
+            //     self.pop_scope();
+            // }
+
+            Expr::TupleIdx(var, _) => {
                 self.update_use(var);
-                self.new_scope();
-                for (bndr, _) in bndrs {
-                    self.update_binder(bndr);
-                }
-                self.anormal(expr);
-                self.pop_scope();
             }
 
             Expr::Put(var1, var2, var3) => {

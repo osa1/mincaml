@@ -45,7 +45,8 @@ pub enum Expr {
     // A C call
     ExtApp(Id, Vec<Id>),
     Tuple(Vec<Id>),
-    LetTuple(Vec<(Id, Type)>, Id, Box<Expr>),
+    // Tuple field access
+    TupleIdx(Id, usize),
     Get(Id, Id),
     Put(Id, Id, Id),
 }
@@ -395,29 +396,40 @@ impl<'a> KNormal<'a> {
             }
 
             parser::Expr::LetTuple { bndrs, rhs, body } => {
+                // Convert body with binders in scope
                 let mut kbndrs: Vec<(Id, Type)> = Vec::with_capacity(bndrs.len());
 
-                for bndr in bndrs {
+                for bndr in &bndrs {
                     let parser::Binder { binder, id } = bndr;
-                    let bndr_ty = self.id_type(id);
-                    kbndrs.push((binder, bndr_ty));
+                    let bndr_ty = self.id_type(*id);
+                    kbndrs.push((binder.clone(), bndr_ty));
                 }
-
-                let (rhs, rhs_ty) = self.knormal(*rhs);
-                let (rhs_tmp, rhs_id) = self.mk_let(rhs, rhs_ty);
 
                 self.locals.new_scope();
                 for (bndr, bndr_ty) in &kbndrs {
                     self.locals.add(bndr.clone(), bndr_ty.clone());
                 }
-
                 let (body, body_ty) = self.knormal(*body);
-
                 self.locals.pop_scope();
 
-                let e = rhs_tmp.finish(Expr::LetTuple(kbndrs, rhs_id, Box::new(body)));
+                // Generate for binders
+                let (rhs, rhs_ty) = self.knormal(*rhs);
+                let (rhs_tmp, rhs_id) = self.mk_let(rhs, rhs_ty);
 
-                (e, body_ty)
+                let e = bndrs.into_iter().enumerate().rev().fold(
+                    body,
+                    |expr, (bndr_idx, parser::Binder { binder, id })| {
+                        let ty = self.id_type(id);
+                        Expr::Let {
+                            id: binder,
+                            ty,
+                            rhs: Box::new(Expr::TupleIdx(rhs_id.clone(), bndr_idx)),
+                            body: Box::new(expr),
+                        }
+                    },
+                );
+
+                (rhs_tmp.finish(e), body_ty)
             }
 
             parser::Expr::Array(e1, e2) => {
