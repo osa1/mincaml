@@ -108,6 +108,11 @@ fn do_expr(expr_str: &str) -> i32 {
     // println!("{:#?}", funs);
 
     // println!("Expr:");
+
+    for fun in funs {
+        println!("{}", fun.pprint().pretty(80));
+    }
+
     println!("{}", expr.pprint().pretty(80));
 
     0

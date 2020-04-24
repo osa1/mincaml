@@ -290,3 +290,25 @@ impl Expr {
         }
     }
 }
+
+impl Fun {
+    pub fn pprint(&self) -> RcDoc<()> {
+        let Fun {
+            name,
+            ty: _,
+            args,
+            body,
+        } = self;
+        RcDoc::text("let rec")
+            .append(RcDoc::space())
+            .append(ppr_id(name))
+            .append(RcDoc::space())
+            .append(RcDoc::intersperse(
+                args.iter().map(BinderOrUnit::pprint),
+                RcDoc::space(),
+            ))
+            .append(RcDoc::space())
+            .append(RcDoc::text("="))
+            .append(RcDoc::hardline().append(body.pprint()).nest(4))
+    }
+}

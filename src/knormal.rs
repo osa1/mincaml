@@ -518,3 +518,12 @@ impl<'a> KNormal<'a> {
         }
     }
 }
+
+impl BinderOrUnit {
+    pub fn pprint(&self) -> RcDoc<()> {
+        match self {
+            BinderOrUnit::Unit => RcDoc::text("()"),
+            BinderOrUnit::Binder(Binder { binder, ty: _ }) => ppr_id(binder),
+        }
+    }
+}
