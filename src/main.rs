@@ -1,18 +1,19 @@
 #![feature(or_patterns)]
 
 mod anormal;
+mod closure_convert;
 mod knormal;
 mod lexer;
 mod locals;
 mod parser;
 mod type_check;
-mod closure_convert;
 
 use anormal::anormal;
-use knormal::KNormal;
+use knormal::knormal;
 use lexer::{tokenize, Token};
 use parser::parse;
 use type_check::type_check_pgm;
+use closure_convert::closure_convert;
 
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
@@ -90,7 +91,7 @@ fn do_expr(expr_str: &str) -> i32 {
         }
     };
 
-    let mut expr = KNormal::new(&bndr_tys).knormal_(expr);
+    let mut expr = knormal(expr, &bndr_tys);
 
     println!("K normalized:");
     println!("{:?}", expr);
@@ -100,7 +101,13 @@ fn do_expr(expr_str: &str) -> i32 {
     println!("A normalized:");
     println!("{:#?}", expr);
 
-    // let (funs, expr) = closure_convert(expr);
+    let (funs, expr) = closure_convert(expr);
+
+    println!("Functions:");
+    println!("{:#?}", funs);
+
+    println!("Expr:");
+    println!("{:#?}", expr);
 
     0
 }

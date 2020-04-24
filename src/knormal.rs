@@ -72,6 +72,10 @@ pub enum IntBinOp {
     Sub,
 }
 
+pub fn knormal(expr: parser::Expr, bndr_tys: &[Option<Type>]) -> Expr {
+    KNormal::new(bndr_tys).knormal_(expr)
+}
+
 struct TmpLet {
     id: Id,
     ty: Type,

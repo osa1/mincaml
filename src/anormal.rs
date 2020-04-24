@@ -3,7 +3,7 @@
 use crate::knormal::{BinOp, Binder, BinderOrUnit, Expr, Id};
 use crate::locals::Locals;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 pub fn anormal(expr: &mut Expr) {
     ANormal::new().anormal(expr)
@@ -149,4 +149,95 @@ impl ANormal {
             }
         }
     }
+}
+
+pub fn fvs(e: &Expr, acc: &mut HashSet<Id>) {
+    match e {
+        Expr::Unit | Expr::Int(_) | Expr::Float(_) => {}
+        Expr::IBinOp(BinOp { arg1, arg2, op: _ }) => {
+            acc.insert(arg1.clone());
+            acc.insert(arg2.clone());
+        }
+        Expr::FBinOp(BinOp { arg1, arg2, op: _ }) => {
+            acc.insert(arg1.clone());
+            acc.insert(arg2.clone());
+        }
+        Expr::Neg(arg) | Expr::FNeg(arg) => {
+            acc.insert(arg.clone());
+        }
+        Expr::IfEq(arg1, arg2, e1, e2) | Expr::IfLE(arg1, arg2, e1, e2) => {
+            acc.insert(arg1.clone());
+            acc.insert(arg2.clone());
+            fvs(e1, acc);
+            fvs(e2, acc);
+        }
+        Expr::Let {
+            id,
+            ty: _,
+            rhs,
+            body,
+        } => {
+            fvs(rhs, acc);
+            fvs(body, acc);
+            acc.remove(id);
+        }
+        Expr::Var(id) => {
+            acc.insert(id.clone());
+        }
+        Expr::LetRec {
+            name,
+            ty: _,
+            args,
+            rhs,
+            body,
+        } => {
+            fvs(rhs, acc);
+            fvs(body, acc);
+            acc.remove(name);
+            for arg in args {
+                if let BinderOrUnit::Binder(Binder { binder, .. }) = arg {
+                    acc.remove(binder);
+                }
+            }
+        }
+        Expr::App(fun, args) => {
+            acc.insert(fun.clone());
+            for arg in args {
+                acc.insert(arg.clone());
+            }
+        }
+        Expr::ExtApp(_, args) | Expr::Tuple(args) => {
+            for arg in args {
+                acc.insert(arg.clone());
+            }
+        }
+        Expr::TupleIdx(arg, _) => {
+            acc.insert(arg.clone());
+        }
+        Expr::Get(arg1, arg2) => {
+            acc.insert(arg1.clone());
+            acc.insert(arg2.clone());
+        }
+        Expr::Put(arg1, arg2, arg3) => {
+            acc.insert(arg1.clone());
+            acc.insert(arg2.clone());
+            acc.insert(arg3.clone());
+        }
+    }
+}
+
+
+#[cfg(test)]
+fn anormal_str(s: &str) -> Expr {
+    use crate::lexer::{tokenize, Token};
+    use crate::parser::parse;
+    use crate::type_check::type_check_pgm;
+    use crate::knormal::knormal;
+
+    let tokens: Vec<Token> = tokenize(s).unwrap();
+    let (expr, bndr_count) = parse(&tokens).unwrap();
+    let bndr_tys = type_check_pgm(&expr, bndr_count).unwrap();
+    let mut expr = knormal(expr, &bndr_tys);
+    anormal(&mut expr);
+    expr
 }

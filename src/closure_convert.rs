@@ -1,3 +1,4 @@
+use crate::anormal;
 use crate::knormal;
 use crate::knormal::{BinOp, Binder, BinderOrUnit, FloatBinOp, Id, IntBinOp};
 use crate::locals::Locals;
@@ -51,10 +52,6 @@ pub fn closure_convert(expr: knormal::Expr) -> (Vec<Fun>, Expr) {
 struct ClosureConvert {
     // Top-level function definitions without free variables
     funs: Vec<Fun>,
-    // Variables local to LetRecs. On entering a LetRec we push a new entry. On exit we pop.
-    locals: Vec<Locals<()>>,
-    // Variables free in LetRecs. On entering a LetRec we push a new entry. On exit we pop.
-    fvs: Vec<HashSet<Id>>,
     // Used to generate temporaries
     tmp_count: usize,
 }
@@ -63,8 +60,6 @@ impl ClosureConvert {
     fn new() -> ClosureConvert {
         ClosureConvert {
             funs: vec![],
-            locals: vec![],
-            fvs: vec![],
             tmp_count: 0,
         }
     }
@@ -73,53 +68,6 @@ impl ClosureConvert {
         let tmp = self.tmp_count;
         self.tmp_count += 1;
         format!("__cc.{}", tmp)
-    }
-
-    fn new_scope(&mut self) {
-        if let Some(locals) = self.locals.last_mut() {
-            locals.new_scope();
-        }
-    }
-
-    fn pop_scope(&mut self) {
-        if let Some(locals) = self.locals.last_mut() {
-            locals.pop_scope();
-        }
-    }
-
-    fn enter_letrec(&mut self) {
-        self.locals.push(Locals::new(HashMap::new()));
-        self.fvs.push(HashSet::new());
-    }
-
-    fn exit_letrec(&mut self) -> HashSet<Id> {
-        self.locals.pop();
-        self.fvs.pop().unwrap()
-    }
-
-    fn add_local(&mut self, id: Id) {
-        if let Some(locals) = self.locals.last_mut() {
-            locals.add(id, ());
-        }
-    }
-
-    fn is_free(&self, id: &Id) -> bool {
-        match self.locals.last() {
-            Some(scope) => scope.get(id).is_some(),
-            None =>
-            // Not in a LetRec
-            {
-                false
-            }
-        }
-    }
-
-    fn id(&mut self, id: &Id) {
-        if self.is_free(id) {
-            if let Some(fvs) = self.fvs.last_mut() {
-                fvs.insert(id.clone());
-            }
-        }
     }
 
     fn closure_convert(&mut self, expr: knormal::Expr) -> Expr {
@@ -146,10 +94,7 @@ impl ClosureConvert {
             }
             knormal::Expr::Let { id, ty, rhs, body } => {
                 let rhs = self.closure_convert(*rhs);
-                self.new_scope();
-                self.add_local(id.clone());
                 let body = self.closure_convert(*body);
-                self.pop_scope();
                 Expr::Let {
                     id,
                     ty,
@@ -166,17 +111,9 @@ impl ClosureConvert {
             //
             // Interesting parts
             //
-            knormal::Expr::Var(id) => {
-                self.id(&id);
-                Expr::Var(id)
-            }
+            knormal::Expr::Var(id) => Expr::Var(id),
 
             knormal::Expr::App(fun, mut args) => {
-                self.id(&fun);
-                for arg in &args {
-                    self.id(arg);
-                }
-
                 let fun_binder = self.new_tmp();
                 args.insert(0, fun.clone());
                 Expr::Let {
@@ -190,25 +127,58 @@ impl ClosureConvert {
             knormal::Expr::LetRec {
                 name,
                 ty,
-                args,
+                mut args,
                 rhs,
                 body,
             } => {
-                self.enter_letrec();
-                self.add_local(name.clone());
+                let mut fvs = HashSet::new();
+                anormal::fvs(&rhs, &mut fvs);
                 for arg in &args {
                     match arg {
-                        BinderOrUnit::Unit => {}
-                        BinderOrUnit::Binder(Binder { binder, ty: _ }) => {
-                            self.add_local(binder.clone());
+                        BinderOrUnit::Binder(Binder { binder, .. }) =>  {
+                            fvs.remove(binder);
                         }
+                        BinderOrUnit::Unit => {}
                     }
                 }
 
-                let rhs = self.closure_convert(*rhs);
-                let fvs = self.exit_letrec();
+                // println!("fvs: {:?}", fvs);
 
-                todo!()
+                // Emit function
+                let closure_arg = self.new_tmp();
+                args.insert(
+                    0,
+                    BinderOrUnit::Binder(Binder {
+                        binder: closure_arg.clone(),
+                        ty: Type::Int, // FIXME
+                    }),
+                );
+
+                let rhs = self.closure_convert(*rhs);
+                let rhs = fvs.iter().enumerate().fold(rhs, |e, (fv_idx, fv)| {
+                    Expr::Let {
+                        id: fv.clone(),
+                        ty: Type::Int, /* FIXME */
+                        rhs: Box::new(Expr::TupleIdx(closure_arg.clone(), fv_idx + 1)),
+                        body: Box::new(e),
+                    }
+                });
+
+                self.funs.push(Fun {
+                    name: name.clone(),
+                    ty: Type::Int, // FIXME
+                    args,
+                    body: rhs,
+                });
+
+                // Allocate closure
+                let body = self.closure_convert(*body);
+                let mut closure_tuple = vec![name.clone()];
+                for fv in fvs.into_iter() {
+                    closure_tuple.push(fv);
+                }
+                let closure_tuple = Expr::Tuple(closure_tuple);
+                Expr::Let { id: name, ty: Type::Int, rhs: Box::new(closure_tuple), body: Box::new(body) }
             }
         }
     }
