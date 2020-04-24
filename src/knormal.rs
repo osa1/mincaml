@@ -104,19 +104,21 @@ pub fn knormal(expr: parser::Expr, bndr_tys: &[Option<Type>]) -> Expr {
     KNormal::new(bndr_tys).knormal_(expr)
 }
 
-struct TmpLet {
-    id: Id,
-    ty: Type,
-    rhs: Box<Expr>,
+enum TmpLet {
+    TmpLet { id: Id, ty: Type, rhs: Expr },
+    NoNeed,
 }
 
 impl TmpLet {
     fn finish(self, body: Expr) -> Expr {
-        Expr::Let {
-            id: self.id,
-            ty: self.ty,
-            rhs: self.rhs,
-            body: Box::new(body),
+        match self {
+            TmpLet::NoNeed => body,
+            TmpLet::TmpLet { id, ty, rhs } => Expr::Let {
+                id,
+                ty,
+                rhs: Box::new(rhs),
+                body: Box::new(body),
+            },
         }
     }
 }
@@ -148,20 +150,23 @@ impl<'a> KNormal<'a> {
         }
     }
 
-    // Creates a let with body initialized as `()` (Unit). Make sure to update it after normalizing
-    // the body!
     fn mk_let(&mut self, rhs: Expr, ty: Type) -> (TmpLet, String) {
-        let tmp = self.tmp_count;
-        self.tmp_count += 1;
-        let id = format!("__t{}", tmp);
-        (
-            TmpLet {
-                id: id.clone(),
-                ty: ty,
-                rhs: Box::new(rhs),
-            },
-            id,
-        )
+        match rhs {
+            Expr::Var(var) => (TmpLet::NoNeed, var),
+            _ => {
+                let tmp = self.tmp_count;
+                self.tmp_count += 1;
+                let id = format!("__t{}", tmp);
+                (
+                    TmpLet::TmpLet {
+                        id: id.clone(),
+                        ty,
+                        rhs,
+                    },
+                    id,
+                )
+            }
+        }
     }
 
     pub fn knormal_(&mut self, expr: parser::Expr) -> Expr {
