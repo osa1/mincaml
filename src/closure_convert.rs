@@ -1,10 +1,9 @@
 use crate::anormal;
 use crate::knormal;
-use crate::knormal::{BinOp, Binder, BinderOrUnit, FloatBinOp, Id, IntBinOp};
-use crate::locals::Locals;
+use crate::knormal::{ppr_id, BinOp, Binder, BinderOrUnit, FloatBinOp, Id, IntBinOp};
 use crate::type_check::Type;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 // Same with knormal's Expr type, except this doesn't have LetRec
 #[derive(Debug, Clone)]
@@ -126,7 +125,7 @@ impl ClosureConvert {
 
             knormal::Expr::LetRec {
                 name,
-                ty,
+                ty: _,
                 mut args,
                 rhs,
                 body,
@@ -135,7 +134,7 @@ impl ClosureConvert {
                 anormal::fvs(&rhs, &mut fvs);
                 for arg in &args {
                     match arg {
-                        BinderOrUnit::Binder(Binder { binder, .. }) =>  {
+                        BinderOrUnit::Binder(Binder { binder, .. }) => {
                             fvs.remove(binder);
                         }
                         BinderOrUnit::Unit => {}
@@ -178,8 +177,120 @@ impl ClosureConvert {
                     closure_tuple.push(fv);
                 }
                 let closure_tuple = Expr::Tuple(closure_tuple);
-                Expr::Let { id: name, ty: Type::Int, rhs: Box::new(closure_tuple), body: Box::new(body) }
+                Expr::Let {
+                    id: name,
+                    ty: Type::Int,
+                    rhs: Box::new(closure_tuple),
+                    body: Box::new(body),
+                }
             }
+        }
+    }
+}
+
+use pretty::RcDoc;
+
+impl Expr {
+    pub fn pprint(&self) -> RcDoc<()> {
+        use Expr::*;
+        match self {
+            Unit => RcDoc::text("()"),
+
+            Int(i) => RcDoc::text(format!("{}", i)),
+
+            Float(f) => RcDoc::text(format!("{}", f)),
+
+            IBinOp(BinOp { op, arg1, arg2 }) => ppr_id(arg1)
+                .append(RcDoc::space())
+                .append(op.pprint())
+                .append(RcDoc::space())
+                .append(ppr_id(arg2)),
+
+            FBinOp(BinOp { op, arg1, arg2 }) => ppr_id(arg1)
+                .append(RcDoc::space())
+                .append(op.pprint())
+                .append(RcDoc::space())
+                .append(ppr_id(arg2)),
+
+            Neg(arg) => RcDoc::text("-").append(ppr_id(arg)),
+
+            FNeg(arg) => RcDoc::text("-.").append(ppr_id(arg)),
+
+            IfEq(arg1, arg2, then_, else_) => RcDoc::text("if")
+                .append(RcDoc::space())
+                .append(ppr_id(arg1))
+                .append(RcDoc::space())
+                .append(RcDoc::text("="))
+                .append(RcDoc::space())
+                .append(ppr_id(arg2))
+                .append(RcDoc::space())
+                .append(RcDoc::text("then"))
+                .append(RcDoc::line().nest(4).append(then_.pprint()))
+                .append(RcDoc::line())
+                .append(RcDoc::text("else"))
+                .append(RcDoc::line().nest(4).append(else_.pprint())),
+
+            IfLE(arg1, arg2, then_, else_) => RcDoc::text("if")
+                .append(RcDoc::space())
+                .append(ppr_id(arg1))
+                .append(RcDoc::space())
+                .append(RcDoc::text("<="))
+                .append(RcDoc::space())
+                .append(ppr_id(arg2))
+                .append(RcDoc::space())
+                .append(RcDoc::text("then"))
+                .append(RcDoc::line().nest(4).append(then_.pprint()))
+                .append(RcDoc::line())
+                .append(RcDoc::text("else"))
+                .append(RcDoc::line().nest(4).append(else_.pprint())),
+
+            Let {
+                id,
+                ty: _,
+                rhs,
+                body,
+            } => {
+                let d1 = RcDoc::text("let")
+                    .append(RcDoc::space())
+                    .append(ppr_id(id))
+                    .append(RcDoc::space())
+                    .append(RcDoc::text("="))
+                    .append(RcDoc::line().nest(4).append(rhs.pprint()))
+                    .append(RcDoc::line())
+                    .append(RcDoc::text("in"))
+                    .append(RcDoc::line().nest(4).append(body.pprint()));
+
+                d1
+            }
+
+            Var(id) => ppr_id(id),
+
+            App(fun, args) | ExtApp(fun, args) => ppr_id(fun)
+                .append(RcDoc::space())
+                .append(RcDoc::intersperse(args.iter().map(ppr_id), RcDoc::space())),
+
+            Tuple(args) => RcDoc::text("(")
+                .append(RcDoc::intersperse(
+                    args.iter().map(ppr_id),
+                    RcDoc::text(", "),
+                ))
+                .append(")"),
+
+            TupleIdx(tup, idx) => ppr_id(tup).append(RcDoc::text(format!(".({})", idx))),
+
+            Get(arg1, arg2) => ppr_id(arg1)
+                .append(RcDoc::text(".("))
+                .append(ppr_id(arg2))
+                .append(RcDoc::text(")")),
+
+            Put(arg1, arg2, arg3) => ppr_id(arg1)
+                .append(RcDoc::text(".("))
+                .append(ppr_id(arg2))
+                .append(RcDoc::text(")"))
+                .append(RcDoc::space())
+                .append(RcDoc::text("<-"))
+                .append(RcDoc::space())
+                .append(ppr_id(arg3)),
         }
     }
 }

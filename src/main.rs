@@ -9,11 +9,11 @@ mod parser;
 mod type_check;
 
 use anormal::anormal;
+use closure_convert::closure_convert;
 use knormal::knormal;
 use lexer::{tokenize, Token};
 use parser::parse;
 use type_check::type_check_pgm;
-use closure_convert::closure_convert;
 
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
@@ -68,7 +68,7 @@ fn do_expr(expr_str: &str) -> i32 {
         Ok(tokens) => tokens,
     };
 
-    println!("{:#?}", tokens);
+    // println!("{:#?}", tokens);
 
     let (expr, bndr_count) = match parse(&tokens) {
         Err(err) => {
@@ -78,7 +78,7 @@ fn do_expr(expr_str: &str) -> i32 {
         Ok(expr) => expr,
     };
 
-    println!("{:#?}", expr);
+    // println!("{:#?}", expr);
 
     let bndr_tys = match type_check_pgm(&expr, bndr_count) {
         Err(err) => {
@@ -86,28 +86,29 @@ fn do_expr(expr_str: &str) -> i32 {
             return 1;
         }
         Ok(bndr_tys) => {
-            println!("Binder types: {:?}", bndr_tys);
             bndr_tys
         }
     };
 
+    // println!("Binder types: {:?}", bndr_tys);
+
     let mut expr = knormal(expr, &bndr_tys);
 
-    println!("K normalized:");
-    println!("{:?}", expr);
+    // println!("K normalized:");
+    // println!("{:?}", expr);
 
     anormal(&mut expr);
 
-    println!("A normalized:");
-    println!("{:#?}", expr);
+    // println!("A normalized:");
+    // println!("{:#?}", expr);
 
     let (funs, expr) = closure_convert(expr);
 
-    println!("Functions:");
-    println!("{:#?}", funs);
+    // println!("Functions:");
+    // println!("{:#?}", funs);
 
-    println!("Expr:");
-    println!("{:#?}", expr);
+    // println!("Expr:");
+    println!("{}", expr.pprint().pretty(80));
 
     0
 }

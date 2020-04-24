@@ -2,7 +2,13 @@ use crate::locals::Locals;
 use crate::parser;
 use crate::type_check::{mk_type_env, Type};
 
+use pretty::RcDoc;
+
 pub type Id = String;
+
+pub fn ppr_id(id: &Id) -> RcDoc {
+    RcDoc::text(id)
+}
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Binder {
@@ -70,6 +76,28 @@ pub enum FloatBinOp {
 pub enum IntBinOp {
     Add,
     Sub,
+}
+
+impl IntBinOp {
+    pub fn pprint(&self) -> RcDoc<()> {
+        use IntBinOp::*;
+        match self {
+            Add => RcDoc::text("+"),
+            Sub => RcDoc::text("-"),
+        }
+    }
+}
+
+impl FloatBinOp {
+    pub fn pprint(&self) -> RcDoc<()> {
+        use FloatBinOp::*;
+        match self {
+            Add => RcDoc::text("+."),
+            Sub => RcDoc::text("-."),
+            Mul => RcDoc::text("/."),
+            Div => RcDoc::text("*."),
+        }
+    }
 }
 
 pub fn knormal(expr: parser::Expr, bndr_tys: &[Option<Type>]) -> Expr {

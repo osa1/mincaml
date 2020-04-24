@@ -9,6 +9,7 @@ name = "mc"
 path = "src/main.rs"
 
 [dependencies]
+pretty = "0.10"
 rustyline = "6.0"
 
 [profile.release]
