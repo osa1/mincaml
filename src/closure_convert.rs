@@ -225,10 +225,10 @@ impl Expr {
                 .append(ppr_id(arg2))
                 .append(RcDoc::space())
                 .append(RcDoc::text("then"))
-                .append(RcDoc::line().nest(4).append(then_.pprint()))
+                .append(RcDoc::line().append(then_.pprint()).nest(4))
                 .append(RcDoc::line())
                 .append(RcDoc::text("else"))
-                .append(RcDoc::line().nest(4).append(else_.pprint())),
+                .append(RcDoc::line().append(else_.pprint()).nest(4)),
 
             IfLE(arg1, arg2, then_, else_) => RcDoc::text("if")
                 .append(RcDoc::space())
@@ -239,29 +239,25 @@ impl Expr {
                 .append(ppr_id(arg2))
                 .append(RcDoc::space())
                 .append(RcDoc::text("then"))
-                .append(RcDoc::line().nest(4).append(then_.pprint()))
+                .append(RcDoc::line().append(then_.pprint()).nest(4))
                 .append(RcDoc::line())
                 .append(RcDoc::text("else"))
-                .append(RcDoc::line().nest(4).append(else_.pprint())),
+                .append(RcDoc::line().append(else_.pprint()).nest(4)),
 
             Let {
                 id,
                 ty: _,
                 rhs,
                 body,
-            } => {
-                let d1 = RcDoc::text("let")
-                    .append(RcDoc::space())
-                    .append(ppr_id(id))
-                    .append(RcDoc::space())
-                    .append(RcDoc::text("="))
-                    .append(RcDoc::line().nest(4).append(rhs.pprint()))
-                    .append(RcDoc::line())
-                    .append(RcDoc::text("in"))
-                    .append(RcDoc::line().nest(4).append(body.pprint()));
-
-                d1
-            }
+            } => RcDoc::text("let")
+                .append(RcDoc::space())
+                .append(ppr_id(id))
+                .append(RcDoc::space())
+                .append(RcDoc::text("="))
+                .append(RcDoc::line().append(rhs.pprint()).nest(4))
+                .append(RcDoc::line())
+                .append(RcDoc::text("in"))
+                .append(RcDoc::line().append(body.pprint()).nest(4)),
 
             Var(id) => ppr_id(id),
 
