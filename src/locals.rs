@@ -1,15 +1,24 @@
-use std::collections::HashMap;
+use fxhash::FxHashMap;
+use std::hash::Hash;
 use std::mem::replace;
 
-pub struct Locals<A> {
-    env: HashMap<String, A>,
-    // `A` below is the `A` we override, not the `A` of the binder in the current scope!
-    current_scope: Vec<(String, Option<A>)>,
-    scopes: Vec<Vec<(String, Option<A>)>>,
+pub struct Locals<K, V>
+where
+    K: Clone + Hash + Eq,
+    V: Clone,
+{
+    env: FxHashMap<K, V>,
+    // `V` below is the `V` we override, not the `V` of the binder in the current scope!
+    current_scope: Vec<(K, Option<V>)>,
+    scopes: Vec<Vec<(K, Option<V>)>>,
 }
 
-impl<A: Clone> Locals<A> {
-    pub fn new(globals: HashMap<String, A>) -> Locals<A> {
+impl<K, V> Locals<K, V>
+where
+    K: Clone + Hash + Eq,
+    V: Clone,
+{
+    pub fn new(globals: FxHashMap<K, V>) -> Locals<K, V> {
         Locals {
             env: globals,
             current_scope: vec![],
@@ -32,13 +41,13 @@ impl<A: Clone> Locals<A> {
         self.current_scope = self.scopes.pop().unwrap();
     }
 
-    pub fn add(&mut self, id: String, ty: A) {
-        let old_ty = self.env.get(&id).cloned();
-        self.current_scope.push((id.clone(), old_ty));
-        self.env.insert(id, ty);
+    pub fn add(&mut self, var: K, ty: V) {
+        let old_ty = self.env.get(&var).cloned();
+        self.current_scope.push((var.clone(), old_ty));
+        self.env.insert(var, ty);
     }
 
-    pub fn get(&self, id: &str) -> Option<&A> {
-        self.env.get(id)
+    pub fn get(&self, var: &K) -> Option<&V> {
+        self.env.get(var)
     }
 }

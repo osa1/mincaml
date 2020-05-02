@@ -1,16 +1,19 @@
 #![feature(or_patterns)]
 
-mod anormal;
-mod closure_convert;
-mod knormal;
+// mod anormal;
+// mod closure_convert;
+// mod instr_sel;
+mod interner;
+//mod knormal;
 mod lexer;
 mod locals;
 mod parser;
 mod type_check;
+mod var;
 
-use anormal::anormal;
-use closure_convert::closure_convert;
-use knormal::knormal;
+// use anormal::anormal;
+// use closure_convert::closure_convert;
+// use knormal::knormal;
 use lexer::{tokenize, Token};
 use parser::parse;
 use type_check::type_check_pgm;
@@ -70,7 +73,7 @@ fn do_expr(expr_str: &str) -> i32 {
 
     // println!("{:#?}", tokens);
 
-    let (expr, bndr_count) = match parse(&tokens) {
+    let mut expr = match parse(&tokens) {
         Err(err) => {
             println!("Parser error: {:#?}", err);
             return 1;
@@ -78,20 +81,20 @@ fn do_expr(expr_str: &str) -> i32 {
         Ok(expr) => expr,
     };
 
-    // println!("{:#?}", expr);
+    println!("Expr: {:#?}", expr);
 
-    let bndr_tys = match type_check_pgm(&expr, bndr_count) {
+    let ty_env = match type_check_pgm(&mut expr) {
         Err(err) => {
             println!("Type error: {:#?}", err);
             return 1;
         }
-        Ok(bndr_tys) => {
-            bndr_tys
-        }
+        Ok(ty_env) => ty_env,
     };
 
-    // println!("Binder types: {:?}", bndr_tys);
+    println!("Type env: {:?}", ty_env);
+    println!("Type-checked expr: {:#?}", expr);
 
+    /*
     let mut expr = knormal(expr, &bndr_tys);
 
     // println!("K normalized:");
@@ -114,6 +117,7 @@ fn do_expr(expr_str: &str) -> i32 {
     }
 
     println!("{}", expr.pprint().pretty(80));
+    */
 
     0
 }

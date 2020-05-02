@@ -1,6 +1,6 @@
 use crate::anormal;
 use crate::knormal;
-use crate::knormal::{ppr_id, BinOp, Binder, BinderOrUnit, FloatBinOp, Id, IntBinOp};
+pub use crate::knormal::{ppr_id, BinOp, Binder, BinderOrUnit, FloatBinOp, Id, IntBinOp};
 use crate::type_check::Type;
 
 use std::collections::HashSet;
