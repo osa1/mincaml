@@ -268,10 +268,7 @@ fn type_check(
                 *var = binder.clone();
                 Ok(ty.clone())
             }
-            None => {
-                // TODO: Check global env
-                Err(TypeErr::UnboundVar(var.clone()))
-            }
+            None => Err(TypeErr::UnboundVar(var.clone())),
         },
 
         Expr::LetRec {
