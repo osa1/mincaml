@@ -8,7 +8,9 @@ mod knormal;
 mod lexer;
 mod locals;
 mod parser;
+mod perf;
 mod type_check;
+mod utils;
 mod var;
 
 // use closure_convert::closure_convert;
@@ -20,6 +22,11 @@ use type_check::type_check_pgm;
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 use std::process::exit;
+use std::time::Instant;
+
+#[cfg(debug_assertions)]
+#[global_allocator]
+static A: perf::AllocCounter = perf::AllocCounter;
 
 fn main() {
     // println!("size_of::<u32>() == {}", std::mem::size_of::<u32>());
@@ -128,6 +135,25 @@ fn do_expr(expr_str: &str) -> i32 {
 }
 
 fn do_file(file: &str) -> i32 {
+    let start_time = Instant::now();
+    perf::reset_allocated();
+
     let contents = std::fs::read_to_string(file).unwrap();
-    do_expr(&contents)
+    let ret = do_expr(&contents);
+
+    let allocated = perf::get_allocated();
+    let elapsed = start_time.elapsed();
+
+    println!(
+        "File took {} ms to build.",
+        utils::comma_sep(&format!("{}", elapsed.as_millis()))
+    );
+    if allocated != 0 {
+        println!(
+            "{} bytes allocated.",
+            utils::comma_sep(&format!("{}", allocated))
+        );
+    }
+
+    ret
 }
