@@ -8,7 +8,7 @@ use std::rc::Rc;
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
 pub struct Uniq(pub NonZeroU32);
 
-#[derive(Debug, Hash, Clone)]
+#[derive(Debug, Clone)]
 pub enum Var {
     User(UserVar),
     Generated(GeneratedVar),
@@ -34,10 +34,7 @@ impl Var {
     }
 
     pub fn new_generated(phase: CompilerPhase, uniq: Uniq) -> Var {
-        Var::Generated(GeneratedVar {
-            phase,
-            uniq,
-        })
+        Var::Generated(GeneratedVar { phase, uniq })
     }
 
     pub fn new_builtin(name: &str, uniq: Uniq) -> Var {
@@ -66,6 +63,12 @@ impl PartialEq for Var {
 }
 
 impl Eq for Var {}
+
+impl Hash for Var {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.get_uniq().hash(state)
+    }
+}
 
 impl fmt::Display for Var {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -168,7 +171,7 @@ impl CompilerPhase {
     }
 }
 
-#[derive(Debug, Hash, PartialEq, Eq, Clone)]
+#[derive(Debug, Clone)]
 pub struct BuiltinVar {
     name: Rc<str>,
     uniq: Uniq,
@@ -177,6 +180,20 @@ pub struct BuiltinVar {
 impl fmt::Display for BuiltinVar {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "#builtin[{}]", self.name)
+    }
+}
+
+impl PartialEq<BuiltinVar> for BuiltinVar {
+    fn eq(&self, other: &Self) -> bool {
+        self.uniq == other.uniq
+    }
+}
+
+impl Eq for BuiltinVar {}
+
+impl Hash for BuiltinVar {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.uniq.hash(state)
     }
 }
 
@@ -190,7 +207,7 @@ impl BuiltinVar {
     }
 }
 
-#[derive(Debug, Hash, PartialEq, Eq, Clone)]
+#[derive(Debug, Clone)]
 pub struct ExternalVar {
     name: Rc<str>,
     uniq: Uniq,
@@ -199,6 +216,20 @@ pub struct ExternalVar {
 impl fmt::Display for ExternalVar {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "#ext[{}]", self.name)
+    }
+}
+
+impl PartialEq<ExternalVar> for ExternalVar {
+    fn eq(&self, other: &Self) -> bool {
+        self.uniq == other.uniq
+    }
+}
+
+impl Eq for ExternalVar {}
+
+impl Hash for ExternalVar {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.uniq.hash(state)
     }
 }
 

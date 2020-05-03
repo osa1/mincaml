@@ -18,6 +18,10 @@ impl InternId {
             value: unsafe { NonZeroU32::new_unchecked(i + 1) },
         }
     }
+
+    fn to_u32(&self) -> u32 {
+        self.value.get() - 1
+    }
 }
 
 #[derive(Debug)]
@@ -25,7 +29,6 @@ pub struct InternTable<K> {
     // table_id: u32,
     map: FxHashMap<K, InternId>,
     values: Vec<Rc<K>>,
-    free: InternId,
 }
 
 impl<K> Default for InternTable<K>
@@ -36,7 +39,6 @@ where
         Self {
             map: Default::default(),
             values: Default::default(),
-            free: InternId::from_u32(0),
         }
     }
 }
@@ -45,25 +47,19 @@ impl<K> InternTable<K>
 where
     K: Eq + Hash,
 {
-    fn new_intern_id(&mut self) -> InternId {
-        let intern_id = self.free;
-        self.free = InternId::from_u32(intern_id.value.get() + 1);
-        intern_id
-    }
-
     pub fn intern(&mut self, k: K) -> InternId {
         match self.map.get(&k) {
             Some(intern_id) => *intern_id,
             None => {
-                let intern_id = self.new_intern_id();
+                let idx = self.values.len();
                 self.values.push(Rc::new(k));
-                intern_id
+                InternId::from_u32(idx as u32)
             }
         }
     }
 
     pub fn get(&self, id: InternId) -> Rc<K> {
         // assert_eq!(id.table_id, self.table_id);
-        self.values[id.value.get() as usize].clone()
+        self.values[id.to_u32() as usize].clone()
     }
 }

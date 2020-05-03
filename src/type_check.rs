@@ -2,17 +2,14 @@ use fxhash::FxHashMap;
 use std::rc::Rc;
 use take_mut::take;
 
+use crate::ctx::{Ctx, VarId};
 use crate::locals::Locals;
 use crate::parser::Expr;
-use crate::var::{Var, Uniq};
+use crate::var::Uniq;
 
-/// Type variables are represented as unique integers.
-pub type TyVar = u32;
+pub type TyVar = Uniq;
 
-// NOTE: Not thread-safe!
-static mut NEXT_TYVAR: TyVar = 0;
-
-pub type TypeEnv = FxHashMap<Uniq, Type>;
+pub type TypeEnv = FxHashMap<VarId, Type>;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Type {
@@ -26,7 +23,6 @@ pub enum Type {
     Var(TyVar),
 }
 
-/*
 impl Type {
     pub fn is_array(&self) -> bool {
         match self {
@@ -36,60 +32,6 @@ impl Type {
     }
 }
 
-fn fresh_tyvar() -> Type {
-    let tyvar = unsafe { NEXT_TYVAR };
-    unsafe {
-        NEXT_TYVAR += 1;
-    }
-    Type::Var(tyvar)
-}
-
-/// Create initial type environment with built-is stuff.
-fn mk_type_env() -> TypeEnv {
-    let mut env: TypeEnv = Default::default();
-
-    // float -> float
-    let float_float = Type::Fun {
-        args: vec![Type::Float],
-        ret: Box::new(Type::Float),
-    };
-
-    // float -> int
-    let float_int = Type::Fun {
-        args: vec![Type::Float],
-        ret: Box::new(Type::Int),
-    };
-
-    env.insert(
-        Var::builtin("print_int"),
-        Type::Fun {
-            args: vec![Type::Int],
-            ret: Box::new(Type::Unit),
-        },
-    );
-    env.insert(
-        Var::builtin("print_newline"),
-        Type::Fun {
-            args: vec![Type::Unit],
-            ret: Box::new(Type::Unit),
-        },
-    );
-    env.insert(
-        Var::builtin("float_of_int"),
-        Type::Fun {
-            args: vec![Type::Int],
-            ret: Box::new(Type::Float),
-        },
-    );
-    env.insert(Var::builtin("int_of_float"), float_int.clone());
-    env.insert(Var::builtin("truncate"), float_int);
-    env.insert(Var::builtin("abs_float"), float_float.clone());
-    env.insert(Var::builtin("sqrt"), float_float.clone());
-    env.insert(Var::builtin("sin"), float_float.clone());
-    env.insert(Var::builtin("cos"), float_float);
-    env
-}
-
 #[derive(Debug)]
 pub enum TypeErr {
     /// Can't unify these two types
@@ -97,37 +39,39 @@ pub enum TypeErr {
     /// Occurs check failed
     InfiniteType(Type, Type),
     /// Unbound variable
-    UnboundVar(Var),
+    UnboundVar(VarId),
 }
 
 type SubstEnv = FxHashMap<TyVar, Type>;
 
 #[derive(Debug, Clone)]
 struct Binder {
-    binder: Var,
+    binder: VarId,
     ty: Type,
 }
 
 type Scope = Locals<Rc<str>, Binder>;
 
-pub fn type_check_pgm(expr: &mut Expr) -> Result<TypeEnv, TypeErr> {
-    let mut ty_env: TypeEnv = mk_type_env();
-
+pub fn type_check_pgm(ctx: &mut Ctx, expr: &mut Expr) -> Result<TypeEnv, TypeErr> {
     let mut global_scope: FxHashMap<Rc<str>, Binder> = Default::default();
 
-    for (var, ty) in ty_env.iter() {
+    for (var_id, ty_id) in ctx.builtins() {
+        let var = ctx.get_var(*var_id);
+        let var_name = var.name();
+        let ty = ctx.get_type(*ty_id);
         global_scope.insert(
-            var.name(),
+            var_name,
             Binder {
-                binder: var.clone(),
-                ty: ty.clone(),
+                binder: *var_id,
+                ty: (&*ty).clone(),
             },
         );
     }
 
     let mut scope: Scope = Locals::new(global_scope);
     let mut subst_env: SubstEnv = Default::default();
-    let ty = type_check(&mut subst_env, &mut ty_env, &mut scope, expr)?;
+    let mut ty_env: TypeEnv = Default::default();
+    let ty = type_check(ctx, &mut ty_env, &mut subst_env, &mut scope, expr)?;
     unify(&mut subst_env, &Type::Unit, &ty)?;
 
     for ty in ty_env.values_mut() {
@@ -181,8 +125,9 @@ fn occurs_check(subst: &SubstEnv, var: TyVar, ty: &Type) -> bool {
 }
 
 fn type_check(
-    subst_env: &mut SubstEnv,
+    ctx: &mut Ctx,
     ty_env: &mut TypeEnv,
+    subst_env: &mut SubstEnv,
     scope: &mut Scope,
     expr: &mut Expr,
 ) -> Result<Type, TypeErr> {
@@ -193,83 +138,83 @@ fn type_check(
         Expr::Float(_) => Ok(Type::Float),
 
         Expr::Not(e) => {
-            let e_ty = type_check(subst_env, ty_env, scope, e)?;
+            let e_ty = type_check(ctx, ty_env, subst_env, scope, e)?;
             unify(subst_env, &Type::Bool, &e_ty)?;
             Ok(Type::Bool)
         }
 
         Expr::Neg(e) => {
-            let e_ty = type_check(subst_env, ty_env, scope, e)?;
+            let e_ty = type_check(ctx, ty_env, subst_env, scope, e)?;
             unify(subst_env, &Type::Int, &e_ty)?;
             Ok(Type::Int)
         }
 
         Expr::Add(e1, e2) | Expr::Sub(e1, e2) => {
-            let e1_ty = type_check(subst_env, ty_env, scope, e1)?;
-            let e2_ty = type_check(subst_env, ty_env, scope, e2)?;
+            let e1_ty = type_check(ctx, ty_env, subst_env, scope, e1)?;
+            let e2_ty = type_check(ctx, ty_env, subst_env, scope, e2)?;
             unify(subst_env, &Type::Int, &e1_ty)?;
             unify(subst_env, &Type::Int, &e2_ty)?;
             Ok(Type::Int)
         }
 
         Expr::FNeg(e) => {
-            let e_ty = type_check(subst_env, ty_env, scope, e)?;
+            let e_ty = type_check(ctx, ty_env, subst_env, scope, e)?;
             unify(subst_env, &Type::Float, &e_ty)?;
             Ok(Type::Float)
         }
 
         Expr::FAdd(e1, e2) | Expr::FSub(e1, e2) | Expr::FMul(e1, e2) | Expr::FDiv(e1, e2) => {
-            let e1_ty = type_check(subst_env, ty_env, scope, e1)?;
-            let e2_ty = type_check(subst_env, ty_env, scope, e2)?;
+            let e1_ty = type_check(ctx, ty_env, subst_env, scope, e1)?;
+            let e2_ty = type_check(ctx, ty_env, subst_env, scope, e2)?;
             unify(subst_env, &Type::Float, &e1_ty)?;
             unify(subst_env, &Type::Float, &e2_ty)?;
             Ok(Type::Float)
         }
 
         Expr::Eq(e1, e2) | Expr::Le(e1, e2) => {
-            let e1_ty = type_check(subst_env, ty_env, scope, e1)?;
-            let e2_ty = type_check(subst_env, ty_env, scope, e2)?;
+            let e1_ty = type_check(ctx, ty_env, subst_env, scope, e1)?;
+            let e2_ty = type_check(ctx, ty_env, subst_env, scope, e2)?;
             unify(subst_env, &e1_ty, &e2_ty)?;
             Ok(Type::Bool)
         }
 
         Expr::If(e1, e2, e3) => {
-            let e1_ty = type_check(subst_env, ty_env, scope, e1)?;
-            let e2_ty = type_check(subst_env, ty_env, scope, e2)?;
-            let e3_ty = type_check(subst_env, ty_env, scope, e3)?;
+            let e1_ty = type_check(ctx, ty_env, subst_env, scope, e1)?;
+            let e2_ty = type_check(ctx, ty_env, subst_env, scope, e2)?;
+            let e3_ty = type_check(ctx, ty_env, subst_env, scope, e3)?;
             unify(subst_env, &e1_ty, &Type::Bool)?;
             unify(subst_env, &e2_ty, &e3_ty)?;
             Ok(e2_ty)
         }
 
         Expr::Let {
-            ref bndr,
+            bndr,
             ref mut rhs,
             body,
         } => {
-            let bndr_ty = fresh_tyvar();
-            ty_env.insert(bndr.clone(), bndr_ty.clone());
-            let rhs_ty = type_check(subst_env, ty_env, scope, rhs)?;
+            let bndr_ty = Type::Var(ctx.fresh_tyvar());
+            ty_env.insert(*bndr, bndr_ty.clone());
+            let rhs_ty = type_check(ctx, ty_env, subst_env, scope, rhs)?;
             unify(subst_env, &bndr_ty, &rhs_ty)?;
             scope.new_scope();
             scope.add(
-                bndr.name(),
+                ctx.var_name(*bndr),
                 Binder {
-                    binder: bndr.clone(),
+                    binder: *bndr,
                     ty: bndr_ty,
                 },
             );
-            let ret = type_check(subst_env, ty_env, scope, body);
+            let ret = type_check(ctx, ty_env, subst_env, scope, body);
             scope.pop_scope();
             ret
         }
 
-        Expr::Var(ref mut var) => match scope.get(&var.name()) {
-            Some(Binder { ref binder, ref ty }) => {
-                *var = binder.clone();
+        Expr::Var(ref mut var) => match scope.get(&ctx.var_name(*var)) {
+            Some(Binder { binder, ty }) => {
+                *var = *binder;
                 Ok(ty.clone())
             }
-            None => Err(TypeErr::UnboundVar(var.clone())),
+            None => Err(TypeErr::UnboundVar(*var)),
         },
 
         Expr::LetRec {
@@ -281,11 +226,11 @@ fn type_check(
             // Type variables for the arguments
             let mut arg_tys: Vec<Type> = Vec::with_capacity(args.len());
             for _ in args {
-                arg_tys.push(fresh_tyvar());
+                arg_tys.push(Type::Var(ctx.fresh_tyvar()));
             }
 
             // Type variable for the RHS
-            let rhs_ty = fresh_tyvar();
+            let rhs_ty = Type::Var(ctx.fresh_tyvar());
 
             // We can now give type to the recursive function
             let fun_ty = Type::Fun {
@@ -293,14 +238,14 @@ fn type_check(
                 ret: Box::new(rhs_ty.clone()),
             };
 
-            ty_env.insert(bndr.clone(), fun_ty.clone());
+            ty_env.insert(*bndr, fun_ty.clone());
 
             // RHS and body will be type checked with `name` and args in scope
             scope.new_scope(); // new scope for function
             scope.add(
-                bndr.name(),
+                ctx.var_name(*bndr),
                 Binder {
-                    binder: bndr.clone(),
+                    binder: *bndr,
                     ty: fun_ty,
                 },
             );
@@ -308,36 +253,36 @@ fn type_check(
 
             for (binder, arg_ty) in args.iter().zip(arg_tys.iter()) {
                 scope.add(
-                    binder.name(),
+                    ctx.var_name(*binder),
                     Binder {
-                        binder: binder.clone(),
+                        binder: *binder,
                         ty: arg_ty.clone(),
                     },
                 );
             }
 
             // Type check RHS with fun and args in scope
-            let rhs_ty_ = type_check(subst_env, ty_env, scope, rhs)?;
+            let rhs_ty_ = type_check(ctx, ty_env, subst_env, scope, rhs)?;
             unify(subst_env, &rhs_ty, &rhs_ty_)?;
             // Type check body with just the fun in scope
             scope.pop_scope();
-            let ret = type_check(subst_env, ty_env, scope, body);
+            let ret = type_check(ctx, ty_env, subst_env, scope, body);
             // Reset environment
             scope.pop_scope();
             ret
         }
 
         Expr::App { fun, args } => {
-            let ret_ty = fresh_tyvar();
+            let ret_ty = Type::Var(ctx.fresh_tyvar());
             let mut arg_tys: Vec<Type> = Vec::with_capacity(args.len());
             for arg in args {
-                arg_tys.push(type_check(subst_env, ty_env, scope, arg)?);
+                arg_tys.push(type_check(ctx, ty_env, subst_env, scope, arg)?);
             }
             let fun_ty = Type::Fun {
                 args: arg_tys,
                 ret: Box::new(ret_ty.clone()),
             };
-            let fun_ty_ = type_check(subst_env, ty_env, scope, fun)?;
+            let fun_ty_ = type_check(ctx, ty_env, subst_env, scope, fun)?;
             unify(subst_env, &fun_ty, &fun_ty_)?;
             Ok(ret_ty)
         }
@@ -345,7 +290,7 @@ fn type_check(
         Expr::Tuple(args) => {
             let mut arg_tys: Vec<Type> = Vec::with_capacity(args.len());
             for arg in args {
-                arg_tys.push(type_check(subst_env, ty_env, scope, arg)?);
+                arg_tys.push(type_check(ctx, ty_env, subst_env, scope, arg)?);
             }
             Ok(Type::Tuple(arg_tys))
         }
@@ -357,53 +302,53 @@ fn type_check(
         } => {
             let mut arg_tys: Vec<Type> = Vec::with_capacity(bndrs.len());
             for bndr in bndrs {
-                let bndr_ty = fresh_tyvar();
-                ty_env.insert(bndr.clone(), bndr_ty.clone());
+                let bndr_ty = Type::Var(ctx.fresh_tyvar());
+                ty_env.insert(*bndr, bndr_ty.clone());
                 arg_tys.push(bndr_ty);
             }
             let tuple_ty = Type::Tuple(arg_tys.clone());
-            let rhs_ty = type_check(subst_env, ty_env, scope, rhs)?;
+            let rhs_ty = type_check(ctx, ty_env, subst_env, scope, rhs)?;
             unify(subst_env, &rhs_ty, &tuple_ty)?;
             scope.new_scope();
             for (bndr, bndr_type) in bndrs.iter().zip(arg_tys.into_iter()) {
                 scope.add(
-                    bndr.name(),
+                    ctx.var_name(*bndr),
                     Binder {
-                        binder: bndr.clone(),
+                        binder: *bndr,
                         ty: bndr_type,
                     },
                 );
             }
-            let ret = type_check(subst_env, ty_env, scope, body);
+            let ret = type_check(ctx, ty_env, subst_env, scope, body);
             scope.pop_scope();
             ret
         }
 
         Expr::Array(e1, e2) => {
-            let e1_ty = type_check(subst_env, ty_env, scope, e1)?;
+            let e1_ty = type_check(ctx, ty_env, subst_env, scope, e1)?;
             unify(subst_env, &e1_ty, &Type::Int)?;
-            let e2_ty = type_check(subst_env, ty_env, scope, e2)?;
+            let e2_ty = type_check(ctx, ty_env, subst_env, scope, e2)?;
             Ok(Type::Array(Box::new(e2_ty)))
         }
 
         Expr::Get(e1, e2) => {
-            let array_elem_ty = fresh_tyvar();
+            let array_elem_ty = Type::Var(ctx.fresh_tyvar());
             let array_ty = Type::Array(Box::new(array_elem_ty.clone()));
-            let e1_ty = type_check(subst_env, ty_env, scope, e1)?;
+            let e1_ty = type_check(ctx, ty_env, subst_env, scope, e1)?;
             unify(subst_env, &e1_ty, &array_ty)?;
-            let e2_ty = type_check(subst_env, ty_env, scope, e2)?;
+            let e2_ty = type_check(ctx, ty_env, subst_env, scope, e2)?;
             unify(subst_env, &e2_ty, &Type::Int)?;
             Ok(array_elem_ty)
         }
 
         Expr::Put(e1, e2, e3) => {
-            let array_elem_ty = fresh_tyvar();
+            let array_elem_ty = Type::Var(ctx.fresh_tyvar());
             let array_ty = Type::Array(Box::new(array_elem_ty.clone()));
-            let e1_ty = type_check(subst_env, ty_env, scope, e1)?;
+            let e1_ty = type_check(ctx, ty_env, subst_env, scope, e1)?;
             unify(subst_env, &e1_ty, &array_ty)?;
-            let e2_ty = type_check(subst_env, ty_env, scope, e2)?;
+            let e2_ty = type_check(ctx, ty_env, subst_env, scope, e2)?;
             unify(subst_env, &e2_ty, &Type::Int)?;
-            let e3_ty = type_check(subst_env, ty_env, scope, e3)?;
+            let e3_ty = type_check(ctx, ty_env, subst_env, scope, e3)?;
             unify(subst_env, &e3_ty, &array_elem_ty)?;
             Ok(Type::Unit)
         }
@@ -507,5 +452,4 @@ fn unify_test_2() {
     assert_eq!(deref_ty(&substs, &ty4), &Type::Int);
     assert_eq!(deref_ty(&substs, &ty5), &Type::Int);
 }
-*/
 */
