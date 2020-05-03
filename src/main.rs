@@ -1,7 +1,7 @@
 #![feature(or_patterns)]
 
-// mod closure_convert;
 // mod instr_sel;
+mod closure_convert;
 mod ctx;
 mod interner;
 mod knormal;
@@ -13,7 +13,7 @@ mod type_check;
 mod utils;
 mod var;
 
-// use closure_convert::closure_convert;
+use closure_convert::closure_convert;
 use knormal::knormal;
 use lexer::{tokenize, Token};
 use parser::parse;
@@ -94,7 +94,7 @@ fn do_expr(expr_str: &str) -> i32 {
         Ok(expr) => expr,
     };
 
-    println!("Expr: {:#?}", expr);
+    // println!("Expr: {:#?}", expr);
 
     match type_check_pgm(&mut ctx, &mut expr) {
         Err(err) => {
@@ -104,20 +104,14 @@ fn do_expr(expr_str: &str) -> i32 {
         Ok(()) => {}
     };
 
-    println!("Type-checked expr: {:#?}", expr);
+    // println!("Type-checked expr: {:#?}", expr);
 
     let expr = knormal(&mut ctx, expr);
 
-    println!("K normalized:");
-    println!("{:?}", expr);
+    // println!("K normalized:");
+    // println!("{:?}", expr);
 
-    /*
-    anormal(&mut expr);
-
-    // println!("A normalized:");
-    // println!("{:#?}", expr);
-
-    let (funs, expr) = closure_convert(expr);
+    let (funs, expr) = closure_convert(&mut ctx, expr);
 
     // println!("Functions:");
     // println!("{:#?}", funs);
@@ -125,11 +119,10 @@ fn do_expr(expr_str: &str) -> i32 {
     // println!("Expr:");
 
     for fun in funs {
-        println!("{}", fun.pprint().pretty(80));
+        println!("{}", fun.pprint(&ctx).pretty(80));
     }
 
-    println!("{}", expr.pprint().pretty(80));
-    */
+    println!("{}", expr.pprint(&ctx).pretty(80));
 
     0
 }

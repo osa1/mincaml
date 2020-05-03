@@ -167,9 +167,9 @@ impl GeneratedVar {
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub enum CompilerPhase {
     Parser,
-    TyChecker,
+    // TyChecker,
     KNormal,
-    ANormal,
+    // ANormal,
     ClosureConvert,
 }
 
@@ -178,9 +178,9 @@ impl CompilerPhase {
         use CompilerPhase::*;
         match self {
             Parser => "p",
-            TyChecker => "tc",
+            // TyChecker => "tc",
             KNormal => "kn",
-            ANormal => "an",
+            // ANormal => "an",
             ClosureConvert => "cc",
         }
     }
