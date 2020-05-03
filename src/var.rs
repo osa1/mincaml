@@ -8,6 +8,8 @@ use std::rc::Rc;
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
 pub struct Uniq(pub NonZeroU32);
 
+// NOTE: Display outputs start with '#' for non-user variables (generated, builtin, external)
+
 #[derive(Debug, Clone)]
 pub enum Var {
     User(UserVar),
@@ -34,7 +36,7 @@ impl Var {
     }
 
     pub fn new_generated(phase: CompilerPhase, uniq: Uniq) -> Var {
-        Var::Generated(GeneratedVar { phase, uniq })
+        Var::Generated(GeneratedVar::new(phase, uniq))
     }
 
     pub fn new_builtin(name: &str, uniq: Uniq) -> Var {
@@ -47,9 +49,7 @@ impl Var {
     pub fn name(&self) -> Rc<str> {
         match self {
             Var::User(var) => var.name(),
-            Var::Generated(var) => {
-                panic!("Generated variables don't have names");
-            }
+            Var::Generated(var) => var.name(),
             Var::Builtin(var) => var.name(),
             Var::External(var) => var.name(),
         }
@@ -119,13 +119,28 @@ impl UserVar {
 
 #[derive(Debug, Clone)]
 pub struct GeneratedVar {
+    name: Rc<str>,
     phase: CompilerPhase,
     uniq: Uniq,
 }
 
+impl GeneratedVar {
+    fn new(phase: CompilerPhase, uniq: Uniq) -> GeneratedVar {
+        GeneratedVar {
+            name: format!("#{}_{:#X}", phase.display_str(), uniq.0).into(),
+            phase,
+            uniq,
+        }
+    }
+
+    fn name(&self) -> Rc<str> {
+        self.name.clone()
+    }
+}
+
 impl fmt::Display for GeneratedVar {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "#{}_{:#X}", self.phase.display_str(), self.uniq.0)
+        self.name.fmt(f)
     }
 }
 
