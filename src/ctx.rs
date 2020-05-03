@@ -68,6 +68,10 @@ impl Ctx {
         self.vars.get(var.0).name()
     }
 
+    pub fn var_type(&self, var: VarId) -> Option<Rc<Type>> {
+        self.ty_env.get(&var).map(|ty_id| self.get_type(*ty_id))
+    }
+
     pub fn fresh_tyvar(&mut self) -> TyVar {
         self.fresh_uniq()
     }

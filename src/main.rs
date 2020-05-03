@@ -1,20 +1,18 @@
 #![feature(or_patterns)]
 
-// mod anormal;
 // mod closure_convert;
 // mod instr_sel;
-mod interner;
-//mod knormal;
 mod ctx;
+mod interner;
+mod knormal;
 mod lexer;
 mod locals;
 mod parser;
 mod type_check;
 mod var;
 
-// use anormal::anormal;
 // use closure_convert::closure_convert;
-// use knormal::knormal;
+use knormal::knormal;
 use lexer::{tokenize, Token};
 use parser::parse;
 use type_check::type_check_pgm;
@@ -102,12 +100,12 @@ fn do_expr(expr_str: &str) -> i32 {
     println!("Type env: {:?}", ty_env);
     println!("Type-checked expr: {:#?}", expr);
 
+    let expr = knormal(&mut ctx, expr);
+
+    println!("K normalized:");
+    println!("{:?}", expr);
+
     /*
-    let mut expr = knormal(expr, &bndr_tys);
-
-    // println!("K normalized:");
-    // println!("{:?}", expr);
-
     anormal(&mut expr);
 
     // println!("A normalized:");

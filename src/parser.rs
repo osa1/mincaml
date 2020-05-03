@@ -2,7 +2,7 @@ use crate::ctx::{Ctx, VarId};
 use crate::lexer::Token;
 use crate::var::CompilerPhase;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub enum Expr {
     // ()
     Unit,
