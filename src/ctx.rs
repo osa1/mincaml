@@ -76,6 +76,13 @@ impl Ctx {
         self.fresh_uniq()
     }
 
+    pub fn extend_type_env(&mut self, types: impl Iterator<Item = (VarId, Type)>) {
+        for (var, ty) in types {
+            let ty = self.intern_type(ty);
+            self.add_type(var, ty);
+        }
+    }
+
     pub fn add_type(&mut self, var: VarId, ty: TypeId) {
         self.ty_env.insert(var, ty);
     }

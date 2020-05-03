@@ -89,15 +89,14 @@ fn do_expr(expr_str: &str) -> i32 {
 
     println!("Expr: {:#?}", expr);
 
-    let ty_env = match type_check_pgm(&mut ctx, &mut expr) {
+    match type_check_pgm(&mut ctx, &mut expr) {
         Err(err) => {
             println!("Type error: {:#?}", err);
             return 1;
         }
-        Ok(ty_env) => ty_env,
+        Ok(()) => {}
     };
 
-    println!("Type env: {:?}", ty_env);
     println!("Type-checked expr: {:#?}", expr);
 
     let expr = knormal(&mut ctx, expr);

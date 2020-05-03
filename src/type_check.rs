@@ -52,7 +52,7 @@ struct Binder {
 
 type Scope = Locals<Rc<str>, Binder>;
 
-pub fn type_check_pgm(ctx: &mut Ctx, expr: &mut Expr) -> Result<TypeEnv, TypeErr> {
+pub fn type_check_pgm(ctx: &mut Ctx, expr: &mut Expr) -> Result<(), TypeErr> {
     let mut global_scope: FxHashMap<Rc<str>, Binder> = Default::default();
 
     for (var_id, ty_id) in ctx.builtins() {
@@ -78,7 +78,9 @@ pub fn type_check_pgm(ctx: &mut Ctx, expr: &mut Expr) -> Result<TypeEnv, TypeErr
         take(ty, |ty| norm_ty(&subst_env, ty));
     }
 
-    Ok(ty_env)
+    ctx.extend_type_env(ty_env.into_iter());
+
+    Ok(())
 }
 
 fn norm_ty(substs: &SubstEnv, ty: Type) -> Type {
@@ -225,8 +227,10 @@ fn type_check(
         } => {
             // Type variables for the arguments
             let mut arg_tys: Vec<Type> = Vec::with_capacity(args.len());
-            for _ in args {
-                arg_tys.push(Type::Var(ctx.fresh_tyvar()));
+            for arg in args {
+                let arg_ty = Type::Var(ctx.fresh_tyvar());
+                arg_tys.push(arg_ty.clone());
+                ty_env.insert(*arg, arg_ty);
             }
 
             // Type variable for the RHS
