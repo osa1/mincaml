@@ -1,6 +1,12 @@
 use std::fmt;
 use std::hash::{Hash, Hasher};
+use std::num::NonZeroU32;
 use std::rc::Rc;
+
+// TODO: Should really be an abstract type but we have to expose the field to be able to create
+// fresh ones in another module
+#[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
+pub struct Uniq(pub NonZeroU32);
 
 #[derive(Debug, Hash, Clone)]
 pub enum Var {
@@ -10,19 +16,8 @@ pub enum Var {
     External(ExternalVar),
 }
 
-// NOTE: Not thread-safe!
-static mut NEXT_UNIQ: u32 = 0;
-
-fn fresh_uniq() -> u32 {
-    let uniq = unsafe { NEXT_UNIQ };
-    unsafe {
-        NEXT_UNIQ += 1;
-    }
-    uniq
-}
-
 impl Var {
-    fn get_unique(&self) -> u32 {
+    pub fn get_uniq(&self) -> Uniq {
         match self {
             Var::User(var) => var.get_unique(),
             Var::Generated(var) => var.get_unique(),
@@ -31,24 +26,24 @@ impl Var {
         }
     }
 
-    pub fn user(name: &str) -> Var {
+    pub fn new_user(name: &str, uniq: Uniq) -> Var {
         Var::User(UserVar {
             name: name.into(),
-            uniq: fresh_uniq(),
+            uniq,
         })
     }
 
-    pub fn fresh(phase: CompilerPhase) -> Var {
+    pub fn new_generated(phase: CompilerPhase, uniq: Uniq) -> Var {
         Var::Generated(GeneratedVar {
             phase,
-            uniq: fresh_uniq(),
+            uniq,
         })
     }
 
-    pub fn builtin(name: &str) -> Var {
+    pub fn new_builtin(name: &str, uniq: Uniq) -> Var {
         Var::Builtin(BuiltinVar {
             name: name.into(),
-            uniq: fresh_uniq(),
+            uniq,
         })
     }
 
@@ -66,7 +61,7 @@ impl Var {
 
 impl PartialEq for Var {
     fn eq(&self, other: &Self) -> bool {
-        self.get_unique() == other.get_unique()
+        self.get_uniq() == other.get_uniq()
     }
 }
 
@@ -86,12 +81,12 @@ impl fmt::Display for Var {
 #[derive(Debug, Clone)]
 pub struct UserVar {
     name: Rc<str>,
-    uniq: u32,
+    uniq: Uniq,
 }
 
 impl fmt::Display for UserVar {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}_{}", self.name, self.uniq)
+        write!(f, "{}_{}", self.name, self.uniq.0)
     }
 }
 
@@ -110,7 +105,7 @@ impl Hash for UserVar {
 }
 
 impl UserVar {
-    fn get_unique(&self) -> u32 {
+    fn get_unique(&self) -> Uniq {
         self.uniq
     }
 
@@ -122,12 +117,12 @@ impl UserVar {
 #[derive(Debug, Clone)]
 pub struct GeneratedVar {
     phase: CompilerPhase,
-    uniq: u32,
+    uniq: Uniq,
 }
 
 impl fmt::Display for GeneratedVar {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "#{}_{:#X}", self.phase.display_str(), self.uniq)
+        write!(f, "#{}_{:#X}", self.phase.display_str(), self.uniq.0)
     }
 }
 
@@ -146,7 +141,7 @@ impl Hash for GeneratedVar {
 }
 
 impl GeneratedVar {
-    fn get_unique(&self) -> u32 {
+    fn get_unique(&self) -> Uniq {
         self.uniq
     }
 }
@@ -176,7 +171,7 @@ impl CompilerPhase {
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub struct BuiltinVar {
     name: Rc<str>,
-    uniq: u32,
+    uniq: Uniq,
 }
 
 impl fmt::Display for BuiltinVar {
@@ -186,7 +181,7 @@ impl fmt::Display for BuiltinVar {
 }
 
 impl BuiltinVar {
-    fn get_unique(&self) -> u32 {
+    fn get_unique(&self) -> Uniq {
         self.uniq
     }
 
@@ -198,7 +193,7 @@ impl BuiltinVar {
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub struct ExternalVar {
     name: Rc<str>,
-    uniq: u32,
+    uniq: Uniq,
 }
 
 impl fmt::Display for ExternalVar {
@@ -208,7 +203,7 @@ impl fmt::Display for ExternalVar {
 }
 
 impl ExternalVar {
-    fn get_unique(&self) -> u32 {
+    fn get_unique(&self) -> Uniq {
         self.uniq
     }
 

@@ -1,0 +1,120 @@
+use crate::interner::{InternId, InternTable};
+use crate::type_check::Type;
+use crate::var::{CompilerPhase, Uniq, Var};
+
+use fxhash::FxHashMap;
+use std::num::NonZeroU32;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct VarId(InternId);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TypeId(InternId);
+
+pub struct Ctx {
+    next_uniq: Uniq,
+    tys: InternTable<Type>,
+    vars: InternTable<Var>,
+    ty_env: FxHashMap<VarId, TypeId>,
+}
+
+impl Default for Ctx {
+    fn default() -> Self {
+        let mut ctx = Ctx {
+            next_uniq: Uniq(unsafe { NonZeroU32::new_unchecked(1) }),
+            tys: Default::default(),
+            vars: Default::default(),
+            ty_env: Default::default(),
+        };
+        ctx.add_builtin_vars();
+        ctx
+    }
+}
+
+impl Ctx {
+    fn fresh_uniq(&mut self) -> Uniq {
+        let uniq = self.next_uniq;
+        self.next_uniq.0 = unsafe { NonZeroU32::new_unchecked(self.next_uniq.0.get() + 1) };
+        uniq
+    }
+
+    pub fn fresh_user_var(&mut self, name: &str) -> VarId {
+        let uniq = self.fresh_uniq();
+        self.intern_var(Var::new_user(name, uniq))
+    }
+
+    pub fn fresh_generated_var(&mut self, phase: CompilerPhase) -> VarId {
+        let uniq = self.fresh_uniq();
+        self.intern_var(Var::new_generated(phase, uniq))
+    }
+
+    pub fn fresh_builtin_var(&mut self, name: &str) -> VarId {
+        let uniq = self.fresh_uniq();
+        self.intern_var(Var::new_builtin(name, uniq))
+    }
+
+    pub fn add_type(&mut self, var: VarId, ty: TypeId) {
+        self.ty_env.insert(var, ty);
+    }
+
+    fn intern_var(&mut self, var: Var) -> VarId {
+        VarId(self.vars.intern(var))
+    }
+
+    fn intern_type(&mut self, ty: Type) -> TypeId {
+        TypeId(self.tys.intern(ty))
+    }
+
+    fn add_builtin_vars(&mut self) {
+        // float -> float
+        let float_float = self.intern_type(Type::Fun {
+            args: vec![Type::Float],
+            ret: Box::new(Type::Float),
+        });
+
+        // float -> int
+        let float_int = self.intern_type(Type::Fun {
+            args: vec![Type::Float],
+            ret: Box::new(Type::Int),
+        });
+
+        let print_int_var = self.fresh_builtin_var("print_int");
+        let print_int_ty = self.intern_type(Type::Fun {
+            args: vec![Type::Int],
+            ret: Box::new(Type::Unit),
+        });
+        self.add_type(print_int_var, print_int_ty);
+
+        let print_newline_var = self.fresh_builtin_var("print_newline");
+        let print_newline_ty = self.intern_type(Type::Fun {
+            args: vec![Type::Unit],
+            ret: Box::new(Type::Unit),
+        });
+        self.add_type(print_newline_var, print_newline_ty);
+
+        let float_of_int_var = self.fresh_builtin_var("float_of_int");
+        let float_of_int_ty = self.intern_type(Type::Fun {
+            args: vec![Type::Int],
+            ret: Box::new(Type::Float),
+        });
+        self.add_type(float_of_int_var, float_of_int_ty);
+
+        let int_of_float_var = self.fresh_builtin_var("int_of_float");
+        self.add_type(int_of_float_var, float_int);
+
+        let truncate_var = self.fresh_builtin_var("truncate");
+        self.add_type(truncate_var, float_int);
+
+        let abs_float_var = self.fresh_builtin_var("abs_float");
+        self.add_type(abs_float_var, float_float);
+
+        let sqrt_var = self.fresh_builtin_var("sqrt");
+        self.add_type(sqrt_var, float_float);
+
+        let sin_var = self.fresh_builtin_var("sin");
+        self.add_type(sin_var, float_float);
+
+        let cos_var = self.fresh_builtin_var("cos");
+        self.add_type(cos_var, float_float);
+    }
+}

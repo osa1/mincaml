@@ -1,5 +1,6 @@
 use crate::lexer::Token;
 use crate::var::{CompilerPhase, Var};
+use crate::ctx::{Ctx, VarId};
 
 #[derive(Debug, PartialEq)]
 pub enum Expr {
@@ -35,16 +36,16 @@ pub enum Expr {
     If(Box<Expr>, Box<Expr>, Box<Expr>),
     // let <ident> = <expr> in <expr>
     Let {
-        bndr: Var,
+        bndr: VarId,
         rhs: Box<Expr>,
         body: Box<Expr>,
     },
     // <ident>
-    Var(Var),
+    Var(VarId),
     // let rec <ident> <ident>+ = <expr> in <expr>
     LetRec {
-        bndr: Var,
-        args: Vec<Var>,
+        bndr: VarId,
+        args: Vec<VarId>,
         rhs: Box<Expr>,
         body: Box<Expr>,
     },
@@ -57,7 +58,7 @@ pub enum Expr {
     Tuple(Vec<Expr>),
     // let ( <ident> (, <ident>)+ ) = <expr> in <expr>
     LetTuple {
-        bndrs: Vec<Var>,
+        bndrs: Vec<VarId>,
         rhs: Box<Expr>,
         body: Box<Expr>,
     },
@@ -69,13 +70,9 @@ pub enum Expr {
     Put(Box<Expr>, Box<Expr>, Box<Expr>),
 }
 
-fn fresh() -> Var {
-    Var::fresh(CompilerPhase::Parser)
-}
-
-pub fn parse(tokens: &[Token]) -> Result<Expr, ParseErr> {
+pub fn parse(ctx: &mut Ctx, tokens: &[Token]) -> Result<Expr, ParseErr> {
     let mut parser = Parser::new(tokens);
-    let expr = parser.expr()?;
+    let expr = parser.expr(ctx)?;
     Ok(expr)
 }
 
@@ -116,7 +113,7 @@ impl<'a> Parser<'a> {
         Parser { tokens, tok_idx: 0 }
     }
 
-    pub fn expr0(&mut self, prec: usize) -> Result<Expr, ParseErr> {
+    pub fn expr0(&mut self, ctx: &mut Ctx, prec: usize) -> Result<Expr, ParseErr> {
         match self.next_token()? {
             //
             // Single-token expressions
@@ -137,7 +134,7 @@ impl<'a> Parser<'a> {
                 Ok(Expr::Float(f))
             }
             Token::Id(id) => {
-                let var = Var::user(id);
+                let var = ctx.fresh_user_var(id);
                 self.consume();
                 Ok(Expr::Var(var))
             }
@@ -153,7 +150,7 @@ impl<'a> Parser<'a> {
                         Ok(Expr::Unit)
                     }
                     _ => {
-                        let expr = self.expr1(INIT_PREC)?;
+                        let expr = self.expr1(ctx, INIT_PREC)?;
                         self.expect(Token::RParen, "')'")?;
                         Ok(expr)
                     }
@@ -161,11 +158,11 @@ impl<'a> Parser<'a> {
             }
             Token::Not if prec <= APP_PREC => {
                 self.consume();
-                Ok(Expr::Not(Box::new(self.expr1(APP_PREC)?)))
+                Ok(Expr::Not(Box::new(self.expr1(ctx, APP_PREC)?)))
             }
             Token::Minus if prec <= UNARY_MINUS_PREC => {
                 self.consume();
-                let expr = self.expr1(UNARY_MINUS_PREC)?;
+                let expr = self.expr1(ctx, UNARY_MINUS_PREC)?;
                 match expr {
                     Expr::Float(_) =>
                     // Hacky, but this is how the original min-caml parses this as well.
@@ -177,12 +174,12 @@ impl<'a> Parser<'a> {
             }
             Token::MinusDot if prec <= UNARY_MINUS_PREC => {
                 self.consume();
-                Ok(Expr::FNeg(Box::new(self.expr1(PLUS_MINUS_PREC)?)))
+                Ok(Expr::FNeg(Box::new(self.expr1(ctx, PLUS_MINUS_PREC)?)))
             }
             Token::ArrayCreate if prec <= APP_PREC => {
                 self.consume();
-                let expr1 = self.expr0(APP_PREC)?;
-                let expr2 = self.expr0(APP_PREC)?;
+                let expr1 = self.expr0(ctx, APP_PREC)?;
+                let expr2 = self.expr0(ctx, APP_PREC)?;
                 Ok(Expr::Array(Box::new(expr1), Box::new(expr2)))
             }
             Token::Let if prec <= LET_PREC => {
@@ -191,16 +188,16 @@ impl<'a> Parser<'a> {
                     Token::Rec => {
                         self.consume();
                         let bndr = self.expect_id()?;
-                        let bndr = Var::user(bndr);
+                        let bndr = ctx.fresh_user_var(bndr);
                         let mut args = vec![];
                         loop {
                             match self.next_token()? {
                                 Token::Underscore => {
-                                    args.push(fresh());
+                                    args.push(ctx.fresh_generated_var(CompilerPhase::Parser));
                                     self.consume();
                                 }
                                 Token::Id(arg) => {
-                                    args.push(Var::user(arg));
+                                    args.push(ctx.fresh_user_var(arg));
                                     self.consume();
                                 }
                                 Token::Equal => {
@@ -215,9 +212,9 @@ impl<'a> Parser<'a> {
                             }
                         }
                         self.expect(Token::Equal, "'='")?;
-                        let rhs = Box::new(self.expr1(LET_PREC)?);
+                        let rhs = Box::new(self.expr1(ctx, LET_PREC)?);
                         self.expect(Token::In, "'in'")?;
-                        let body = Box::new(self.expr1(LET_PREC)?);
+                        let body = Box::new(self.expr1(ctx, LET_PREC)?);
                         Ok(Expr::LetRec {
                             bndr,
                             args,
@@ -230,20 +227,20 @@ impl<'a> Parser<'a> {
                         let mut bndrs = vec![];
                         {
                             let bndr = self.expect_id()?;
-                            bndrs.push(Var::user(bndr));
+                            bndrs.push(ctx.fresh_user_var(bndr));
                         }
                         while let Ok(Token::Comma) = self.next_token() {
                             self.consume();
                             {
                                 let bndr = self.expect_id()?;
-                                bndrs.push(Var::user(bndr));
+                                bndrs.push(ctx.fresh_user_var(bndr));
                             }
                         }
                         self.expect(Token::RParen, "')'")?;
                         self.expect(Token::Equal, "'='")?;
-                        let rhs = self.expr1(LET_PREC)?;
+                        let rhs = self.expr1(ctx, LET_PREC)?;
                         self.expect(Token::In, "in")?;
-                        let body = self.expr1(INIT_PREC)?;
+                        let body = self.expr1(ctx, INIT_PREC)?;
                         Ok(Expr::LetTuple {
                             bndrs,
                             rhs: Box::new(rhs),
@@ -251,12 +248,12 @@ impl<'a> Parser<'a> {
                         })
                     }
                     Token::Id(var) => {
-                        let bndr = Var::user(var);
+                        let bndr = ctx.fresh_user_var(var);
                         self.consume();
                         self.expect(Token::Equal, "'='")?;
-                        let rhs = Box::new(self.expr1(LET_PREC)?);
+                        let rhs = Box::new(self.expr1(ctx, LET_PREC)?);
                         self.expect(Token::In, "'in'")?;
-                        let body = Box::new(self.expr1(IN_PREC)?);
+                        let body = Box::new(self.expr1(ctx, IN_PREC)?);
                         Ok(Expr::Let { bndr, rhs, body })
                     }
                     other => {
@@ -270,11 +267,11 @@ impl<'a> Parser<'a> {
             }
             Token::If if prec <= IF_PREC => {
                 self.consume();
-                let e1 = self.expr1(IF_PREC)?;
+                let e1 = self.expr1(ctx, IF_PREC)?;
                 self.expect(Token::Then, "'then'")?;
-                let e2 = self.expr1(INIT_PREC)?;
+                let e2 = self.expr1(ctx, INIT_PREC)?;
                 self.expect(Token::Else, "'else'")?;
-                let e3 = self.expr1(INIT_PREC)?;
+                let e3 = self.expr1(ctx, INIT_PREC)?;
                 Ok(Expr::If(Box::new(e1), Box::new(e2), Box::new(e3)))
             }
             other => Err(ParseErr::Unexpected {
@@ -284,15 +281,15 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn expr1(&mut self, prec: usize) -> Result<Expr, ParseErr> {
-        let mut expr = self.expr0(prec)?;
+    pub fn expr1(&mut self, ctx: &mut Ctx, prec: usize) -> Result<Expr, ParseErr> {
+        let mut expr = self.expr0(ctx, prec)?;
         let mut parsing_app = false;
         loop {
             match self.next_token() {
                 Ok(Token::Semicolon) if prec <= SEMICOLON_PREC => {
                     self.consume();
-                    let sym = fresh();
-                    let expr2 = self.expr1(prec)?;
+                    let sym = ctx.fresh_generated_var(CompilerPhase::Parser);
+                    let expr2 = self.expr1(ctx, prec)?;
                     expr = Expr::Let {
                         bndr: sym,
                         rhs: Box::new(expr),
@@ -301,62 +298,62 @@ impl<'a> Parser<'a> {
                 }
                 Ok(Token::Plus) if prec < PLUS_MINUS_PREC => {
                     self.consume();
-                    let expr2 = self.expr1(PLUS_MINUS_PREC)?;
+                    let expr2 = self.expr1(ctx, PLUS_MINUS_PREC)?;
                     expr = Expr::Add(Box::new(expr), Box::new(expr2));
                 }
                 Ok(Token::Minus) if prec < PLUS_MINUS_PREC => {
                     self.consume();
-                    let expr2 = self.expr1(PLUS_MINUS_PREC)?;
+                    let expr2 = self.expr1(ctx, PLUS_MINUS_PREC)?;
                     expr = Expr::Sub(Box::new(expr), Box::new(expr2));
                 }
                 Ok(Token::PlusDot) if prec < PLUS_MINUS_PREC => {
                     self.consume();
-                    let expr2 = self.expr1(PLUS_MINUS_PREC)?;
+                    let expr2 = self.expr1(ctx, PLUS_MINUS_PREC)?;
                     expr = Expr::FAdd(Box::new(expr), Box::new(expr2));
                 }
                 Ok(Token::MinusDot) if prec < PLUS_MINUS_PREC => {
                     self.consume();
-                    let expr2 = self.expr1(PLUS_MINUS_PREC)?;
+                    let expr2 = self.expr1(ctx, PLUS_MINUS_PREC)?;
                     expr = Expr::FSub(Box::new(expr), Box::new(expr2));
                 }
                 Ok(Token::AstDot) if prec < DIV_MULT_PREC => {
                     self.consume();
-                    let expr2 = self.expr1(DIV_MULT_PREC)?;
+                    let expr2 = self.expr1(ctx, DIV_MULT_PREC)?;
                     expr = Expr::FMul(Box::new(expr), Box::new(expr2));
                 }
                 Ok(Token::SlashDot) if prec < DIV_MULT_PREC => {
                     self.consume();
-                    let expr2 = self.expr1(DIV_MULT_PREC)?;
+                    let expr2 = self.expr1(ctx, DIV_MULT_PREC)?;
                     expr = Expr::FDiv(Box::new(expr), Box::new(expr2));
                 }
                 Ok(Token::LessGreater) if prec < CMP_PREC => {
                     self.consume();
-                    let expr2 = self.expr1(CMP_PREC)?;
+                    let expr2 = self.expr1(ctx, CMP_PREC)?;
                     expr = Expr::Not(Box::new(Expr::Eq(Box::new(expr), Box::new(expr2))));
                 }
                 Ok(Token::LessEqual) if prec < CMP_PREC => {
                     self.consume();
-                    let expr2 = self.expr1(CMP_PREC)?;
+                    let expr2 = self.expr1(ctx, CMP_PREC)?;
                     expr = Expr::Le(Box::new(expr), Box::new(expr2));
                 }
                 Ok(Token::Less) if prec < CMP_PREC => {
                     self.consume();
-                    let expr2 = self.expr1(CMP_PREC)?;
+                    let expr2 = self.expr1(ctx, CMP_PREC)?;
                     expr = Expr::Le(Box::new(expr), Box::new(expr2));
                 }
                 Ok(Token::Equal) if prec < CMP_PREC => {
                     self.consume();
-                    let expr2 = self.expr1(CMP_PREC)?;
+                    let expr2 = self.expr1(ctx, CMP_PREC)?;
                     expr = Expr::Eq(Box::new(expr), Box::new(expr2));
                 }
                 Ok(Token::Greater) if prec <= CMP_PREC => {
                     self.consume();
-                    let expr2 = self.expr1(CMP_PREC)?;
+                    let expr2 = self.expr1(ctx, CMP_PREC)?;
                     expr = Expr::Not(Box::new(Expr::Le(Box::new(expr), Box::new(expr2))));
                 }
                 Ok(Token::Comma) if prec <= TUPLE_PREC => {
                     self.consume();
-                    let expr2 = self.expr1(COMMA_PREC)?;
+                    let expr2 = self.expr1(ctx, COMMA_PREC)?;
                     match expr {
                         Expr::Tuple(ref mut vec) => {
                             vec.push(expr2);
@@ -369,12 +366,12 @@ impl<'a> Parser<'a> {
                 Ok(Token::Dot) if prec < DOT_PREC => {
                     self.consume();
                     self.expect(Token::LParen, "'('")?;
-                    let expr1 = self.expr1(INIT_PREC)?;
+                    let expr1 = self.expr1(ctx, INIT_PREC)?;
                     self.expect(Token::RParen, "')'")?;
                     match self.next_token() {
                         Ok(Token::LessMinus) => {
                             self.consume();
-                            let expr2 = self.expr1(LESS_MINUS_PREC)?;
+                            let expr2 = self.expr1(ctx, LESS_MINUS_PREC)?;
                             match expr {
                                 Expr::App { mut args, fun } if parsing_app => {
                                     let arg = args.pop().unwrap();
@@ -407,7 +404,7 @@ impl<'a> Parser<'a> {
                         },
                     }
                 }
-                Ok(_) if prec <= APP_PREC => match self.expr0(APP_PREC) {
+                Ok(_) if prec <= APP_PREC => match self.expr0(ctx, APP_PREC) {
                     Err(_) => {
                         break;
                     }
@@ -434,8 +431,8 @@ impl<'a> Parser<'a> {
     }
 
     // Entry point for parsing
-    pub fn expr(&mut self) -> Result<Expr, ParseErr> {
-        let ret = self.expr1(INIT_PREC)?;
+    pub fn expr(&mut self, ctx: &mut Ctx) -> Result<Expr, ParseErr> {
+        let ret = self.expr1(ctx, INIT_PREC)?;
         match self.next_token() {
             Err(_) => Ok(ret),
             Ok(next) => Err(ParseErr::Unexpected {

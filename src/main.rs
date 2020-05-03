@@ -10,19 +10,27 @@ mod locals;
 mod parser;
 mod type_check;
 mod var;
+mod ctx;
 
 // use anormal::anormal;
 // use closure_convert::closure_convert;
 // use knormal::knormal;
 use lexer::{tokenize, Token};
 use parser::parse;
-use type_check::type_check_pgm;
+// use type_check::type_check_pgm;
+use ctx::Ctx;
 
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 use std::process::exit;
 
 fn main() {
+
+    // println!("size_of::<u32>() == {}", std::mem::size_of::<u32>());
+    // println!("size_of::<Rc<str>>() == {}", std::mem::size_of::<std::rc::Rc<str>>());
+    // println!("size_of::<Rc<String>>() == {}", std::mem::size_of::<std::rc::Rc<str>>());
+    // println!("size_of::<Var>() == {}", std::mem::size_of::<var::Var>());
+
     let args: Vec<String> = std::env::args().collect();
     match args.as_slice() {
         [_] => {
@@ -73,7 +81,9 @@ fn do_expr(expr_str: &str) -> i32 {
 
     // println!("{:#?}", tokens);
 
-    let mut expr = match parse(&tokens) {
+    let mut ctx = Default::default();
+
+    let mut expr = match parse(&mut ctx, &tokens) {
         Err(err) => {
             println!("Parser error: {:#?}", err);
             return 1;
@@ -83,6 +93,7 @@ fn do_expr(expr_str: &str) -> i32 {
 
     println!("Expr: {:#?}", expr);
 
+    /*
     let ty_env = match type_check_pgm(&mut expr) {
         Err(err) => {
             println!("Type error: {:#?}", err);
@@ -93,6 +104,7 @@ fn do_expr(expr_str: &str) -> i32 {
 
     println!("Type env: {:?}", ty_env);
     println!("Type-checked expr: {:#?}", expr);
+    */
 
     /*
     let mut expr = knormal(expr, &bndr_tys);

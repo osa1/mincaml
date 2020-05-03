@@ -4,7 +4,7 @@ use take_mut::take;
 
 use crate::locals::Locals;
 use crate::parser::Expr;
-use crate::var::Var;
+use crate::var::{Var, Uniq};
 
 /// Type variables are represented as unique integers.
 pub type TyVar = u32;
@@ -12,9 +12,9 @@ pub type TyVar = u32;
 // NOTE: Not thread-safe!
 static mut NEXT_TYVAR: TyVar = 0;
 
-pub type TypeEnv = FxHashMap<Var, Type>;
+pub type TypeEnv = FxHashMap<Uniq, Type>;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Type {
     Unit,
     Bool,
@@ -26,6 +26,7 @@ pub enum Type {
     Var(TyVar),
 }
 
+/*
 impl Type {
     pub fn is_array(&self) -> bool {
         match self {
@@ -506,4 +507,5 @@ fn unify_test_2() {
     assert_eq!(deref_ty(&substs, &ty4), &Type::Int);
     assert_eq!(deref_ty(&substs, &ty5), &Type::Int);
 }
+*/
 */
