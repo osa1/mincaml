@@ -1,18 +1,17 @@
 use crate::ctx::{Ctx, VarId};
 use crate::knormal;
 use crate::knormal::{BinOp, FloatBinOp, IntBinOp};
-use crate::type_check::Type;
 use crate::var::CompilerPhase::ClosureConvert;
 use crate::var::Uniq;
 
-use fxhash::FxHashSet;
+use std::mem::replace;
 
 pub type Label = Uniq; // FIXME how to represent this best?
 
 #[derive(Debug)]
 pub struct Program {
-    funs: Vec<Fun>,
-    main: Block,
+    pub main_label: Label,
+    pub funs: Vec<Fun>,
 }
 
 // Functions
@@ -34,12 +33,13 @@ pub struct Block {
 // Exit nodes of basic blocks
 #[derive(Debug)]
 pub enum Exit {
-    Return(VarId),
+    Return,
     Branch {
         cond: VarId,
-        then_target: Label,
-        else_target: Label,
+        then_label: Label,
+        else_label: Label,
     },
+    Jump(Label),
     Call {
         fun: VarId,
         args: Vec<VarId>,
@@ -80,10 +80,11 @@ pub enum Atom {
 }
 
 pub fn closure_convert(ctx: &mut Ctx, expr: knormal::Expr) -> Program {
-    let mut funs: Vec<Fun> = vec![];
-    todo!()
-    // let main = closure_convert_(ctx, &mut funs, expr);
-    // Program { funs, main }
+    let main_label = ctx.fresh_label();
+    let mut ctx = CcCtx::new(ctx, main_label);
+    let _ = cc_expr(&mut ctx, expr);
+    let funs = ctx.finish();
+    Program { main_label, funs }
 }
 
 // Closure conversion state
@@ -92,6 +93,7 @@ struct CcCtx<'ctx> {
     funs: Vec<Fun>,
     current_fun_label: Label,
     current_fun_args: Vec<VarId>,
+    current_fun_blocks: Vec<Block>,
     current_block_label: Label,
     current_block: Vec<Asgn>,
 }
@@ -104,6 +106,7 @@ impl<'ctx> CcCtx<'ctx> {
             funs: vec![],
             current_fun_label: main_label,
             current_fun_args: vec![],
+            current_fun_blocks: vec![],
             current_block_label: entry_label,
             current_block: vec![],
         }
@@ -113,12 +116,45 @@ impl<'ctx> CcCtx<'ctx> {
         self.ctx.fresh_generated_var(ClosureConvert)
     }
 
+    fn fresh_label(&mut self) -> Label {
+        self.ctx.fresh_label()
+    }
+
     fn add_asgn(&mut self, lhs: VarId, rhs: Expr) {
         self.current_block.push(Asgn { lhs, rhs })
     }
+
+    fn finish_block_and_enter(&mut self, exit: Exit, next_block: Label) {
+        let stmts = replace(&mut self.current_block, vec![]);
+        let label = replace(&mut self.current_block_label, next_block);
+        let block = Block { label, stmts, exit };
+        self.current_fun_blocks.push(block);
+    }
+
+    fn finish(self) -> Vec<Fun> {
+        let stmts = self.current_block;
+        let label = self.current_block_label;
+        let block = Block {
+            label,
+            stmts,
+            exit: Exit::Return,
+        };
+        let mut blocks = self.current_fun_blocks;
+        blocks.push(block);
+        let args = self.current_fun_args;
+        let fun_label = self.current_fun_label;
+        let mut funs = self.funs;
+        // FIXME: Entry is fun label?
+        funs.push(Fun {
+            entry: fun_label,
+            args,
+            blocks,
+        });
+        funs
+    }
 }
 
-fn cc_expr(ctx: &CcCtx, expr: knormal::Expr) -> Atom {
+fn cc_expr(ctx: &mut CcCtx, expr: knormal::Expr) -> Atom {
     match expr {
         knormal::Expr::Unit => Atom::Unit,
         knormal::Expr::Int(i) => Atom::Int(i),
@@ -133,302 +169,150 @@ fn cc_expr(ctx: &CcCtx, expr: knormal::Expr) -> Atom {
             ctx.add_asgn(id, Expr::Atom(rhs));
             cc_expr(ctx, *body)
         }
+
         knormal::Expr::IfEq(v1, v2, e1, e2) => {
-            let tmp = ctx.fresh_var();
-            ctx.add_asgn(tmp, Expr::Eq(v1, v2));
-            todo!()
+            let cond = ctx.fresh_var();
+            ctx.add_asgn(cond, Expr::Eq(v1, v2));
+
+            let ret = ctx.fresh_var();
+
+            let then_label = ctx.fresh_label();
+            let else_label = ctx.fresh_label();
+            let cont_label = ctx.fresh_label();
+
+            ctx.finish_block_and_enter(
+                Exit::Branch {
+                    cond,
+                    then_label,
+                    else_label,
+                },
+                then_label,
+            );
+
+            let e1_ret = cc_expr(ctx, *e1);
+            ctx.add_asgn(ret, Expr::Atom(e1_ret));
+            ctx.finish_block_and_enter(Exit::Jump(cont_label), else_label);
+
+            let e2_ret = cc_expr(ctx, *e2);
+            ctx.add_asgn(ret, Expr::Atom(e2_ret));
+
+            ctx.finish_block_and_enter(Exit::Jump(cont_label), cont_label);
+
+            Atom::Var(ret)
         }
+
         _ => todo!(),
     }
 }
 
-/*
-// Same with knormal's Expr type, except this doesn't have LetRec
-#[derive(Debug, Clone)]
-pub enum Expr {
-    Unit,
-    Int(u64),
-    Float(f64),
-    IBinOp(BinOp<IntBinOp>),
-    FBinOp(BinOp<FloatBinOp>),
-    Neg(VarId),
-    FNeg(VarId),
-    IfEq(VarId, VarId, Box<Expr>, Box<Expr>),
-    IfLE(VarId, VarId, Box<Expr>, Box<Expr>),
-    Let {
-        id: VarId,
-        ty: Type,
-        rhs: Box<Expr>,
-        body: Box<Expr>,
-    },
-    Var(VarId),
-    App(VarId, Vec<VarId>),
-    // A C call
-    ExtApp(String, Vec<VarId>),
-    Tuple(Vec<VarId>),
-    TupleIdx(VarId, usize),
-    Get(VarId, VarId),
-    Put(VarId, VarId, VarId),
+use std::fmt;
+
+impl Fun {
+    pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> Result<(), fmt::Error> {
+        let Fun {
+            entry,
+            args,
+            blocks,
+        } = self;
+
+        writeln!(w, "function {:?} args: {:?}", entry, args)?;
+
+        for block in blocks {
+            block.pp(ctx, w)?;
+        }
+        writeln!(w)
+    }
 }
 
-// A function. No free variables.
-#[derive(Debug)]
-pub struct Fun {
-    pub name: VarId,
-    pub ty: Type,
-    pub args: Vec<VarId>,
-    pub body: Expr,
+impl Block {
+    pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> Result<(), fmt::Error> {
+        let Block { label, stmts, exit } = self;
+        writeln!(w, "{:?}:", label)?;
+        for Asgn { lhs, rhs } in stmts {
+            write!(w, "    {} = ", ctx.get_var(*lhs))?;
+            rhs.pp(ctx, w)?;
+            writeln!(w)?;
+        }
+        write!(w, "    ")?;
+        exit.pp(ctx, w)?;
+        writeln!(w)
+    }
 }
 
-pub fn closure_convert(ctx: &mut Ctx, expr: knormal::Expr) -> (Vec<Fun>, Expr) {
-    let mut funs = vec![];
-    let e = closure_convert_(ctx, &mut funs, expr);
-    (funs, e)
-}
-
-fn closure_convert_(ctx: &mut Ctx, funs: &mut Vec<Fun>, expr: knormal::Expr) -> Expr {
-    match expr {
-        //
-        // Boring parts
-        //
-        knormal::Expr::Unit => Expr::Unit,
-        knormal::Expr::Int(i) => Expr::Int(i),
-        knormal::Expr::Float(f) => Expr::Float(f),
-        knormal::Expr::IBinOp(op) => Expr::IBinOp(op),
-        knormal::Expr::FBinOp(op) => Expr::FBinOp(op),
-        knormal::Expr::Neg(e) => Expr::Neg(e),
-        knormal::Expr::FNeg(e) => Expr::FNeg(e),
-        knormal::Expr::IfEq(e1, e2, then_, else_) => {
-            let then_ = closure_convert_(ctx, funs, *then_);
-            let else_ = closure_convert_(ctx, funs, *else_);
-            Expr::IfEq(e1, e2, Box::new(then_), Box::new(else_))
-        }
-        knormal::Expr::IfLE(e1, e2, then_, else_) => {
-            let then_ = closure_convert_(ctx, funs, *then_);
-            let else_ = closure_convert_(ctx, funs, *else_);
-            Expr::IfLE(e1, e2, Box::new(then_), Box::new(else_))
-        }
-        knormal::Expr::Let { id, ty, rhs, body } => {
-            let rhs = closure_convert_(ctx, funs, *rhs);
-            let body = closure_convert_(ctx, funs, *body);
-            Expr::Let {
-                id,
-                ty,
-                rhs: Box::new(rhs),
-                body: Box::new(body),
+impl Exit {
+    pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> Result<(), fmt::Error> {
+        use Exit::*;
+        match self {
+            Return => write!(w, "return"),
+            Branch {
+                cond,
+                then_label,
+                else_label,
+            } => {
+                write!(w, "if ")?;
+                pp_id(ctx, *cond, w)?;
+                write!(w, " {:?} {:?}", then_label, else_label)
             }
-        }
-        knormal::Expr::ExtApp(fun, args) => Expr::ExtApp(fun, args),
-        knormal::Expr::Tuple(args) => Expr::Tuple(args),
-        knormal::Expr::TupleIdx(id, idx) => Expr::TupleIdx(id, idx),
-        knormal::Expr::Get(e1, e2) => Expr::Get(e1, e2),
-        knormal::Expr::Put(e1, e2, e3) => Expr::Put(e1, e2, e3),
-
-        //
-        // Interesting parts
-        //
-        knormal::Expr::Var(id) => Expr::Var(id),
-
-        knormal::Expr::App(fun, mut args) => {
-            let fun_binder = ctx.fresh_generated_var(ClosureConvert);
-            args.insert(0, fun.clone());
-            Expr::Let {
-                id: fun_binder.clone(),
-                ty: Type::Int, // FIXME TODO
-                rhs: Box::new(Expr::TupleIdx(fun, 0)),
-                body: Box::new(Expr::App(fun_binder, args)),
-            }
-        }
-
-        knormal::Expr::LetRec {
-            name,
-            ty: _,
-            mut args,
-            rhs,
-            body,
-        } => {
-            let mut rhs_fvs = Default::default();
-            fvs(&rhs, &mut rhs_fvs);
-            for arg in &args {
-                rhs_fvs.remove(arg);
-            }
-
-            // println!("fvs: {:?}", fvs);
-
-            // Emit function
-            let closure_arg = ctx.fresh_generated_var(ClosureConvert);
-            args.insert(0, closure_arg.clone());
-
-            let rhs = closure_convert_(ctx, funs, *rhs);
-            let rhs = rhs_fvs.iter().enumerate().fold(rhs, |e, (fv_idx, fv)| {
-                Expr::Let {
-                    id: fv.clone(),
-                    ty: Type::Int, /* FIXME */
-                    rhs: Box::new(Expr::TupleIdx(closure_arg.clone(), fv_idx + 1)),
-                    body: Box::new(e),
-                }
-            });
-
-            funs.push(Fun {
-                name: name.clone(),
-                ty: Type::Int, // FIXME
-                args,
-                body: rhs,
-            });
-
-            // Allocate closure
-            let body = closure_convert_(ctx, funs, *body);
-            let mut closure_tuple = vec![name.clone()];
-            for fv in rhs_fvs.into_iter() {
-                closure_tuple.push(fv);
-            }
-            let closure_tuple = Expr::Tuple(closure_tuple);
-            Expr::Let {
-                id: name,
-                ty: Type::Int,
-                rhs: Box::new(closure_tuple),
-                body: Box::new(body),
-            }
+            Jump(lbl) => write!(w, "jump {:?}", lbl),
+            Call { fun, args } => todo!(),
         }
     }
 }
 
-use pretty::RcDoc;
-
-// TODO: Overly-restrictive lifetimes below. RcDoc shouldn't really borrow anything from Ctx
-
-fn ppr_id(ctx: &Ctx, id: VarId) -> RcDoc<()> {
-    RcDoc::text(format!("{}", ctx.get_var(id)))
+impl Asgn {
+    pub fn pp<'a>(&'a self, ctx: &'a Ctx, w: &mut dyn fmt::Write) -> Result<(), fmt::Error> {
+        let Asgn { lhs, rhs } = self;
+        pp_id(ctx, *lhs, w)?;
+        write!(w, " = ")?;
+        rhs.pp(ctx, w)
+    }
 }
 
 impl Expr {
-    pub fn pprint<'a>(&'a self, ctx: &'a Ctx) -> RcDoc<'a, ()> {
+    pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> Result<(), fmt::Error> {
         use Expr::*;
         match self {
-            Unit => RcDoc::text("()"),
-
-            Int(i) => RcDoc::text(format!("{}", i)),
-
-            Float(f) => RcDoc::text(format!("{}", f)),
-
-            IBinOp(BinOp { op, arg1, arg2 }) => ppr_id(ctx, *arg1)
-                .append(RcDoc::space())
-                .append(op.pprint())
-                .append(RcDoc::space())
-                .append(ppr_id(ctx, *arg2)),
-
-            FBinOp(BinOp { op, arg1, arg2 }) => ppr_id(ctx, *arg1)
-                .append(RcDoc::space())
-                .append(op.pprint())
-                .append(RcDoc::space())
-                .append(ppr_id(ctx, *arg2)),
-
-            Neg(arg) => RcDoc::text("-").append(ppr_id(ctx, *arg)),
-
-            FNeg(arg) => RcDoc::text("-.").append(ppr_id(ctx, *arg)),
-
-            IfEq(arg1, arg2, then_, else_) => RcDoc::text("if")
-                .append(RcDoc::space())
-                .append(ppr_id(ctx, *arg1))
-                .append(RcDoc::space())
-                .append(RcDoc::text("="))
-                .append(RcDoc::space())
-                .append(ppr_id(ctx, *arg2))
-                .append(RcDoc::space())
-                .append(RcDoc::text("then"))
-                .append(RcDoc::line().append(then_.pprint(ctx)).nest(4))
-                .append(RcDoc::line())
-                .append(RcDoc::text("else"))
-                .append(RcDoc::line().append(else_.pprint(ctx)).nest(4)),
-
-            IfLE(arg1, arg2, then_, else_) => RcDoc::text("if")
-                .append(RcDoc::space())
-                .append(ppr_id(ctx, *arg1))
-                .append(RcDoc::space())
-                .append(RcDoc::text("<="))
-                .append(RcDoc::space())
-                .append(ppr_id(ctx, *arg2))
-                .append(RcDoc::space())
-                .append(RcDoc::text("then"))
-                .append(RcDoc::line().append(then_.pprint(ctx)).nest(4))
-                .append(RcDoc::line())
-                .append(RcDoc::text("else"))
-                .append(RcDoc::line().append(else_.pprint(ctx)).nest(4)),
-
-            Let {
-                id,
-                ty: _,
-                rhs,
-                body,
-            } => RcDoc::text("let")
-                .append(RcDoc::space())
-                .append(ppr_id(ctx, *id))
-                .append(RcDoc::space())
-                .append(RcDoc::text("="))
-                .append(RcDoc::line().append(rhs.pprint(ctx)).nest(4))
-                .append(RcDoc::line())
-                .append(RcDoc::text("in"))
-                .append(RcDoc::line().append(body.pprint(ctx)).nest(4)),
-
-            Var(id) => ppr_id(ctx, *id),
-
-            ExtApp(_fun, _args) => todo!(),
-
-            App(fun, args) => ppr_id(ctx, *fun)
-                .append(RcDoc::space())
-                .append(RcDoc::intersperse(
-                    args.iter().map(|i| ppr_id(ctx, *i)),
-                    RcDoc::space(),
-                )),
-
-            Tuple(args) => RcDoc::text("(")
-                .append(RcDoc::intersperse(
-                    args.iter().map(|i| ppr_id(ctx, *i)),
-                    RcDoc::text(", "),
-                ))
-                .append(")"),
-
-            TupleIdx(tup, idx) => ppr_id(ctx, *tup).append(RcDoc::text(format!(".({})", idx))),
-
-            Get(arg1, arg2) => ppr_id(ctx, *arg1)
-                .append(RcDoc::text(".("))
-                .append(ppr_id(ctx, *arg2))
-                .append(RcDoc::text(")")),
-
-            Put(arg1, arg2, arg3) => ppr_id(ctx, *arg1)
-                .append(RcDoc::text(".("))
-                .append(ppr_id(ctx, *arg2))
-                .append(RcDoc::text(")"))
-                .append(RcDoc::space())
-                .append(RcDoc::text("<-"))
-                .append(RcDoc::space())
-                .append(ppr_id(ctx, *arg3)),
+            Atom(atom) => atom.pp(ctx, w),
+            Neg(var) => {
+                write!(w, "-")?;
+                pp_id(ctx, *var, w)
+            }
+            FNeg(var) => {
+                write!(w, "-.")?;
+                pp_id(ctx, *var, w)
+            }
+            Eq(var1, var2) => {
+                pp_id(ctx, *var1, w)?;
+                write!(w, " == ")?;
+                pp_id(ctx, *var2, w)
+            }
+            Eq(var1, var2) => {
+                pp_id(ctx, *var1, w)?;
+                write!(w, " <= ")?;
+                pp_id(ctx, *var2, w)
+            }
+            _ => todo!(),
         }
     }
 }
 
-impl Fun {
-    pub fn pprint<'a>(&'a self, ctx: &'a Ctx) -> RcDoc<'a, ()> {
-        let Fun {
-            name,
-            ty: _,
-            args,
-            body,
-        } = self;
-        RcDoc::text("let rec")
-            .append(RcDoc::space())
-            .append(ppr_id(ctx, *name))
-            .append(RcDoc::space())
-            .append(RcDoc::intersperse(
-                args.iter().map(|i| ppr_id(ctx, *i)),
-                RcDoc::space(),
-            ))
-            .append(RcDoc::space())
-            .append(RcDoc::text("="))
-            .append(RcDoc::hardline().append(body.pprint(ctx)).nest(4))
+impl Atom {
+    pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> Result<(), fmt::Error> {
+        use Atom::*;
+        match self {
+            Unit => write!(w, "()"),
+            Int(i) => write!(w, "{}", i),
+            Float(f) => write!(w, "{}", f),
+            Var(var) => pp_id(ctx, *var, w),
+        }
     }
 }
 
+fn pp_id(ctx: &Ctx, id: VarId, w: &mut dyn fmt::Write) -> Result<(), fmt::Error> {
+    write!(w, "{}", ctx.get_var(id))
+}
+
+/*
 fn fvs(e: &knormal::Expr, acc: &mut FxHashSet<VarId>) {
     use knormal::Expr::*;
     match e {

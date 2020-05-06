@@ -3,8 +3,6 @@ use crate::parser;
 use crate::type_check::Type;
 use crate::var::CompilerPhase;
 
-use pretty::RcDoc;
-
 #[derive(Debug)]
 pub enum Expr {
     Unit,
@@ -59,28 +57,6 @@ pub enum FloatBinOp {
 pub enum IntBinOp {
     Add,
     Sub,
-}
-
-impl IntBinOp {
-    pub fn pprint(&self) -> RcDoc<()> {
-        use IntBinOp::*;
-        match self {
-            Add => RcDoc::text("+"),
-            Sub => RcDoc::text("-"),
-        }
-    }
-}
-
-impl FloatBinOp {
-    pub fn pprint(&self) -> RcDoc<()> {
-        use FloatBinOp::*;
-        match self {
-            Add => RcDoc::text("+."),
-            Sub => RcDoc::text("-."),
-            Mul => RcDoc::text("/."),
-            Div => RcDoc::text("*."),
-        }
-    }
 }
 
 enum TmpLet {
