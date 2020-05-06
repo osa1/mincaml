@@ -3,9 +3,146 @@ use crate::knormal;
 use crate::knormal::{BinOp, FloatBinOp, IntBinOp};
 use crate::type_check::Type;
 use crate::var::CompilerPhase::ClosureConvert;
+use crate::var::Uniq;
 
 use fxhash::FxHashSet;
 
+pub type Label = Uniq; // FIXME how to represent this best?
+
+#[derive(Debug)]
+pub struct Program {
+    funs: Vec<Fun>,
+    main: Block,
+}
+
+// Functions
+#[derive(Debug)]
+pub struct Fun {
+    entry: Label,
+    args: Vec<VarId>,
+    blocks: Vec<Block>,
+}
+
+// Basic blocks
+#[derive(Debug)]
+pub struct Block {
+    label: Label,
+    stmts: Vec<Asgn>,
+    exit: Exit,
+}
+
+// Exit nodes of basic blocks
+#[derive(Debug)]
+pub enum Exit {
+    Return(VarId),
+    Branch {
+        cond: VarId,
+        then_target: Label,
+        else_target: Label,
+    },
+    Call {
+        fun: VarId,
+        args: Vec<VarId>,
+    },
+}
+
+// Assignments
+#[derive(Debug)]
+pub struct Asgn {
+    lhs: VarId,
+    rhs: Expr,
+}
+
+// Assignment right-hand sides
+#[derive(Debug)]
+pub enum Expr {
+    Atom(Atom),
+    IBinOp(BinOp<IntBinOp>),
+    FBinOp(BinOp<FloatBinOp>),
+    Neg(VarId),
+    FNeg(VarId),
+    Eq(VarId, VarId),
+    LE(VarId, VarId),
+    App(VarId, Vec<VarId>),
+    ExtApp(String, Vec<VarId>),
+    Tuple(Vec<VarId>), // TODO: Lower this more?
+    TupleIdx(VarId, usize),
+    Get(VarId, VarId),
+    Put(VarId, VarId, VarId),
+}
+
+#[derive(Debug)]
+pub enum Atom {
+    Unit,
+    Int(u64),
+    Float(f64),
+    Var(VarId),
+}
+
+pub fn closure_convert(ctx: &mut Ctx, expr: knormal::Expr) -> Program {
+    let mut funs: Vec<Fun> = vec![];
+    todo!()
+    // let main = closure_convert_(ctx, &mut funs, expr);
+    // Program { funs, main }
+}
+
+// Closure conversion state
+struct CcCtx<'ctx> {
+    ctx: &'ctx mut Ctx,
+    funs: Vec<Fun>,
+    current_fun_label: Label,
+    current_fun_args: Vec<VarId>,
+    current_block_label: Label,
+    current_block: Vec<Asgn>,
+}
+
+impl<'ctx> CcCtx<'ctx> {
+    fn new(ctx: &'ctx mut Ctx, main_label: Label) -> CcCtx<'ctx> {
+        let entry_label = ctx.fresh_label();
+        CcCtx {
+            ctx,
+            funs: vec![],
+            current_fun_label: main_label,
+            current_fun_args: vec![],
+            current_block_label: entry_label,
+            current_block: vec![],
+        }
+    }
+
+    fn fresh_var(&mut self) -> VarId {
+        self.ctx.fresh_generated_var(ClosureConvert)
+    }
+
+    fn add_asgn(&mut self, lhs: VarId, rhs: Expr) {
+        self.current_block.push(Asgn { lhs, rhs })
+    }
+}
+
+fn cc_expr(ctx: &CcCtx, expr: knormal::Expr) -> Atom {
+    match expr {
+        knormal::Expr::Unit => Atom::Unit,
+        knormal::Expr::Int(i) => Atom::Int(i),
+        knormal::Expr::Float(f) => Atom::Float(f),
+        knormal::Expr::Neg(var) => {
+            let tmp = ctx.fresh_var();
+            ctx.add_asgn(tmp, Expr::Neg(var));
+            Atom::Var(tmp)
+        }
+        knormal::Expr::Let { id, ty, rhs, body } => {
+            let rhs = cc_expr(ctx, *rhs);
+            ctx.add_asgn(id, Expr::Atom(rhs));
+            cc_expr(ctx, *body)
+        }
+        knormal::Expr::IfEq(v1, v2, e1, e2) => {
+            let tmp = ctx.fresh_var();
+            ctx.add_asgn(tmp, Expr::Eq(v1, v2));
+            todo!()
+        }
+        _ => todo!(),
+    }
+}
+
+/*
 // Same with knormal's Expr type, except this doesn't have LetRec
 #[derive(Debug, Clone)]
 pub enum Expr {
@@ -365,3 +502,4 @@ fn fvs(e: &knormal::Expr, acc: &mut FxHashSet<VarId>) {
         }
     }
 }
+*/

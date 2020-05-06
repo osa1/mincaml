@@ -1,6 +1,7 @@
 use crate::interner::{InternId, InternTable};
 use crate::type_check::{TyVar, Type};
 use crate::var::{CompilerPhase, Uniq, Var};
+use crate::closure_convert::Label;
 
 use fxhash::FxHashMap;
 use std::num::NonZeroU32;
@@ -11,6 +12,9 @@ pub struct VarId(InternId);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TypeId(InternId);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct LableId(InternId);
 
 pub struct Ctx {
     next_uniq: Uniq,
@@ -54,6 +58,10 @@ impl Ctx {
     pub fn fresh_builtin_var(&mut self, name: &str) -> VarId {
         let uniq = self.fresh_uniq();
         self.intern_var(Var::new_builtin(name, uniq))
+    }
+
+    pub fn fresh_label(&mut self) -> Label {
+        self.fresh_uniq()
     }
 
     pub fn get_var(&self, id: VarId) -> Rc<Var> {
