@@ -164,6 +164,7 @@ fn cc_expr(ctx: &mut CcCtx, expr: knormal::Expr) -> Atom {
             ctx.add_asgn(tmp, Expr::Neg(var));
             Atom::Var(tmp)
         }
+
         knormal::Expr::Let { id, ty, rhs, body } => {
             let rhs = cc_expr(ctx, *rhs);
             ctx.add_asgn(id, Expr::Atom(rhs));
@@ -215,7 +216,7 @@ impl Fun {
             blocks,
         } = self;
 
-        writeln!(w, "function {:?} args: {:?}", entry, args)?;
+        writeln!(w, "function {} args: {:?}", entry, args)?;
 
         for block in blocks {
             block.pp(ctx, w)?;
@@ -227,10 +228,10 @@ impl Fun {
 impl Block {
     pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> Result<(), fmt::Error> {
         let Block { label, stmts, exit } = self;
-        writeln!(w, "{:?}:", label)?;
-        for Asgn { lhs, rhs } in stmts {
-            write!(w, "    {} = ", ctx.get_var(*lhs))?;
-            rhs.pp(ctx, w)?;
+        writeln!(w, "{}:", label)?;
+        for asgn in stmts {
+            write!(w, "    ")?;
+            asgn.pp(ctx, w)?;
             writeln!(w)?;
         }
         write!(w, "    ")?;
@@ -251,16 +252,16 @@ impl Exit {
             } => {
                 write!(w, "if ")?;
                 pp_id(ctx, *cond, w)?;
-                write!(w, " {:?} {:?}", then_label, else_label)
+                write!(w, " {} {}", then_label, else_label)
             }
-            Jump(lbl) => write!(w, "jump {:?}", lbl),
+            Jump(lbl) => write!(w, "jump {}", lbl),
             Call { fun, args } => todo!(),
         }
     }
 }
 
 impl Asgn {
-    pub fn pp<'a>(&'a self, ctx: &'a Ctx, w: &mut dyn fmt::Write) -> Result<(), fmt::Error> {
+    pub fn pp(& self, ctx: &Ctx, w: &mut dyn fmt::Write) -> Result<(), fmt::Error> {
         let Asgn { lhs, rhs } = self;
         pp_id(ctx, *lhs, w)?;
         write!(w, " = ")?;
@@ -286,7 +287,7 @@ impl Expr {
                 write!(w, " == ")?;
                 pp_id(ctx, *var2, w)
             }
-            Eq(var1, var2) => {
+            LE(var1, var2) => {
                 pp_id(ctx, *var1, w)?;
                 write!(w, " <= ")?;
                 pp_id(ctx, *var2, w)

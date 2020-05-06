@@ -8,6 +8,13 @@ use std::rc::Rc;
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
 pub struct Uniq(pub NonZeroU32);
 
+impl fmt::Display for Uniq {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "0x")?;
+        fmt::LowerHex::fmt(&self.0, f)
+    }
+}
+
 // NOTE: Display outputs start with '#' for non-user variables (generated, builtin, external)
 
 #[derive(Debug, Clone)]
