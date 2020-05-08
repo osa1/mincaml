@@ -111,13 +111,16 @@ fn do_expr(expr_str: &str) -> i32 {
     // println!("K normalized:");
     // println!("{:?}", expr);
 
-    let pgm = closure_convert(&mut ctx, expr);
+    let funs = closure_convert(&mut ctx, expr);
 
-    // println!("Functions:");
-    // println!("{:#?}", funs);
+    let mut s = String::new();
+    for fun in funs {
+        fun.pp(&mut ctx, &mut s).unwrap();
+    }
 
-    // println!("Expr:");
+    println!("{}", s);
 
+    /*
     let mut s = String::new();
 
     for fun in pgm.funs {
@@ -125,6 +128,7 @@ fn do_expr(expr_str: &str) -> i32 {
     }
 
     println!("{}", s);
+    */
 
     0
 }

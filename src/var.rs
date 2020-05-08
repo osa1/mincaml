@@ -22,7 +22,7 @@ pub enum Var {
     User(UserVar),
     Generated(GeneratedVar),
     Builtin(BuiltinVar),
-    External(ExternalVar),
+    // External(ExternalVar),
 }
 
 impl Var {
@@ -31,7 +31,7 @@ impl Var {
             Var::User(var) => var.get_unique(),
             Var::Generated(var) => var.get_unique(),
             Var::Builtin(var) => var.get_unique(),
-            Var::External(var) => var.get_unique(),
+            // Var::External(var) => var.get_unique(),
         }
     }
 
@@ -58,7 +58,7 @@ impl Var {
             Var::User(var) => var.name(),
             Var::Generated(var) => var.name(),
             Var::Builtin(var) => var.name(),
-            Var::External(var) => var.name(),
+            // Var::External(var) => var.name(),
         }
     }
 }
@@ -83,7 +83,7 @@ impl fmt::Display for Var {
             Var::User(var) => var.fmt(f),
             Var::Generated(var) => var.fmt(f),
             Var::Builtin(var) => var.fmt(f),
-            Var::External(var) => var.fmt(f),
+            // Var::External(var) => var.fmt(f),
         }
     }
 }
@@ -229,6 +229,7 @@ impl BuiltinVar {
     }
 }
 
+/*
 #[derive(Debug, Clone)]
 pub struct ExternalVar {
     name: Rc<str>,
@@ -264,3 +265,4 @@ impl ExternalVar {
         self.name.clone()
     }
 }
+*/

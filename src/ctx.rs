@@ -1,7 +1,7 @@
+use crate::closure_convert::Label;
 use crate::interner::{InternId, InternTable};
 use crate::type_check::{TyVar, Type};
 use crate::var::{CompilerPhase, Uniq, Var};
-use crate::closure_convert::Label;
 
 use fxhash::FxHashMap;
 use std::num::NonZeroU32;
