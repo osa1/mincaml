@@ -19,8 +19,6 @@ use lexer::{tokenize, Token};
 use parser::parse;
 use type_check::type_check_pgm;
 
-use rustyline::error::ReadlineError;
-use rustyline::Editor;
 use std::process::exit;
 use std::time::Instant;
 
@@ -36,38 +34,12 @@ fn main() {
 
     let args: Vec<String> = std::env::args().collect();
     match args.as_slice() {
-        [_] => {
-            repl();
-        }
         [_, ref file] => {
             exit(do_file(file));
         }
         _ => {
             println!("What do you mean?");
             exit(1);
-        }
-    }
-}
-
-fn repl() {
-    let mut rl = Editor::<()>::new();
-
-    loop {
-        match rl.readline(">>> ") {
-            Ok(line) => {
-                do_expr(&line);
-
-                // Add it to the history after using to avoid cloning
-                rl.history_mut().add(line);
-            }
-            Err(ReadlineError::Interrupted | ReadlineError::Eof) => {
-                break;
-            }
-            err => {
-                println!("Error while reading line: {:?}", err);
-                println!("Aborting.");
-                break;
-            }
         }
     }
 }
