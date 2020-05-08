@@ -60,11 +60,11 @@ pub enum BlockSequel {
 }
 
 impl BlockSequel {
-    fn get_ret_var(&self) -> Option<VarId> {
+    fn get_ret_var(&self, ctx: &mut CcCtx) -> VarId {
         use BlockSequel::*;
         match self {
-            Return | Jump(_) => None,
-            Asgn(var, _) => Some(*var),
+            Asgn(var, _) => *var,
+            Return | Jump(_) => ctx.fresh_var(),
         }
     }
 }
@@ -104,9 +104,13 @@ pub enum Expr {
     LE(VarId, VarId),
     App(VarId, Vec<VarId>),
     ExtApp(String, Vec<VarId>),
+    // Tuple allocation
     Tuple(Vec<VarId>), // TODO: Lower this more?
+    // Tuple field read
     TupleIdx(VarId, usize),
+    // Array field read
     Get(VarId, Atom),
+    // Array field write
     Put(VarId, Atom, Atom),
 }
 
@@ -164,8 +168,8 @@ fn cc_block(
     ctx: &mut CcCtx, blocks: &mut Vec<Block>, label: Label, mut stmts: Vec<Asgn>,
     sequel: BlockSequel, expr: knormal::Expr,
 ) {
-    eprintln!("cc_block e={:#?}", expr);
-    eprintln!("cc_block sequel={:#?}", sequel);
+    // eprintln!("cc_block e={:#?}", expr);
+    // eprintln!("cc_block sequel={:#?}", sequel);
 
     match expr {
         knormal::Expr::Unit => {
@@ -186,6 +190,24 @@ fn cc_block(
             blocks.push(Block::new(label, stmts, sequel, Atom::Var(tmp)));
         }
 
+        knormal::Expr::FNeg(var) => {
+            let tmp = ctx.fresh_var();
+            stmts.push(Asgn { lhs: tmp, rhs: Expr::FNeg(var) });
+            blocks.push(Block::new(label, stmts, sequel, Atom::Var(tmp)));
+        }
+
+        knormal::Expr::IBinOp(BinOp { op, arg1, arg2 }) => {
+            let tmp = sequel.get_ret_var(ctx);
+            stmts.push(Asgn { lhs: tmp, rhs: Expr::IBinOp(BinOp { op, arg1, arg2 }) });
+            blocks.push(Block::new(label, stmts, sequel, Atom::Var(tmp)));
+        }
+
+        knormal::Expr::FBinOp(BinOp { op, arg1, arg2 }) => {
+            let tmp = sequel.get_ret_var(ctx);
+            stmts.push(Asgn { lhs: tmp, rhs: Expr::FBinOp(BinOp { op, arg1, arg2 }) });
+            blocks.push(Block::new(label, stmts, sequel, Atom::Var(tmp)));
+        }
+
         knormal::Expr::IfEq(v1, v2, e1, e2) => {
             let cond_var = ctx.fresh_var();
             stmts.push(Asgn { lhs: cond_var, rhs: Expr::Eq(v1, v2) });
@@ -198,6 +220,24 @@ fn cc_block(
             });
             cc_block(ctx, blocks, then_label, vec![], sequel.clone(), *e1);
             cc_block(ctx, blocks, else_label, vec![], sequel, *e2);
+        }
+
+        knormal::Expr::IfLE(v1, v2, e1, e2) => {
+            let cond_var = ctx.fresh_var();
+            stmts.push(Asgn { lhs: cond_var, rhs: Expr::LE(v1, v2) });
+            let then_label = ctx.fresh_label();
+            let else_label = ctx.fresh_label();
+            blocks.push(Block {
+                label,
+                stmts,
+                exit: Exit::Branch { cond: cond_var, then_label, else_label },
+            });
+            cc_block(ctx, blocks, then_label, vec![], sequel.clone(), *e1);
+            cc_block(ctx, blocks, else_label, vec![], sequel, *e2);
+        }
+
+        knormal::Expr::Var(var) => {
+            blocks.push(Block::new(label, stmts, sequel, Atom::Var(var)));
         }
 
         knormal::Expr::Let { id, ty: _, rhs, body } => {
@@ -268,31 +308,73 @@ fn cc_block(
             stmts.push(Asgn { lhs: fun_tmp, rhs: Expr::Get(fun, Atom::Int(0)) });
             args.insert(0, fun);
 
-            let ret_tmp = sequel.get_ret_var().unwrap_or_else(|| ctx.fresh_var());
+            let ret_tmp = sequel.get_ret_var(ctx);
 
             stmts.push(Asgn { lhs: ret_tmp, rhs: Expr::App(fun_tmp, args) });
             blocks.push(Block::new(label, stmts, sequel, Atom::Var(ret_tmp)));
         }
 
         knormal::Expr::ExtApp(ext_fn, args) => {
-            let ret_tmp = sequel.get_ret_var().unwrap_or_else(|| ctx.fresh_var());
+            let ret_tmp = sequel.get_ret_var(ctx);
             stmts.push(Asgn { lhs: ret_tmp, rhs: Expr::ExtApp(ext_fn, args) });
             blocks.push(Block::new(label, stmts, sequel, Atom::Var(ret_tmp)));
         }
 
-        _ => todo!(),
+        knormal::Expr::Tuple(args) => {
+            let ret_tmp = sequel.get_ret_var(ctx);
+            stmts.push(Asgn { lhs: ret_tmp, rhs: Expr::Tuple(args) });
+            blocks.push(Block::new(label, stmts, sequel, Atom::Var(ret_tmp)));
+        }
+
+        knormal::Expr::TupleIdx(tuple, idx) => {
+            let ret_tmp = sequel.get_ret_var(ctx);
+            stmts.push(Asgn { lhs: ret_tmp, rhs: Expr::TupleIdx(tuple, idx) });
+            blocks.push(Block::new(label, stmts, sequel, Atom::Var(ret_tmp)));
+        }
+
+        knormal::Expr::Get(array, idx) => {
+            let ret_tmp = sequel.get_ret_var(ctx);
+            stmts.push(Asgn { lhs: ret_tmp, rhs: Expr::Get(array, Atom::Var(idx)) });
+            blocks.push(Block::new(label, stmts, sequel, Atom::Var(ret_tmp)));
+        }
+
+        knormal::Expr::Put(array, idx, val) => {
+            let ret_tmp = sequel.get_ret_var(ctx);
+            stmts
+                .push(Asgn { lhs: ret_tmp, rhs: Expr::Put(array, Atom::Var(idx), Atom::Var(val)) });
+            blocks.push(Block::new(label, stmts, sequel, Atom::Var(ret_tmp)));
+        }
     }
 }
 
 use std::fmt;
 
+fn print_comma_sep<A>(
+    ctx: &Ctx, stuffs: &mut dyn Iterator<Item = &A>,
+    show_stuff: fn(&A, ctx: &Ctx, w: &mut dyn fmt::Write) -> Result<(), fmt::Error>,
+    w: &mut dyn fmt::Write,
+) -> Result<(), fmt::Error> {
+    let mut add_comma = false;
+    for stuff in stuffs {
+        if add_comma {
+            write!(w, ", ")?;
+        } else {
+            add_comma = true;
+        }
+        show_stuff(stuff, ctx, w)?;
+    }
+    Ok(())
+}
+
 impl Fun {
     pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> Result<(), fmt::Error> {
         let Fun { name, entry: _, args, blocks } = self;
 
-        writeln!(w, "function ")?;
+        write!(w, "function ")?;
         pp_id(ctx, *name, w)?;
-        writeln!(w, " args: {:?}", args)?;
+        write!(w, "(")?;
+        print_comma_sep(ctx, &mut args.iter(), pp_id_ref, w)?;
+        writeln!(w, ")")?;
 
         for block in blocks {
             block.pp(ctx, w)?;
@@ -348,6 +430,26 @@ impl Expr {
         use Expr::*;
         match self {
             Atom(atom) => atom.pp(ctx, w),
+            IBinOp(BinOp { op, arg1, arg2 }) => {
+                pp_id(ctx, *arg1, w)?;
+                let op_str = match op {
+                    IntBinOp::Add => " + ",
+                    IntBinOp::Sub => " - ",
+                };
+                write!(w, "{}", op_str)?;
+                pp_id(ctx, *arg2, w)
+            }
+            FBinOp(BinOp { op, arg1, arg2 }) => {
+                pp_id(ctx, *arg1, w)?;
+                let op_str = match op {
+                    FloatBinOp::Add => " +. ",
+                    FloatBinOp::Sub => " -. ",
+                    FloatBinOp::Mul => " *. ",
+                    FloatBinOp::Div => " /. ",
+                };
+                write!(w, "{}", op_str)?;
+                pp_id(ctx, *arg2, w)
+            }
             Neg(var) => {
                 write!(w, "-")?;
                 pp_id(ctx, *var, w)
@@ -366,7 +468,39 @@ impl Expr {
                 write!(w, " <= ")?;
                 pp_id(ctx, *var2, w)
             }
-            _ => todo!(),
+            App(fun, args) => {
+                pp_id(ctx, *fun, w)?;
+                write!(w, "(")?;
+                print_comma_sep(ctx, &mut args.iter(), pp_id_ref, w)?;
+                write!(w, ")")
+            }
+            ExtApp(ext_fun, args) => {
+                write!(w, "{}(", ext_fun)?;
+                print_comma_sep(ctx, &mut args.iter(), pp_id_ref, w)?;
+                write!(w, ")")
+            }
+            Tuple(args) => {
+                write!(w, "(")?;
+                print_comma_sep(ctx, &mut args.iter(), pp_id_ref, w)?;
+                write!(w, ")")
+            }
+            TupleIdx(tuple, idx) => {
+                pp_id(ctx, *tuple, w)?;
+                write!(w, ".{}", idx)
+            }
+            Get(array, idx) => {
+                pp_id(ctx, *array, w)?;
+                write!(w, "(")?;
+                idx.pp(ctx, w)?;
+                write!(w, ")")
+            }
+            Put(array, idx, val) => {
+                pp_id(ctx, *array, w)?;
+                write!(w, "(")?;
+                idx.pp(ctx, w)?;
+                write!(w, ") <- ")?;
+                val.pp(ctx, w)
+            }
         }
     }
 }
@@ -385,6 +519,10 @@ impl Atom {
 
 fn pp_id(ctx: &Ctx, id: VarId, w: &mut dyn fmt::Write) -> Result<(), fmt::Error> {
     write!(w, "{}", ctx.get_var(id))
+}
+
+fn pp_id_ref(id: &VarId, ctx: &Ctx, w: &mut dyn fmt::Write) -> Result<(), fmt::Error> {
+    write!(w, "{}", ctx.get_var(*id))
 }
 
 fn fvs(e: &knormal::Expr, acc: &mut FxHashSet<VarId>) {

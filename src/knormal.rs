@@ -20,10 +20,13 @@ pub enum Expr {
     App(VarId, Vec<VarId>),
     // A C call
     ExtApp(String, Vec<VarId>),
+    // Tuple allocation
     Tuple(Vec<VarId>),
-    // Tuple field access
+    // Tuple field read
     TupleIdx(VarId, usize),
+    // Array field read
     Get(VarId, VarId),
+    // Array field write
     Put(VarId, VarId, VarId),
 }
 
