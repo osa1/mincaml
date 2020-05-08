@@ -14,20 +14,9 @@ pub enum Expr {
     FNeg(VarId),
     IfEq(VarId, VarId, Box<Expr>, Box<Expr>),
     IfLE(VarId, VarId, Box<Expr>, Box<Expr>),
-    Let {
-        id: VarId,
-        ty: Type,
-        rhs: Box<Expr>,
-        body: Box<Expr>,
-    },
+    Let { id: VarId, ty: Type, rhs: Box<Expr>, body: Box<Expr> },
     Var(VarId),
-    LetRec {
-        name: VarId,
-        ty: Type,
-        args: Vec<VarId>,
-        rhs: Box<Expr>,
-        body: Box<Expr>,
-    },
+    LetRec { name: VarId, ty: Type, args: Vec<VarId>, rhs: Box<Expr>, body: Box<Expr> },
     App(VarId, Vec<VarId>),
     // A C call
     ExtApp(String, Vec<VarId>),
@@ -68,12 +57,7 @@ impl TmpLet {
     fn finish(self, body: Expr) -> Expr {
         match self {
             TmpLet::NoNeed => body,
-            TmpLet::TmpLet { id, ty, rhs } => Expr::Let {
-                id,
-                ty,
-                rhs,
-                body: Box::new(body),
-            },
+            TmpLet::TmpLet { id, ty, rhs } => Expr::Let { id, ty, rhs, body: Box::new(body) },
         }
     }
 }
@@ -83,14 +67,7 @@ fn mk_let(ctx: &mut Ctx, e: Expr, ty: Type) -> (TmpLet, VarId) {
         Expr::Var(var) => (TmpLet::NoNeed, var),
         _ => {
             let id = ctx.fresh_generated_var(CompilerPhase::KNormal);
-            (
-                TmpLet::TmpLet {
-                    id,
-                    ty,
-                    rhs: Box::new(e),
-                },
-                id,
-            )
+            (TmpLet::TmpLet { id, ty, rhs: Box::new(e) }, id)
         }
     }
 }
@@ -133,11 +110,7 @@ pub fn knormal_(ctx: &mut Ctx, expr: parser::Expr) -> (Expr, Type) {
             let (tmp1, arg1) = mk_let(ctx, e1, Type::Int);
             let e2 = knormal(ctx, *e2);
             let (tmp2, arg2) = mk_let(ctx, e2, Type::Int);
-            let e = tmp1.finish(tmp2.finish(Expr::IBinOp(BinOp {
-                op: IntBinOp::Add,
-                arg1,
-                arg2,
-            })));
+            let e = tmp1.finish(tmp2.finish(Expr::IBinOp(BinOp { op: IntBinOp::Add, arg1, arg2 })));
             (e, Type::Int)
         }
 
@@ -146,11 +119,8 @@ pub fn knormal_(ctx: &mut Ctx, expr: parser::Expr) -> (Expr, Type) {
             let (tmp1, arg1) = mk_let(ctx, e1, Type::Float);
             let e2 = knormal(ctx, *e2);
             let (tmp2, arg2) = mk_let(ctx, e2, Type::Float);
-            let e = tmp1.finish(tmp2.finish(Expr::FBinOp(BinOp {
-                op: FloatBinOp::Add,
-                arg1,
-                arg2,
-            })));
+            let e =
+                tmp1.finish(tmp2.finish(Expr::FBinOp(BinOp { op: FloatBinOp::Add, arg1, arg2 })));
             (e, Type::Float)
         }
 
@@ -159,11 +129,7 @@ pub fn knormal_(ctx: &mut Ctx, expr: parser::Expr) -> (Expr, Type) {
             let (tmp1, arg1) = mk_let(ctx, e1, Type::Int);
             let e2 = knormal(ctx, *e2);
             let (tmp2, arg2) = mk_let(ctx, e2, Type::Int);
-            let e = tmp1.finish(tmp2.finish(Expr::IBinOp(BinOp {
-                op: IntBinOp::Sub,
-                arg1,
-                arg2,
-            })));
+            let e = tmp1.finish(tmp2.finish(Expr::IBinOp(BinOp { op: IntBinOp::Sub, arg1, arg2 })));
             (e, Type::Int)
         }
 
@@ -172,11 +138,8 @@ pub fn knormal_(ctx: &mut Ctx, expr: parser::Expr) -> (Expr, Type) {
             let (tmp1, arg1) = mk_let(ctx, e1, Type::Float);
             let e2 = knormal(ctx, *e2);
             let (tmp2, arg2) = mk_let(ctx, e2, Type::Float);
-            let e = tmp1.finish(tmp2.finish(Expr::FBinOp(BinOp {
-                op: FloatBinOp::Sub,
-                arg1,
-                arg2,
-            })));
+            let e =
+                tmp1.finish(tmp2.finish(Expr::FBinOp(BinOp { op: FloatBinOp::Sub, arg1, arg2 })));
             (e, Type::Float)
         }
 
@@ -185,11 +148,8 @@ pub fn knormal_(ctx: &mut Ctx, expr: parser::Expr) -> (Expr, Type) {
             let (tmp1, arg1) = mk_let(ctx, e1, Type::Float);
             let e2 = knormal(ctx, *e2);
             let (tmp2, arg2) = mk_let(ctx, e2, Type::Float);
-            let e = tmp1.finish(tmp2.finish(Expr::FBinOp(BinOp {
-                op: FloatBinOp::Mul,
-                arg1,
-                arg2,
-            })));
+            let e =
+                tmp1.finish(tmp2.finish(Expr::FBinOp(BinOp { op: FloatBinOp::Mul, arg1, arg2 })));
             (e, Type::Float)
         }
 
@@ -198,11 +158,8 @@ pub fn knormal_(ctx: &mut Ctx, expr: parser::Expr) -> (Expr, Type) {
             let (tmp1, arg1) = mk_let(ctx, e1, Type::Float);
             let e2 = knormal(ctx, *e2);
             let (tmp2, arg2) = mk_let(ctx, e2, Type::Float);
-            let e = tmp1.finish(tmp2.finish(Expr::FBinOp(BinOp {
-                op: FloatBinOp::Div,
-                arg1,
-                arg2,
-            })));
+            let e =
+                tmp1.finish(tmp2.finish(Expr::FBinOp(BinOp { op: FloatBinOp::Div, arg1, arg2 })));
             (e, Type::Float)
         }
 
@@ -255,12 +212,7 @@ pub fn knormal_(ctx: &mut Ctx, expr: parser::Expr) -> (Expr, Type) {
         parser::Expr::Let { bndr, rhs, body } => {
             let (rhs, rhs_ty) = knormal_(ctx, *rhs);
             let (body, body_ty) = knormal_(ctx, *body);
-            let e = Expr::Let {
-                id: bndr,
-                ty: rhs_ty,
-                rhs: Box::new(rhs),
-                body: Box::new(body),
-            };
+            let e = Expr::Let { id: bndr, ty: rhs_ty, rhs: Box::new(rhs), body: Box::new(body) };
             (e, body_ty)
         }
 
@@ -269,22 +221,14 @@ pub fn knormal_(ctx: &mut Ctx, expr: parser::Expr) -> (Expr, Type) {
             (Expr::Var(var), (&*ctx.var_type(var).unwrap()).clone())
         }
 
-        parser::Expr::LetRec {
-            bndr,
-            args,
-            rhs,
-            body,
-        } => {
+        parser::Expr::LetRec { bndr, args, rhs, body } => {
             let mut arg_tys: Vec<Type> = Vec::with_capacity(args.len());
             for arg in &args {
                 arg_tys.push((&*ctx.var_type(*arg).unwrap()).clone());
             }
 
             let (rhs, rhs_ty) = knormal_(ctx, *rhs);
-            let fun_ty = Type::Fun {
-                args: arg_tys,
-                ret: Box::new(rhs_ty),
-            };
+            let fun_ty = Type::Fun { args: arg_tys, ret: Box::new(rhs_ty) };
             let (body, body_ty) = knormal_(ctx, *body);
 
             let e = Expr::LetRec {

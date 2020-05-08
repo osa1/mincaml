@@ -36,10 +36,7 @@ impl Var {
     }
 
     pub fn new_user(name: &str, uniq: Uniq) -> Var {
-        Var::User(UserVar {
-            name: name.into(),
-            uniq,
-        })
+        Var::User(UserVar { name: name.into(), uniq })
     }
 
     pub fn new_generated(phase: CompilerPhase, uniq: Uniq) -> Var {
@@ -47,10 +44,7 @@ impl Var {
     }
 
     pub fn new_builtin(name: &str, uniq: Uniq) -> Var {
-        Var::Builtin(BuiltinVar {
-            name: name.into(),
-            uniq,
-        })
+        Var::Builtin(BuiltinVar { name: name.into(), uniq })
     }
 
     pub fn name(&self) -> Rc<str> {
@@ -133,11 +127,7 @@ pub struct GeneratedVar {
 
 impl GeneratedVar {
     fn new(phase: CompilerPhase, uniq: Uniq) -> GeneratedVar {
-        GeneratedVar {
-            name: format!("#{}_{:#X}", phase.display_str(), uniq.0).into(),
-            phase,
-            uniq,
-        }
+        GeneratedVar { name: format!("#{}_{:#X}", phase.display_str(), uniq.0).into(), phase, uniq }
     }
 
     fn name(&self) -> Rc<str> {

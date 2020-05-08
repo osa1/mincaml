@@ -79,11 +79,7 @@ pub fn tokenize(expr_str: &str) -> Result<Vec<Token>, LexErr> {
 
 impl<'a> Lexer<'a> {
     pub fn new(input: &[u8]) -> Lexer {
-        Lexer {
-            input,
-            byte_idx: 0,
-            buf: String::with_capacity(20),
-        }
+        Lexer { input, byte_idx: 0, buf: String::with_capacity(20) }
     }
 
     pub fn next(&mut self) -> Result<Token, LexErr> {
@@ -315,10 +311,7 @@ impl<'a> Lexer<'a> {
         if next == char {
             Ok(())
         } else {
-            Err(LexErr::UnexpectedChar {
-                expected: char,
-                found: next,
-            })
+            Err(LexErr::UnexpectedChar { expected: char, found: next })
         }
     }
 

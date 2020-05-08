@@ -1,0 +1,4 @@
+max_width = 100
+fn_args_layout = "Compressed"
+struct_lit_width = 100
+struct_variant_width = 100
