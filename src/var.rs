@@ -11,7 +11,7 @@ pub struct Uniq(pub NonZeroU32);
 impl fmt::Display for Uniq {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "0x")?;
-        fmt::LowerHex::fmt(&self.0, f)
+        fmt::UpperHex::fmt(&self.0, f)
     }
 }
 
@@ -90,7 +90,7 @@ pub struct UserVar {
 
 impl fmt::Display for UserVar {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}_{}", self.name, self.uniq.0)
+        write!(f, "{}_{}", self.name, self.uniq)
     }
 }
 
