@@ -319,7 +319,7 @@ pub fn knormal_(ctx: &mut Ctx, expr: parser::Expr) -> (Expr, Type) {
                     Expr::Let {
                         id: bndr,
                         ty,
-                        rhs: Box::new(Expr::TupleIdx(rhs_id.clone(), bndr_idx)),
+                        rhs: Box::new(Expr::TupleIdx(rhs_id, bndr_idx)),
                         body: Box::new(expr),
                     }
                 });

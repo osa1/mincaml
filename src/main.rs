@@ -114,7 +114,7 @@ fn do_expr(expr_str: &str) -> i32 {
 
     let mut s = String::new();
     for fun in funs {
-        fun.pp(&mut ctx, &mut s).unwrap();
+        fun.pp(&ctx, &mut s).unwrap();
     }
 
     println!("{}", s);

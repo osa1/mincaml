@@ -33,3 +33,23 @@ where
         ptr::write(mut_ref, new_t);
     }
 }
+
+use crate::ctx::{Ctx, VarId};
+use std::fmt::Write;
+
+#[allow(dead_code)]
+pub fn show_arg_list(ctx: &Ctx, args: &[VarId]) -> String {
+    let mut s = String::new();
+    s.push('[');
+    let mut add_comma = false;
+    for arg in args {
+        if add_comma {
+            s.push_str(", ");
+        } else {
+            add_comma = true;
+        }
+        write!(s, "{}", ctx.get_var(*arg)).unwrap();
+    }
+    s.push(']');
+    s
+}

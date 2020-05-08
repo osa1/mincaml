@@ -1,10 +1,12 @@
-#![allow(dead_code)]
-
 use crate::ctx::{Ctx, VarId};
 use crate::knormal;
 use crate::knormal::{BinOp, FloatBinOp, IntBinOp};
 use crate::var::CompilerPhase::ClosureConvert;
 use crate::var::Uniq;
+
+// Used when debugging
+#[allow(unused_imports)]
+use crate::utils;
 
 use fxhash::FxHashSet;
 
@@ -49,12 +51,6 @@ pub struct Asgn {
 #[derive(Debug, Clone)]
 pub enum BlockSequel {
     Return,
-    // Branch {
-    //     cond: VarId,
-    //     then_label: Label,
-    //     else_label: Label,
-    // },
-    Jump(Label),
     // Assign return value to this variable and jump to the label. Used when lowering let bindings.
     Asgn(VarId, Label),
 }
@@ -64,7 +60,7 @@ impl BlockSequel {
         use BlockSequel::*;
         match self {
             Asgn(var, _) => *var,
-            Return | Jump(_) => ctx.fresh_var(),
+            Return => ctx.fresh_var(),
         }
     }
 }
@@ -73,9 +69,15 @@ impl Block {
     fn new(label: Label, mut stmts: Vec<Asgn>, sequel: BlockSequel, value: Atom) -> Block {
         let exit = match sequel {
             BlockSequel::Return => Exit::Return(value),
-            BlockSequel::Jump(label) => Exit::Jump(label),
             BlockSequel::Asgn(lhs, label) => {
-                stmts.push(Asgn { lhs, rhs: Expr::Atom(value) });
+                match value {
+                    // TODO: Should we handle this case in the call site? Or make it impossible to
+                    // happen somehow?
+                    Atom::Var(rhs) if lhs == rhs => {}
+                    _ => {
+                        stmts.push(Asgn { lhs, rhs: Expr::Atom(value) });
+                    }
+                }
                 Exit::Jump(label)
             }
         };
@@ -168,9 +170,6 @@ fn cc_block(
     ctx: &mut CcCtx, blocks: &mut Vec<Block>, label: Label, mut stmts: Vec<Asgn>,
     sequel: BlockSequel, expr: knormal::Expr,
 ) {
-    // eprintln!("cc_block e={:#?}", expr);
-    // eprintln!("cc_block sequel={:#?}", sequel);
-
     match expr {
         knormal::Expr::Unit => {
             blocks.push(Block::new(label, stmts, sequel, Atom::Unit));
@@ -281,7 +280,7 @@ fn cc_block(
             // Bind captured variables in function body
             for (fv_idx, fv) in closure_fvs.iter().enumerate() {
                 entry_block_stmts
-                    .push(Asgn { lhs: *fv, rhs: Expr::Get(name, Atom::Int(fv_idx as u64)) });
+                    .push(Asgn { lhs: *fv, rhs: Expr::Get(name, Atom::Int(fv_idx as u64 + 1)) });
             }
             cc_block(
                 ctx,
@@ -530,19 +529,19 @@ fn fvs(e: &knormal::Expr, acc: &mut FxHashSet<VarId>) {
     match e {
         Unit | Int(_) | Float(_) => {}
         IBinOp(BinOp { arg1, arg2, op: _ }) => {
-            acc.insert(arg1.clone());
-            acc.insert(arg2.clone());
+            acc.insert(*arg1);
+            acc.insert(*arg2);
         }
         FBinOp(BinOp { arg1, arg2, op: _ }) => {
-            acc.insert(arg1.clone());
-            acc.insert(arg2.clone());
+            acc.insert(*arg1);
+            acc.insert(*arg2);
         }
         Neg(arg) | FNeg(arg) => {
-            acc.insert(arg.clone());
+            acc.insert(*arg);
         }
         IfEq(arg1, arg2, e1, e2) | IfLE(arg1, arg2, e1, e2) => {
-            acc.insert(arg1.clone());
-            acc.insert(arg2.clone());
+            acc.insert(*arg1);
+            acc.insert(*arg2);
             fvs(e1, acc);
             fvs(e2, acc);
         }
@@ -552,7 +551,7 @@ fn fvs(e: &knormal::Expr, acc: &mut FxHashSet<VarId>) {
             acc.remove(id);
         }
         Var(id) => {
-            acc.insert(id.clone());
+            acc.insert(*id);
         }
         LetRec { name, ty: _, args, rhs, body } => {
             fvs(rhs, acc);
@@ -563,27 +562,27 @@ fn fvs(e: &knormal::Expr, acc: &mut FxHashSet<VarId>) {
             }
         }
         App(fun, args) => {
-            acc.insert(fun.clone());
+            acc.insert(*fun);
             for arg in args {
-                acc.insert(arg.clone());
+                acc.insert(*arg);
             }
         }
         ExtApp(_, args) | Tuple(args) => {
             for arg in args {
-                acc.insert(arg.clone());
+                acc.insert(*arg);
             }
         }
         TupleIdx(arg, _) => {
-            acc.insert(arg.clone());
+            acc.insert(*arg);
         }
         Get(arg1, arg2) => {
-            acc.insert(arg1.clone());
-            acc.insert(arg2.clone());
+            acc.insert(*arg1);
+            acc.insert(*arg2);
         }
         Put(arg1, arg2, arg3) => {
-            acc.insert(arg1.clone());
-            acc.insert(arg2.clone());
-            acc.insert(arg3.clone());
+            acc.insert(*arg1);
+            acc.insert(*arg2);
+            acc.insert(*arg3);
         }
     }
 }
