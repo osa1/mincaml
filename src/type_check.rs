@@ -1,10 +1,10 @@
 use fxhash::FxHashMap;
 use std::rc::Rc;
-use take_mut::take;
 
 use crate::ctx::{Ctx, VarId};
 use crate::locals::Locals;
 use crate::parser::Expr;
+use crate::utils::take;
 use crate::var::Uniq;
 
 pub type TyVar = Uniq;

@@ -18,3 +18,18 @@ pub fn comma_sep(s: &str) -> String {
 
     ret
 }
+
+// Copied from take_mut crate
+pub fn take<T, F>(mut_ref: &mut T, closure: F)
+where
+    F: FnOnce(T) -> T,
+{
+    use std::ptr;
+
+    unsafe {
+        let old_t = ptr::read(mut_ref);
+        let new_t = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| closure(old_t)))
+            .unwrap_or_else(|_| ::std::process::abort());
+        ptr::write(mut_ref, new_t);
+    }
+}

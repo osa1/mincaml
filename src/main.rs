@@ -63,8 +63,7 @@ fn repl() {
             Err(ReadlineError::Interrupted | ReadlineError::Eof) => {
                 break;
             }
-            err
-            @ Err(ReadlineError::Io(_) | ReadlineError::Utf8Error | ReadlineError::Errno(_)) => {
+            err => {
                 println!("Error while reading line: {:?}", err);
                 println!("Aborting.");
                 break;

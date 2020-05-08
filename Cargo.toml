@@ -11,7 +11,6 @@ path = "src/main.rs"
 [dependencies]
 fxhash = "0.2.1"
 rustyline = "6.0"
-take_mut = "0.2.2"
 
 [profile.release]
 lto = true
