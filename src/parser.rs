@@ -307,7 +307,7 @@ impl<'a> Parser<'a> {
                 Ok(Token::Less) if prec < CMP_PREC => {
                     self.consume();
                     let expr2 = self.expr1(ctx, CMP_PREC)?;
-                    expr = Expr::Le(Box::new(expr), Box::new(expr2));
+                    expr = Expr::Not(Box::new(Expr::Le(Box::new(expr2), Box::new(expr))));
                 }
                 Ok(Token::Equal) if prec < CMP_PREC => {
                     self.consume();
