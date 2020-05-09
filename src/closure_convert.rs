@@ -87,7 +87,7 @@ impl Block {
 }
 
 // Exit nodes of basic blocks
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Exit {
     Return(Atom),
     Branch { cond: VarId, then_label: Label, else_label: Label },
@@ -116,7 +116,7 @@ pub enum Expr {
     Put(VarId, Atom, Atom),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Atom {
     Unit,
     Int(u64),
@@ -166,45 +166,53 @@ pub fn closure_convert(ctx: &mut Ctx, expr: knormal::Expr) -> Vec<Fun> {
     cc_ctx.funs
 }
 
+// Returns whether the added block was a fork (i.e. then or else branch of an if)
 fn cc_block(
     ctx: &mut CcCtx, blocks: &mut Vec<Block>, label: Label, mut stmts: Vec<Asgn>,
     sequel: BlockSequel, expr: knormal::Expr,
-) {
+) -> bool {
     match expr {
         knormal::Expr::Unit => {
             blocks.push(Block::new(label, stmts, sequel, Atom::Unit));
+            false
         }
 
         knormal::Expr::Int(i) => {
             blocks.push(Block::new(label, stmts, sequel, Atom::Int(i)));
+            false
         }
 
         knormal::Expr::Float(f) => {
             blocks.push(Block::new(label, stmts, sequel, Atom::Float(f)));
+            false
         }
 
         knormal::Expr::Neg(var) => {
             let tmp = ctx.fresh_var();
             stmts.push(Asgn { lhs: tmp, rhs: Expr::Neg(var) });
             blocks.push(Block::new(label, stmts, sequel, Atom::Var(tmp)));
+            false
         }
 
         knormal::Expr::FNeg(var) => {
             let tmp = ctx.fresh_var();
             stmts.push(Asgn { lhs: tmp, rhs: Expr::FNeg(var) });
             blocks.push(Block::new(label, stmts, sequel, Atom::Var(tmp)));
+            false
         }
 
         knormal::Expr::IBinOp(BinOp { op, arg1, arg2 }) => {
             let tmp = sequel.get_ret_var(ctx);
             stmts.push(Asgn { lhs: tmp, rhs: Expr::IBinOp(BinOp { op, arg1, arg2 }) });
             blocks.push(Block::new(label, stmts, sequel, Atom::Var(tmp)));
+            false
         }
 
         knormal::Expr::FBinOp(BinOp { op, arg1, arg2 }) => {
             let tmp = sequel.get_ret_var(ctx);
             stmts.push(Asgn { lhs: tmp, rhs: Expr::FBinOp(BinOp { op, arg1, arg2 }) });
             blocks.push(Block::new(label, stmts, sequel, Atom::Var(tmp)));
+            false
         }
 
         knormal::Expr::IfEq(v1, v2, e1, e2) => {
@@ -219,6 +227,7 @@ fn cc_block(
             });
             cc_block(ctx, blocks, then_label, vec![], sequel.clone(), *e1);
             cc_block(ctx, blocks, else_label, vec![], sequel, *e2);
+            true
         }
 
         knormal::Expr::IfLE(v1, v2, e1, e2) => {
@@ -233,19 +242,29 @@ fn cc_block(
             });
             cc_block(ctx, blocks, then_label, vec![], sequel.clone(), *e1);
             cc_block(ctx, blocks, else_label, vec![], sequel, *e2);
+            true
         }
 
         knormal::Expr::Var(var) => {
             blocks.push(Block::new(label, stmts, sequel, Atom::Var(var)));
+            false
         }
 
         knormal::Expr::Let { id, ty: _, rhs, body } => {
-            // TODO: This is quite inefficient; when we don't fork in the RHS we should be able
-            // continue using the current block.
             let cont_label = ctx.fresh_label();
             let rhs_sequel = BlockSequel::Asgn(id, cont_label);
-            cc_block(ctx, blocks, label, stmts, rhs_sequel, *rhs);
-            cc_block(ctx, blocks, cont_label, vec![], sequel, *body);
+            let forked = cc_block(ctx, blocks, label, stmts, rhs_sequel, *rhs);
+
+            // Is the last block of RHS is not a forked block (i.e. then or else branch of an if)
+            // then we can continue extend that block. If not we'll have to use the continuation
+            // block.
+            if !forked {
+                let Block { label, stmts, exit } = blocks.pop().unwrap();
+                assert_eq!(exit, Exit::Jump(cont_label));
+                cc_block(ctx, blocks, label, stmts, sequel, *body)
+            } else {
+                cc_block(ctx, blocks, cont_label, vec![], sequel, *body)
+            }
         }
 
         knormal::Expr::LetRec { name, ty: _, mut args, rhs, body } => {
@@ -298,7 +317,7 @@ fn cc_block(
             closure_tuple_args.insert(0, fun_var);
             let tuple_expr = Expr::Tuple(closure_tuple_args);
             stmts.push(Asgn { lhs: name, rhs: tuple_expr });
-            cc_block(ctx, blocks, label, stmts, sequel, *body);
+            cc_block(ctx, blocks, label, stmts, sequel, *body)
         }
 
         knormal::Expr::App(fun, mut args) => {
@@ -311,30 +330,35 @@ fn cc_block(
 
             stmts.push(Asgn { lhs: ret_tmp, rhs: Expr::App(fun_tmp, args) });
             blocks.push(Block::new(label, stmts, sequel, Atom::Var(ret_tmp)));
+            false
         }
 
         knormal::Expr::ExtApp(ext_fn, args) => {
             let ret_tmp = sequel.get_ret_var(ctx);
             stmts.push(Asgn { lhs: ret_tmp, rhs: Expr::ExtApp(ext_fn, args) });
             blocks.push(Block::new(label, stmts, sequel, Atom::Var(ret_tmp)));
+            false
         }
 
         knormal::Expr::Tuple(args) => {
             let ret_tmp = sequel.get_ret_var(ctx);
             stmts.push(Asgn { lhs: ret_tmp, rhs: Expr::Tuple(args) });
             blocks.push(Block::new(label, stmts, sequel, Atom::Var(ret_tmp)));
+            false
         }
 
         knormal::Expr::TupleIdx(tuple, idx) => {
             let ret_tmp = sequel.get_ret_var(ctx);
             stmts.push(Asgn { lhs: ret_tmp, rhs: Expr::TupleIdx(tuple, idx) });
             blocks.push(Block::new(label, stmts, sequel, Atom::Var(ret_tmp)));
+            false
         }
 
         knormal::Expr::Get(array, idx) => {
             let ret_tmp = sequel.get_ret_var(ctx);
             stmts.push(Asgn { lhs: ret_tmp, rhs: Expr::Get(array, Atom::Var(idx)) });
             blocks.push(Block::new(label, stmts, sequel, Atom::Var(ret_tmp)));
+            false
         }
 
         knormal::Expr::Put(array, idx, val) => {
@@ -342,6 +366,7 @@ fn cc_block(
             stmts
                 .push(Asgn { lhs: ret_tmp, rhs: Expr::Put(array, Atom::Var(idx), Atom::Var(val)) });
             blocks.push(Block::new(label, stmts, sequel, Atom::Var(ret_tmp)));
+            false
         }
     }
 }
