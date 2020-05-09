@@ -11,7 +11,7 @@ pub enum Expr {
     Unit,
     // true, false
     Bool(bool),
-    Int(u64),
+    Int(i64),
     Float(f64),
     // not <expr>
     Not(Box<Expr>),

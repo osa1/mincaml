@@ -22,31 +22,25 @@ pub struct Program {
 // Functions
 #[derive(Debug)]
 pub struct Fun {
-    name: VarId,
-    entry: Label,
-    args: Vec<VarId>,
-    blocks: Vec<Block>,
-}
-
-#[derive(Debug)]
-pub struct OpenBlock {
-    label: Label,
-    stmts: Vec<Asgn>,
+    pub name: VarId,
+    pub entry: Label,
+    pub args: Vec<VarId>,
+    pub blocks: Vec<Block>,
 }
 
 // Basic blocks
 #[derive(Debug)]
 pub struct Block {
-    label: Label,
-    stmts: Vec<Asgn>,
-    exit: Exit,
+    pub label: Label,
+    pub stmts: Vec<Asgn>,
+    pub exit: Exit,
 }
 
 // Assignments
 #[derive(Debug)]
 pub struct Asgn {
-    lhs: VarId,
-    rhs: Expr,
+    pub lhs: VarId,
+    pub rhs: Expr,
 }
 
 #[derive(Debug, Clone)]
@@ -118,7 +112,7 @@ pub enum Expr {
 #[derive(Debug, PartialEq)]
 pub enum Atom {
     Unit,
-    Int(u64),
+    Int(i64),
     Float(f64),
     Var(VarId),
 }
@@ -281,7 +275,7 @@ fn cc_block(
             // Bind captured variables in function body
             for (fv_idx, fv) in closure_fvs.iter().enumerate() {
                 entry_block_stmts
-                    .push(Asgn { lhs: *fv, rhs: Expr::Get(name, Atom::Int(fv_idx as u64 + 1)) });
+                    .push(Asgn { lhs: *fv, rhs: Expr::Get(name, Atom::Int(fv_idx as i64 + 1)) });
             }
             cc_block(
                 ctx,

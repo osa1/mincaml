@@ -7,7 +7,7 @@ use crate::var::CompilerPhase;
 #[derive(Debug)]
 pub enum Expr {
     Unit,
-    Int(u64),
+    Int(i64),
     Float(f64),
     IBinOp(BinOp<IntBinOp>),
     FBinOp(BinOp<FloatBinOp>),

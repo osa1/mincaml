@@ -31,7 +31,7 @@ pub enum Token {
     Underscore,
     ArrayCreate,
     Id(String),
-    Int(u64),
+    Int(i64),
     Float(f64),
 }
 
@@ -300,7 +300,7 @@ impl<'a> Lexer<'a> {
 
     fn process_int(&mut self) -> Result<Token, LexErr> {
         let str = self.flush_buf();
-        match u64::from_str(&str) {
+        match i64::from_str(&str) {
             Ok(i) => Ok(Token::Int(i)),
             Err(_) => Err(LexErr::InvalidInt { found: str }),
         }
