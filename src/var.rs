@@ -55,6 +55,13 @@ impl Var {
             // Var::External(var) => var.name(),
         }
     }
+
+    pub fn is_builtin(&self) -> bool {
+        match self {
+            Var::Builtin(_) => true,
+            Var::User(..) | Var::Generated(..) => false,
+        }
+    }
 }
 
 impl PartialEq for Var {

@@ -280,7 +280,7 @@ fn cc_block(
             // to annotate LetRecs with fvs. Doesn't matter in practice though.
             let closure_fvs: Vec<VarId> = {
                 let mut closure_fvs: FxHashSet<VarId> = Default::default();
-                fvs(&*rhs, &mut closure_fvs);
+                fvs(ctx.ctx, &*rhs, &mut closure_fvs);
                 for arg in &args {
                     closure_fvs.remove(arg);
                 }
@@ -549,65 +549,71 @@ fn pp_id_ref(id: &VarId, ctx: &Ctx, w: &mut dyn fmt::Write) -> Result<(), fmt::E
     write!(w, "{}", ctx.get_var(*id))
 }
 
-fn fvs(e: &knormal::Expr, acc: &mut FxHashSet<VarId>) {
+fn fvs(ctx: &Ctx, e: &knormal::Expr, acc: &mut FxHashSet<VarId>) {
     use knormal::Expr::*;
     match e {
         Unit | Int(_) | Float(_) => {}
         IBinOp(BinOp { arg1, arg2, op: _ }) => {
-            acc.insert(*arg1);
-            acc.insert(*arg2);
+            fv(ctx, *arg1, acc);
+            fv(ctx, *arg2, acc);
         }
         FBinOp(BinOp { arg1, arg2, op: _ }) => {
-            acc.insert(*arg1);
-            acc.insert(*arg2);
+            fv(ctx, *arg1, acc);
+            fv(ctx, *arg2, acc);
         }
         Neg(arg) | FNeg(arg) => {
-            acc.insert(*arg);
+            fv(ctx, *arg, acc);
         }
         IfEq(arg1, arg2, e1, e2) | IfLE(arg1, arg2, e1, e2) => {
-            acc.insert(*arg1);
-            acc.insert(*arg2);
-            fvs(e1, acc);
-            fvs(e2, acc);
+            fv(ctx, *arg1, acc);
+            fv(ctx, *arg2, acc);
+            fvs(ctx, e1, acc);
+            fvs(ctx, e2, acc);
         }
         Let { id, ty: _, rhs, body } => {
-            fvs(rhs, acc);
-            fvs(body, acc);
+            fvs(ctx, rhs, acc);
+            fvs(ctx, body, acc);
             acc.remove(id);
         }
         Var(id) => {
-            acc.insert(*id);
+            fv(ctx, *id, acc);
         }
         LetRec { name, ty: _, args, rhs, body } => {
-            fvs(rhs, acc);
-            fvs(body, acc);
+            fvs(ctx, rhs, acc);
+            fvs(ctx, body, acc);
             acc.remove(name);
             for arg in args {
                 acc.remove(arg);
             }
         }
         App(fun, args) => {
-            acc.insert(*fun);
+            fv(ctx, *fun, acc);
             for arg in args {
-                acc.insert(*arg);
+                fv(ctx, *arg, acc);
             }
         }
         ExtApp(_, args) | Tuple(args) => {
             for arg in args {
-                acc.insert(*arg);
+                fv(ctx, *arg, acc);
             }
         }
         TupleIdx(arg, _) => {
-            acc.insert(*arg);
+            fv(ctx, *arg, acc);
         }
         Get(arg1, arg2) => {
-            acc.insert(*arg1);
-            acc.insert(*arg2);
+            fv(ctx, *arg1, acc);
+            fv(ctx, *arg2, acc);
         }
         Put(arg1, arg2, arg3) => {
-            acc.insert(*arg1);
-            acc.insert(*arg2);
-            acc.insert(*arg3);
+            fv(ctx, *arg1, acc);
+            fv(ctx, *arg2, acc);
+            fv(ctx, *arg3, acc);
         }
+    }
+}
+
+fn fv(ctx: &Ctx, var: VarId, acc: &mut FxHashSet<VarId>) {
+    if !ctx.is_builtin_var(var) {
+        acc.insert(var);
     }
 }

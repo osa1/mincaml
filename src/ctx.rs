@@ -99,6 +99,10 @@ impl Ctx {
         self.builtins.iter()
     }
 
+    pub fn is_builtin_var(&self, id: VarId) -> bool {
+        self.get_var(id).is_builtin()
+    }
+
     fn add_builtin_type(&mut self, var: VarId, ty: TypeId) {
         self.ty_env.insert(var, ty);
         self.builtins.push((var, ty));
