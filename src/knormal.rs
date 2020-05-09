@@ -1,6 +1,6 @@
+use crate::common::*;
 use crate::ctx::{Ctx, VarId};
 use crate::parser;
-use crate::parser::Cmp;
 use crate::type_check::Type;
 use crate::var::CompilerPhase;
 
@@ -35,20 +35,6 @@ pub struct BinOp<A> {
     pub op: A,
     pub arg1: VarId,
     pub arg2: VarId,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum FloatBinOp {
-    Add,
-    Sub,
-    Mul,
-    Div,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum IntBinOp {
-    Add,
-    Sub,
 }
 
 enum TmpLet {
@@ -107,62 +93,21 @@ pub fn knormal_(ctx: &mut Ctx, expr: parser::Expr) -> (Expr, Type) {
             (tmp.finish(Expr::FNeg(var)), Type::Float)
         }
 
-        // TODO: Lots of duplication below in binary ops
-        parser::Expr::Add(e1, e2) => {
+        parser::Expr::IntBinOp(e1, op, e2) => {
             let e1 = knormal(ctx, *e1);
             let (tmp1, arg1) = mk_let(ctx, e1, Type::Int);
             let e2 = knormal(ctx, *e2);
             let (tmp2, arg2) = mk_let(ctx, e2, Type::Int);
-            let e = tmp1.finish(tmp2.finish(Expr::IBinOp(BinOp { op: IntBinOp::Add, arg1, arg2 })));
+            let e = tmp1.finish(tmp2.finish(Expr::IBinOp(BinOp { op, arg1, arg2 })));
             (e, Type::Int)
         }
 
-        parser::Expr::FAdd(e1, e2) => {
+        parser::Expr::FloatBinOp(e1, op, e2) => {
             let e1 = knormal(ctx, *e1);
             let (tmp1, arg1) = mk_let(ctx, e1, Type::Float);
             let e2 = knormal(ctx, *e2);
             let (tmp2, arg2) = mk_let(ctx, e2, Type::Float);
-            let e =
-                tmp1.finish(tmp2.finish(Expr::FBinOp(BinOp { op: FloatBinOp::Add, arg1, arg2 })));
-            (e, Type::Float)
-        }
-
-        parser::Expr::Sub(e1, e2) => {
-            let e1 = knormal(ctx, *e1);
-            let (tmp1, arg1) = mk_let(ctx, e1, Type::Int);
-            let e2 = knormal(ctx, *e2);
-            let (tmp2, arg2) = mk_let(ctx, e2, Type::Int);
-            let e = tmp1.finish(tmp2.finish(Expr::IBinOp(BinOp { op: IntBinOp::Sub, arg1, arg2 })));
-            (e, Type::Int)
-        }
-
-        parser::Expr::FSub(e1, e2) => {
-            let e1 = knormal(ctx, *e1);
-            let (tmp1, arg1) = mk_let(ctx, e1, Type::Float);
-            let e2 = knormal(ctx, *e2);
-            let (tmp2, arg2) = mk_let(ctx, e2, Type::Float);
-            let e =
-                tmp1.finish(tmp2.finish(Expr::FBinOp(BinOp { op: FloatBinOp::Sub, arg1, arg2 })));
-            (e, Type::Float)
-        }
-
-        parser::Expr::FMul(e1, e2) => {
-            let e1 = knormal(ctx, *e1);
-            let (tmp1, arg1) = mk_let(ctx, e1, Type::Float);
-            let e2 = knormal(ctx, *e2);
-            let (tmp2, arg2) = mk_let(ctx, e2, Type::Float);
-            let e =
-                tmp1.finish(tmp2.finish(Expr::FBinOp(BinOp { op: FloatBinOp::Mul, arg1, arg2 })));
-            (e, Type::Float)
-        }
-
-        parser::Expr::FDiv(e1, e2) => {
-            let e1 = knormal(ctx, *e1);
-            let (tmp1, arg1) = mk_let(ctx, e1, Type::Float);
-            let e2 = knormal(ctx, *e2);
-            let (tmp2, arg2) = mk_let(ctx, e2, Type::Float);
-            let e =
-                tmp1.finish(tmp2.finish(Expr::FBinOp(BinOp { op: FloatBinOp::Div, arg1, arg2 })));
+            let e = tmp1.finish(tmp2.finish(Expr::FBinOp(BinOp { op, arg1, arg2 })));
             (e, Type::Float)
         }
 

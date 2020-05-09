@@ -142,7 +142,7 @@ fn type_check(
             Ok(Type::Int)
         }
 
-        Expr::Add(e1, e2) | Expr::Sub(e1, e2) => {
+        Expr::IntBinOp(e1, _, e2) => {
             let e1_ty = type_check(ctx, ty_env, subst_env, scope, e1)?;
             let e2_ty = type_check(ctx, ty_env, subst_env, scope, e2)?;
             unify(subst_env, &Type::Int, &e1_ty)?;
@@ -156,7 +156,7 @@ fn type_check(
             Ok(Type::Float)
         }
 
-        Expr::FAdd(e1, e2) | Expr::FSub(e1, e2) | Expr::FMul(e1, e2) | Expr::FDiv(e1, e2) => {
+        Expr::FloatBinOp(e1, _, e2) => {
             let e1_ty = type_check(ctx, ty_env, subst_env, scope, e1)?;
             let e2_ty = type_check(ctx, ty_env, subst_env, scope, e2)?;
             unify(subst_env, &Type::Float, &e1_ty)?;

@@ -1,3 +1,4 @@
+use crate::common::*;
 use crate::ctx::{Ctx, VarId};
 use crate::lexer::Token;
 use crate::var::CompilerPhase;
@@ -16,20 +17,12 @@ pub enum Expr {
     Not(Box<Expr>),
     // - <expr>
     Neg(Box<Expr>),
-    // <expr> + <expr>
-    Add(Box<Expr>, Box<Expr>),
-    // <expr> - <expr>
-    Sub(Box<Expr>, Box<Expr>),
+    // '<expr> + <expr>' or '<expr> - <expr>'
+    IntBinOp(Box<Expr>, IntBinOp, Box<Expr>),
     // -. <expr>
     FNeg(Box<Expr>),
-    // <expr> +. <expr>
-    FAdd(Box<Expr>, Box<Expr>),
-    // <expr> -. <expr>
-    FSub(Box<Expr>, Box<Expr>),
-    // <expr> *. <expr>
-    FMul(Box<Expr>, Box<Expr>),
-    // <expr> /. <expr>
-    FDiv(Box<Expr>, Box<Expr>),
+    // A float binary operation, e.g. '<expr> +. <expr>'
+    FloatBinOp(Box<Expr>, FloatBinOp, Box<Expr>),
     // Comparison, e.g. <expr> <= <expr>
     Cmp(Box<Expr>, Cmp, Box<Expr>),
     // if <expr> then <expr> else <expr>
@@ -52,16 +45,6 @@ pub enum Expr {
     Get(Box<Expr>, Box<Expr>),
     // <expr> . ( <expr> ) <- <expr>
     Put(Box<Expr>, Box<Expr>, Box<Expr>),
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum Cmp {
-    Equal,
-    NotEqual,
-    LessThan,
-    LessThanOrEqual,
-    GreaterThan,
-    GreaterThanOrEqual,
 }
 
 impl fmt::Display for Cmp {
@@ -292,32 +275,32 @@ impl<'a> Parser<'a> {
                 Ok(Token::Plus) if prec < PLUS_MINUS_PREC => {
                     self.consume();
                     let expr2 = self.expr1(ctx, PLUS_MINUS_PREC)?;
-                    expr = Expr::Add(Box::new(expr), Box::new(expr2));
+                    expr = Expr::IntBinOp(Box::new(expr), IntBinOp::Add, Box::new(expr2));
                 }
                 Ok(Token::Minus) if prec < PLUS_MINUS_PREC => {
                     self.consume();
                     let expr2 = self.expr1(ctx, PLUS_MINUS_PREC)?;
-                    expr = Expr::Sub(Box::new(expr), Box::new(expr2));
+                    expr = Expr::IntBinOp(Box::new(expr), IntBinOp::Sub, Box::new(expr2));
                 }
                 Ok(Token::PlusDot) if prec < PLUS_MINUS_PREC => {
                     self.consume();
                     let expr2 = self.expr1(ctx, PLUS_MINUS_PREC)?;
-                    expr = Expr::FAdd(Box::new(expr), Box::new(expr2));
+                    expr = Expr::FloatBinOp(Box::new(expr), FloatBinOp::Add, Box::new(expr2));
                 }
                 Ok(Token::MinusDot) if prec < PLUS_MINUS_PREC => {
                     self.consume();
                     let expr2 = self.expr1(ctx, PLUS_MINUS_PREC)?;
-                    expr = Expr::FSub(Box::new(expr), Box::new(expr2));
+                    expr = Expr::FloatBinOp(Box::new(expr), FloatBinOp::Sub, Box::new(expr2));
                 }
                 Ok(Token::AstDot) if prec < DIV_MULT_PREC => {
                     self.consume();
                     let expr2 = self.expr1(ctx, DIV_MULT_PREC)?;
-                    expr = Expr::FMul(Box::new(expr), Box::new(expr2));
+                    expr = Expr::FloatBinOp(Box::new(expr), FloatBinOp::Mul, Box::new(expr2));
                 }
                 Ok(Token::SlashDot) if prec < DIV_MULT_PREC => {
                     self.consume();
                     let expr2 = self.expr1(ctx, DIV_MULT_PREC)?;
-                    expr = Expr::FDiv(Box::new(expr), Box::new(expr2));
+                    expr = Expr::FloatBinOp(Box::new(expr), FloatBinOp::Div, Box::new(expr2));
                 }
                 Ok(Token::Equal) if prec < CMP_PREC => {
                     self.consume();

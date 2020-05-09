@@ -1,8 +1,9 @@
 #![feature(or_patterns, box_patterns)]
 
-// mod instr_sel;
 mod closure_convert;
+mod common;
 mod ctx;
+mod instr_sel;
 mod interner;
 mod knormal;
 mod lexer;
