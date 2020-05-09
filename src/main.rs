@@ -1,4 +1,4 @@
-#![feature(or_patterns)]
+#![feature(or_patterns, box_patterns)]
 
 // mod instr_sel;
 mod closure_convert;

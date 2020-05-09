@@ -2,6 +2,8 @@ use crate::ctx::{Ctx, VarId};
 use crate::lexer::Token;
 use crate::var::CompilerPhase;
 
+use std::fmt;
+
 #[derive(Debug)]
 pub enum Expr {
     // ()
@@ -28,10 +30,8 @@ pub enum Expr {
     FMul(Box<Expr>, Box<Expr>),
     // <expr> /. <expr>
     FDiv(Box<Expr>, Box<Expr>),
-    // <expr> = <expr>
-    Eq(Box<Expr>, Box<Expr>),
-    // <expr> <= <expr>
-    Le(Box<Expr>, Box<Expr>),
+    // Comparison, e.g. <expr> <= <expr>
+    Cmp(Box<Expr>, Cmp, Box<Expr>),
     // if <expr> then <expr> else <expr>
     If(Box<Expr>, Box<Expr>, Box<Expr>),
     // let <ident> = <expr> in <expr>
@@ -52,6 +52,31 @@ pub enum Expr {
     Get(Box<Expr>, Box<Expr>),
     // <expr> . ( <expr> ) <- <expr>
     Put(Box<Expr>, Box<Expr>, Box<Expr>),
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum Cmp {
+    Equal,
+    NotEqual,
+    LessThan,
+    LessThanOrEqual,
+    GreaterThan,
+    GreaterThanOrEqual,
+}
+
+impl fmt::Display for Cmp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use Cmp::*;
+        let s = match self {
+            Equal => "=",
+            NotEqual => "<>",
+            LessThan => "<",
+            LessThanOrEqual => "<=",
+            GreaterThan => ">",
+            GreaterThanOrEqual => ">=",
+        };
+        s.fmt(f)
+    }
 }
 
 pub fn parse(ctx: &mut Ctx, tokens: &[Token]) -> Result<Expr, ParseErr> {
@@ -294,30 +319,35 @@ impl<'a> Parser<'a> {
                     let expr2 = self.expr1(ctx, DIV_MULT_PREC)?;
                     expr = Expr::FDiv(Box::new(expr), Box::new(expr2));
                 }
+                Ok(Token::Equal) if prec < CMP_PREC => {
+                    self.consume();
+                    let expr2 = self.expr1(ctx, CMP_PREC)?;
+                    expr = Expr::Cmp(Box::new(expr), Cmp::Equal, Box::new(expr2));
+                }
                 Ok(Token::LessGreater) if prec < CMP_PREC => {
                     self.consume();
                     let expr2 = self.expr1(ctx, CMP_PREC)?;
-                    expr = Expr::Not(Box::new(Expr::Eq(Box::new(expr), Box::new(expr2))));
-                }
-                Ok(Token::LessEqual) if prec < CMP_PREC => {
-                    self.consume();
-                    let expr2 = self.expr1(ctx, CMP_PREC)?;
-                    expr = Expr::Le(Box::new(expr), Box::new(expr2));
+                    expr = Expr::Cmp(Box::new(expr), Cmp::NotEqual, Box::new(expr2));
                 }
                 Ok(Token::Less) if prec < CMP_PREC => {
                     self.consume();
                     let expr2 = self.expr1(ctx, CMP_PREC)?;
-                    expr = Expr::Not(Box::new(Expr::Le(Box::new(expr2), Box::new(expr))));
+                    expr = Expr::Cmp(Box::new(expr), Cmp::LessThan, Box::new(expr2));
                 }
-                Ok(Token::Equal) if prec < CMP_PREC => {
+                Ok(Token::LessEqual) if prec < CMP_PREC => {
                     self.consume();
                     let expr2 = self.expr1(ctx, CMP_PREC)?;
-                    expr = Expr::Eq(Box::new(expr), Box::new(expr2));
+                    expr = Expr::Cmp(Box::new(expr), Cmp::LessThanOrEqual, Box::new(expr2));
                 }
                 Ok(Token::Greater) if prec <= CMP_PREC => {
                     self.consume();
                     let expr2 = self.expr1(ctx, CMP_PREC)?;
-                    expr = Expr::Not(Box::new(Expr::Le(Box::new(expr), Box::new(expr2))));
+                    expr = Expr::Cmp(Box::new(expr), Cmp::GreaterThan, Box::new(expr2));
+                }
+                Ok(Token::GreaterEqual) if prec <= CMP_PREC => {
+                    self.consume();
+                    let expr2 = self.expr1(ctx, CMP_PREC)?;
+                    expr = Expr::Cmp(Box::new(expr), Cmp::GreaterThanOrEqual, Box::new(expr2));
                 }
                 Ok(Token::Comma) if prec <= TUPLE_PREC => {
                     self.consume();

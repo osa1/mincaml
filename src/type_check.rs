@@ -164,7 +164,7 @@ fn type_check(
             Ok(Type::Float)
         }
 
-        Expr::Eq(e1, e2) | Expr::Le(e1, e2) => {
+        Expr::Cmp(e1, _, e2) => {
             let e1_ty = type_check(ctx, ty_env, subst_env, scope, e1)?;
             let e2_ty = type_check(ctx, ty_env, subst_env, scope, e2)?;
             unify(subst_env, &e1_ty, &e2_ty)?;

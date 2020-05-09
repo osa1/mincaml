@@ -1,6 +1,7 @@
 use crate::ctx::{Ctx, VarId};
 use crate::knormal;
 use crate::knormal::{BinOp, FloatBinOp, IntBinOp};
+use crate::parser::Cmp;
 use crate::var::CompilerPhase::ClosureConvert;
 use crate::var::Uniq;
 
@@ -90,7 +91,7 @@ impl Block {
 #[derive(Debug, PartialEq)]
 pub enum Exit {
     Return(Atom),
-    Branch { cond: VarId, then_label: Label, else_label: Label },
+    Branch { v1: VarId, v2: VarId, cond: Cmp, then_label: Label, else_label: Label },
     Jump(Label),
 }
 
@@ -102,8 +103,6 @@ pub enum Expr {
     FBinOp(BinOp<FloatBinOp>),
     Neg(VarId),
     FNeg(VarId),
-    Eq(VarId, VarId),
-    LE(VarId, VarId),
     App(VarId, Vec<VarId>),
     ExtApp(String, Vec<VarId>),
     // Tuple allocation
@@ -215,30 +214,13 @@ fn cc_block(
             false
         }
 
-        knormal::Expr::IfEq(v1, v2, e1, e2) => {
-            let cond_var = ctx.fresh_var();
-            stmts.push(Asgn { lhs: cond_var, rhs: Expr::Eq(v1, v2) });
+        knormal::Expr::If(v1, v2, cmp, e1, e2) => {
             let then_label = ctx.fresh_label();
             let else_label = ctx.fresh_label();
             blocks.push(Block {
                 label,
                 stmts,
-                exit: Exit::Branch { cond: cond_var, then_label, else_label },
-            });
-            cc_block(ctx, blocks, then_label, vec![], sequel.clone(), *e1);
-            cc_block(ctx, blocks, else_label, vec![], sequel, *e2);
-            true
-        }
-
-        knormal::Expr::IfLE(v1, v2, e1, e2) => {
-            let cond_var = ctx.fresh_var();
-            stmts.push(Asgn { lhs: cond_var, rhs: Expr::LE(v1, v2) });
-            let then_label = ctx.fresh_label();
-            let else_label = ctx.fresh_label();
-            blocks.push(Block {
-                label,
-                stmts,
-                exit: Exit::Branch { cond: cond_var, then_label, else_label },
+                exit: Exit::Branch { v1, v2, cond: cmp, then_label, else_label },
             });
             cc_block(ctx, blocks, then_label, vec![], sequel.clone(), *e1);
             cc_block(ctx, blocks, else_label, vec![], sequel, *e2);
@@ -430,10 +412,12 @@ impl Exit {
                 write!(w, "return ")?;
                 atom.pp(ctx, w)
             }
-            Branch { cond, then_label, else_label } => {
+            Branch { v1, v2, cond, then_label, else_label } => {
                 write!(w, "if ")?;
-                pp_id(ctx, *cond, w)?;
-                write!(w, " {} {}", then_label, else_label)
+                pp_id(ctx, *v1, w)?;
+                write!(w, " {} ", cond)?;
+                pp_id(ctx, *v2, w)?;
+                write!(w, " then {} else {}", then_label, else_label)
             }
             Jump(lbl) => write!(w, "jump {}", lbl),
         }
@@ -481,16 +465,6 @@ impl Expr {
             FNeg(var) => {
                 write!(w, "-.")?;
                 pp_id(ctx, *var, w)
-            }
-            Eq(var1, var2) => {
-                pp_id(ctx, *var1, w)?;
-                write!(w, " == ")?;
-                pp_id(ctx, *var2, w)
-            }
-            LE(var1, var2) => {
-                pp_id(ctx, *var1, w)?;
-                write!(w, " <= ")?;
-                pp_id(ctx, *var2, w)
             }
             App(fun, args) => {
                 pp_id(ctx, *fun, w)?;
@@ -564,7 +538,7 @@ fn fvs(ctx: &Ctx, e: &knormal::Expr, acc: &mut FxHashSet<VarId>) {
         Neg(arg) | FNeg(arg) => {
             fv(ctx, *arg, acc);
         }
-        IfEq(arg1, arg2, e1, e2) | IfLE(arg1, arg2, e1, e2) => {
+        If(arg1, arg2, _, e1, e2) => {
             fv(ctx, *arg1, acc);
             fv(ctx, *arg2, acc);
             fvs(ctx, e1, acc);

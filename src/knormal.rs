@@ -1,5 +1,6 @@
 use crate::ctx::{Ctx, VarId};
 use crate::parser;
+use crate::parser::Cmp;
 use crate::type_check::Type;
 use crate::var::CompilerPhase;
 
@@ -12,8 +13,7 @@ pub enum Expr {
     FBinOp(BinOp<FloatBinOp>),
     Neg(VarId),
     FNeg(VarId),
-    IfEq(VarId, VarId, Box<Expr>, Box<Expr>),
-    IfLE(VarId, VarId, Box<Expr>, Box<Expr>),
+    If(VarId, VarId, Cmp, Box<Expr>, Box<Expr>),
     Let { id: VarId, ty: Type, rhs: Box<Expr>, body: Box<Expr> },
     Var(VarId),
     LetRec { name: VarId, ty: Type, args: Vec<VarId>, rhs: Box<Expr>, body: Box<Expr> },
@@ -166,34 +166,38 @@ pub fn knormal_(ctx: &mut Ctx, expr: parser::Expr) -> (Expr, Type) {
             (e, Type::Float)
         }
 
-        parser::Expr::Eq(e1, e2) => {
+        parser::Expr::Cmp(e1, cmp, e2) => {
             let (e1, e1_ty) = knormal_(ctx, *e1);
             let (tmp1, var1) = mk_let(ctx, e1, e1_ty);
             let (e2, e2_ty) = knormal_(ctx, *e2);
             // assert_eq!(e1_ty, e2_ty);
             let (tmp2, var2) = mk_let(ctx, e2, e2_ty);
-            let e = tmp1.finish(tmp2.finish(Expr::IfEq(
+            let e = tmp1.finish(tmp2.finish(Expr::If(
                 var1,
                 var2,
+                cmp,
                 Box::new(Expr::Int(1)),
                 Box::new(Expr::Int(0)),
             )));
             (e, Type::Int)
         }
 
-        parser::Expr::Le(e1, e2) => {
+        parser::Expr::If(box parser::Expr::Cmp(e1, cmp, e2), then_, else_) => {
             let (e1, e1_ty) = knormal_(ctx, *e1);
             let (tmp1, var1) = mk_let(ctx, e1, e1_ty);
             let (e2, e2_ty) = knormal_(ctx, *e2);
             // assert_eq!(e1_ty, e2_ty);
             let (tmp2, var2) = mk_let(ctx, e2, e2_ty);
-            let e = tmp1.finish(tmp2.finish(Expr::IfLE(
+            let (then_, ty) = knormal_(ctx, *then_);
+            let else_ = knormal(ctx, *else_);
+            let e = tmp1.finish(tmp2.finish(Expr::If(
                 var1,
                 var2,
-                Box::new(Expr::Int(1)),
-                Box::new(Expr::Int(0)),
+                cmp,
+                Box::new(then_),
+                Box::new(else_),
             )));
-            (e, Type::Int)
+            (e, ty)
         }
 
         parser::Expr::If(cond, then_, else_) => {
@@ -203,9 +207,10 @@ pub fn knormal_(ctx: &mut Ctx, expr: parser::Expr) -> (Expr, Type) {
             let (true_tmp, true_var) = mk_let(ctx, true_, Type::Int);
             let (then_, ty) = knormal_(ctx, *then_);
             let else_ = knormal(ctx, *else_);
-            let e = cond_tmp.finish(true_tmp.finish(Expr::IfEq(
+            let e = cond_tmp.finish(true_tmp.finish(Expr::If(
                 cond_var,
                 true_var,
+                Cmp::Equal,
                 Box::new(then_),
                 Box::new(else_),
             )));
