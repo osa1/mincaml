@@ -357,8 +357,7 @@ use std::fmt;
 
 fn print_comma_sep<A>(
     ctx: &Ctx, stuffs: &mut dyn Iterator<Item = &A>,
-    show_stuff: fn(&A, ctx: &Ctx, w: &mut dyn fmt::Write) -> Result<(), fmt::Error>,
-    w: &mut dyn fmt::Write,
+    show_stuff: fn(&A, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result, w: &mut dyn fmt::Write,
 ) -> Result<(), fmt::Error> {
     let mut add_comma = false;
     for stuff in stuffs {
@@ -373,7 +372,7 @@ fn print_comma_sep<A>(
 }
 
 impl Fun {
-    pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> Result<(), fmt::Error> {
+    pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result {
         let Fun { name, entry: _, args, blocks } = self;
 
         write!(w, "function ")?;
@@ -405,7 +404,7 @@ impl Block {
 }
 
 impl Exit {
-    pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> Result<(), fmt::Error> {
+    pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result {
         use Exit::*;
         match self {
             Return(atom) => {
@@ -425,7 +424,7 @@ impl Exit {
 }
 
 impl Asgn {
-    pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> Result<(), fmt::Error> {
+    pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result {
         let Asgn { lhs, rhs } = self;
         pp_id(ctx, *lhs, w)?;
         write!(w, " = ")?;
@@ -434,7 +433,7 @@ impl Asgn {
 }
 
 impl Expr {
-    pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> Result<(), fmt::Error> {
+    pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result {
         use Expr::*;
         match self {
             Atom(atom) => atom.pp(ctx, w),
@@ -504,7 +503,7 @@ impl Expr {
 }
 
 impl Atom {
-    pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> Result<(), fmt::Error> {
+    pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result {
         use Atom::*;
         match self {
             Unit => write!(w, "()"),
@@ -515,11 +514,11 @@ impl Atom {
     }
 }
 
-fn pp_id(ctx: &Ctx, id: VarId, w: &mut dyn fmt::Write) -> Result<(), fmt::Error> {
+fn pp_id(ctx: &Ctx, id: VarId, w: &mut dyn fmt::Write) -> fmt::Result {
     write!(w, "{}", ctx.get_var(id))
 }
 
-fn pp_id_ref(id: &VarId, ctx: &Ctx, w: &mut dyn fmt::Write) -> Result<(), fmt::Error> {
+fn pp_id_ref(id: &VarId, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result {
     write!(w, "{}", ctx.get_var(*id))
 }
 

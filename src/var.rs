@@ -3,6 +3,8 @@ use std::hash::{Hash, Hasher};
 use std::num::NonZeroU32;
 use std::rc::Rc;
 
+use crate::utils;
+
 // TODO: Should really be an abstract type but we have to expose the field to be able to create
 // fresh ones in another module
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
@@ -10,8 +12,7 @@ pub struct Uniq(pub NonZeroU32);
 
 impl fmt::Display for Uniq {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "0x")?;
-        fmt::UpperHex::fmt(&self.0, f)
+        utils::base62_encode(*self, f)
     }
 }
 
@@ -134,7 +135,7 @@ pub struct GeneratedVar {
 
 impl GeneratedVar {
     fn new(phase: CompilerPhase, uniq: Uniq) -> GeneratedVar {
-        GeneratedVar { name: format!("#{}_{:#X}", phase.display_str(), uniq.0).into(), phase, uniq }
+        GeneratedVar { name: format!("#{}_{}", phase.display_str(), uniq).into(), phase, uniq }
     }
 
     fn name(&self) -> Rc<str> {
