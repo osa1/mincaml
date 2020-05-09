@@ -305,7 +305,7 @@ fn cc_block(
         knormal::Expr::App(fun, mut args) => {
             // f(x) -> f.0(f, x)
             let fun_tmp = ctx.fresh_var();
-            stmts.push(Asgn { lhs: fun_tmp, rhs: Expr::Get(fun, Atom::Int(0)) });
+            stmts.push(Asgn { lhs: fun_tmp, rhs: Expr::TupleIdx(fun, 0) });
             args.insert(0, fun);
 
             let ret_tmp = sequel.get_ret_var(ctx);
@@ -488,13 +488,13 @@ impl Expr {
             }
             Get(array, idx) => {
                 pp_id(ctx, *array, w)?;
-                write!(w, "(")?;
+                write!(w, ".(")?;
                 idx.pp(ctx, w)?;
                 write!(w, ")")
             }
             Put(array, idx, val) => {
                 pp_id(ctx, *array, w)?;
-                write!(w, "(")?;
+                write!(w, ".(")?;
                 idx.pp(ctx, w)?;
                 write!(w, ") <- ")?;
                 val.pp(ctx, w)
