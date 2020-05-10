@@ -59,11 +59,20 @@
 // - For doubles: xmm0 - xmm7 (TODO: can we not use the rest?)
 //
 // All registers are callee-save. (TODO: Should we follow ABI? I can't see any reason..)
+//
+// Random notes
+// ------------
+//
+// According to Modern Comp. Impl. by Appel some compilers do instr sel after reg alloc to avoid
+// modelling instructions without machine registers (as we do below). I don't understand how that
+// is possible -- we only know about reg requirements *after* deciding on which instructions to
+// use. For example a floating point addition will require different regs than an integer addition.
+// Some instructions allow immediate values while others require mem/reg operands etc.
 
 #![allow(dead_code)]
 
 use crate::closure_convert;
-use crate::closure_convert::{Asgn, Atom, Expr, Fun, Label};
+use crate::closure_convert::{Asgn, Atom, Exit, Expr, Fun, Label};
 use crate::common::*;
 use crate::ctx::{Ctx, VarId};
 use crate::knormal::BinOp;
@@ -104,6 +113,32 @@ pub enum Instr {
     MovqRelativeSrc { src: Arg, offset: Arg, dest: Arg },
     // movq $123, (%rax,%rdx,8)
     MovqRelativeDest { src: Arg, dest: Arg, offset: Arg },
+    // A call instruction. Arguments will be moved to their argument registers in register
+    // allocation -- they're not used in the final instruction, which just looks like `call f`.
+    Call { fun: Arg, args: Vec<Arg>, dest: Arg },
+    // ret instruction doens't have an operand, the argument is to be used in register allocation
+    // to move the return value to the its register according to the calling convention.
+    // None is for returning unit. (TODO: Do we really need this special case? Why not return 0?)
+    Ret { value: Option<Arg> },
+    Jmp { target: Label },
+    // The conditional jump after this will be taken based on whether `arg1 cmp arg2` holds.
+    Cmp { arg1: Arg, arg2: Arg },
+
+    // We don't need all kinds of conditional jumps to map our 6 comparison ops, but it's easier to
+    // debug then the mapping is more direct. So we map our 6 comparison ops to 6 x86 instructions.
+
+    // Jump if arg1 == arg2
+    Je { target: Label },
+    // Jump if arg1 != arg2
+    Jne { target: Label },
+    // Jump if arg1 < arg2
+    Jl { target: Label },
+    // Jump if arg1 <= arg2
+    Jle { target: Label },
+    // Jump if arg1 > arg2
+    Jg { target: Label },
+    // Jump if arg1 >= arg2
+    Jge { target: Label },
 }
 
 #[derive(Debug)]
@@ -115,6 +150,7 @@ pub struct Block {
 #[derive(Debug)]
 pub struct Program {
     pub blocks: Vec<Block>,
+    // Double literals
     pub floats: Vec<(Label, f64)>,
 }
 
@@ -175,7 +211,10 @@ fn instr_sel_block(ctx: &mut IsCtx, block: closure_convert::Block) -> Block {
                 instrs.push(Instr::Negq { src: Arg::Var(lhs) });
             }
             Expr::FNeg(_) => todo!(),
-            Expr::App(_, _) => todo!(),
+            Expr::App(fun, args) => {
+                let args = args.into_iter().map(Arg::Var).collect();
+                instrs.push(Instr::Call { fun: Arg::Var(fun), args, dest: Arg::Var(lhs) });
+            }
             Expr::ExtApp(_, _) => todo!(),
             Expr::Tuple(_) => todo!(),
             Expr::TupleIdx(tuple, idx) => {
@@ -200,12 +239,35 @@ fn instr_sel_block(ctx: &mut IsCtx, block: closure_convert::Block) -> Block {
                     dest: Arg::Var(lhs),
                 });
             }
+            Expr::Get(_, other) => {
+                panic!("Unexpected array offset in get expression: {:?}", other);
+            }
             Expr::Put(array, offset, val) => todo!(),
-            _ => todo!(),
         }
     }
 
-    todo!()
+    match block.exit {
+        Exit::Return(opt_var) => {
+            instrs.push(Instr::Ret { value: opt_var.map(Arg::Var) });
+        }
+        Exit::Jump(target) => {
+            instrs.push(Instr::Jmp { target });
+        }
+        Exit::Branch { v1, v2, cond, then_label, else_label } => {
+            instrs.push(Instr::Cmp { arg1: Arg::Var(v1), arg2: Arg::Var(v2) });
+            instrs.push(match cond {
+                Cmp::Equal => Instr::Je { target: then_label },
+                Cmp::NotEqual => Instr::Jne { target: then_label },
+                Cmp::LessThan => Instr::Jl { target: then_label },
+                Cmp::LessThanOrEqual => Instr::Jle { target: then_label },
+                Cmp::GreaterThan => Instr::Jg { target: then_label },
+                Cmp::GreaterThanOrEqual => Instr::Jge { target: then_label },
+            });
+            instrs.push(Instr::Jmp { target: else_label });
+        }
+    }
+
+    Block { label: block.label, instrs }
 }
 
 fn encode_double(d: f64) -> [u8; 8] {

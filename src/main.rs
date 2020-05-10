@@ -7,6 +7,7 @@ mod instr_sel;
 mod interner;
 mod knormal;
 mod lexer;
+mod liveness;
 mod locals;
 mod parser;
 mod perf;

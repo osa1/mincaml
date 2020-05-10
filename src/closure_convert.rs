@@ -61,9 +61,24 @@ impl BlockSequel {
 }
 
 impl Block {
-    fn new(label: Label, mut stmts: Vec<Asgn>, sequel: BlockSequel, value: Atom) -> Block {
+    fn new(
+        ctx: &mut CcCtx, label: Label, mut stmts: Vec<Asgn>, sequel: BlockSequel, value: Atom,
+    ) -> Block {
         let exit = match sequel {
-            BlockSequel::Return => Exit::Return(value),
+            BlockSequel::Return => match value {
+                Atom::Unit => Exit::Return(None),
+                Atom::Int(i) => {
+                    let tmp = ctx.fresh_var();
+                    stmts.push(Asgn { lhs: tmp, rhs: Expr::Atom(Atom::Int(i)) });
+                    Exit::Return(Some(tmp))
+                }
+                Atom::Float(f) => {
+                    let tmp = ctx.fresh_var();
+                    stmts.push(Asgn { lhs: tmp, rhs: Expr::Atom(Atom::Float(f)) });
+                    Exit::Return(Some(tmp))
+                }
+                Atom::Var(var) => Exit::Return(Some(var)),
+            },
             BlockSequel::Asgn(lhs, label) => {
                 match value {
                     // TODO: Should we handle this case in the call site? Or make it impossible to
@@ -84,7 +99,10 @@ impl Block {
 // Exit nodes of basic blocks
 #[derive(Debug, PartialEq)]
 pub enum Exit {
-    Return(Atom),
+    // We always return a variable to keep things simpler in instruction selection: the 'ret'
+    // instruction doesn't take any arguments, so we need a temporary for the return value in all
+    // cases. 'None' is for returning unit.
+    Return(Option<VarId>),
     Branch { v1: VarId, v2: VarId, cond: Cmp, then_label: Label, else_label: Label },
     Jump(Label),
 }
@@ -166,45 +184,45 @@ fn cc_block(
 ) -> bool {
     match expr {
         knormal::Expr::Unit => {
-            blocks.push(Block::new(label, stmts, sequel, Atom::Unit));
+            blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Unit));
             false
         }
 
         knormal::Expr::Int(i) => {
-            blocks.push(Block::new(label, stmts, sequel, Atom::Int(i)));
+            blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Int(i)));
             false
         }
 
         knormal::Expr::Float(f) => {
-            blocks.push(Block::new(label, stmts, sequel, Atom::Float(f)));
+            blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Float(f)));
             false
         }
 
         knormal::Expr::Neg(var) => {
             let tmp = ctx.fresh_var();
             stmts.push(Asgn { lhs: tmp, rhs: Expr::Neg(var) });
-            blocks.push(Block::new(label, stmts, sequel, Atom::Var(tmp)));
+            blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Var(tmp)));
             false
         }
 
         knormal::Expr::FNeg(var) => {
             let tmp = ctx.fresh_var();
             stmts.push(Asgn { lhs: tmp, rhs: Expr::FNeg(var) });
-            blocks.push(Block::new(label, stmts, sequel, Atom::Var(tmp)));
+            blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Var(tmp)));
             false
         }
 
         knormal::Expr::IBinOp(BinOp { op, arg1, arg2 }) => {
             let tmp = sequel.get_ret_var(ctx);
             stmts.push(Asgn { lhs: tmp, rhs: Expr::IBinOp(BinOp { op, arg1, arg2 }) });
-            blocks.push(Block::new(label, stmts, sequel, Atom::Var(tmp)));
+            blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Var(tmp)));
             false
         }
 
         knormal::Expr::FBinOp(BinOp { op, arg1, arg2 }) => {
             let tmp = sequel.get_ret_var(ctx);
             stmts.push(Asgn { lhs: tmp, rhs: Expr::FBinOp(BinOp { op, arg1, arg2 }) });
-            blocks.push(Block::new(label, stmts, sequel, Atom::Var(tmp)));
+            blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Var(tmp)));
             false
         }
 
@@ -222,7 +240,7 @@ fn cc_block(
         }
 
         knormal::Expr::Var(var) => {
-            blocks.push(Block::new(label, stmts, sequel, Atom::Var(var)));
+            blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Var(var)));
             false
         }
 
@@ -305,35 +323,35 @@ fn cc_block(
             let ret_tmp = sequel.get_ret_var(ctx);
 
             stmts.push(Asgn { lhs: ret_tmp, rhs: Expr::App(fun_tmp, args) });
-            blocks.push(Block::new(label, stmts, sequel, Atom::Var(ret_tmp)));
+            blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
             false
         }
 
         knormal::Expr::ExtApp(ext_fn, args) => {
             let ret_tmp = sequel.get_ret_var(ctx);
             stmts.push(Asgn { lhs: ret_tmp, rhs: Expr::ExtApp(ext_fn, args) });
-            blocks.push(Block::new(label, stmts, sequel, Atom::Var(ret_tmp)));
+            blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
             false
         }
 
         knormal::Expr::Tuple(args) => {
             let ret_tmp = sequel.get_ret_var(ctx);
             stmts.push(Asgn { lhs: ret_tmp, rhs: Expr::Tuple(args) });
-            blocks.push(Block::new(label, stmts, sequel, Atom::Var(ret_tmp)));
+            blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
             false
         }
 
         knormal::Expr::TupleIdx(tuple, idx) => {
             let ret_tmp = sequel.get_ret_var(ctx);
             stmts.push(Asgn { lhs: ret_tmp, rhs: Expr::TupleIdx(tuple, idx) });
-            blocks.push(Block::new(label, stmts, sequel, Atom::Var(ret_tmp)));
+            blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
             false
         }
 
         knormal::Expr::Get(array, idx) => {
             let ret_tmp = sequel.get_ret_var(ctx);
             stmts.push(Asgn { lhs: ret_tmp, rhs: Expr::Get(array, Atom::Var(idx)) });
-            blocks.push(Block::new(label, stmts, sequel, Atom::Var(ret_tmp)));
+            blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
             false
         }
 
@@ -341,7 +359,7 @@ fn cc_block(
             let ret_tmp = sequel.get_ret_var(ctx);
             stmts
                 .push(Asgn { lhs: ret_tmp, rhs: Expr::Put(array, Atom::Var(idx), Atom::Var(val)) });
-            blocks.push(Block::new(label, stmts, sequel, Atom::Var(ret_tmp)));
+            blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
             false
         }
     }
@@ -401,9 +419,11 @@ impl Exit {
     pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result {
         use Exit::*;
         match self {
-            Return(atom) => {
+            Return(None) =>
+                write!(w, "return"),
+            Return(Some(var)) => {
                 write!(w, "return ")?;
-                atom.pp(ctx, w)
+                pp_id(ctx, *var, w)
             }
             Branch { v1, v2, cond, then_label, else_label } => {
                 write!(w, "if ")?;
