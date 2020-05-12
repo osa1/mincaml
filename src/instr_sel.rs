@@ -208,17 +208,62 @@ pub fn instr_sel(ctx: &mut IsCtx, fun: Fun) {
     }
 
     // Generate live-ins and live-outs
-    // TODO
-    // This will cause a lot of borrow checking issues ...
-    //
-    // let mut did_update: bool = true;
-    // while did_update {
-    //     did_update = false;
-    //     for block_idx in 0 .. fun.blocks().len() {
-    //         let block_idx = first_block_idx + block_idx;
 
-    //     }
-    // }
+    // Initialize empty sets
+    for block_idx in 0..fun.blocks.len() {
+        let block_idx = first_block_idx + block_idx;
+        let block = &ctx.blocks[block_idx];
+        let block_details = &mut ctx.block_details[block_idx];
+        for _ in 0..block.instrs.len() {
+            block_details.live_ins.push(Default::default());
+            block_details.live_outs.push(Default::default());
+        }
+    }
+
+    // Update sets
+    let mut did_update = true;
+    while did_update {
+        did_update = false;
+        for block_idx in 0..fun.blocks.len() {
+            let block_idx = first_block_idx + block_idx;
+            let block = &ctx.blocks[block_idx];
+            let mut block_details = &mut ctx.block_details[block_idx];
+            did_update |= update_lives(block, block_details);
+        }
+    }
+}
+
+fn update_lives(block: &Block, details: &mut BlockDetails) -> bool {
+    let mut did_update = false;
+
+    for (instr_idx, instr) in block.instrs.iter().enumerate() {
+        let instr_ins = &mut details.live_ins[instr_idx];
+        let instr_outs = &mut details.live_outs[instr_idx];
+
+        use Instr::*;
+        match instr {
+            Movq { src, dest } => {
+                add_arg_use(instr_ins, src);
+                // XXX assuming this is the last instruction, we need to get its successor blocks
+                for succ in &details.succs {
+                    // sigh... how do I get uses of successors?
+                    todo!()
+                }
+            }
+            _ => todo!(),
+        }
+    }
+
+    did_update
+}
+
+fn add_arg_use(set: &mut FxHashSet<VarId>, arg: &Arg) {
+    match arg {
+        Arg::Var(var) => {
+            set.insert(*var);
+        }
+        Arg::Imm(_) | Arg::Mem(_) | Arg::WordReg(_) | Arg::DoubleReg(_) => {}
+    }
 }
 
 fn instr_sel_block(ctx: &mut IsCtx, block: &closure_convert::Block, block_idx: usize) -> Block {
