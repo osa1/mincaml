@@ -9,6 +9,8 @@ name = "mc"
 path = "src/main.rs"
 
 [dependencies]
+cranelift-codegen = "0.63"
+cranelift-frontend = "0.63"
 fxhash = "0.2.1"
 
 [profile.release]

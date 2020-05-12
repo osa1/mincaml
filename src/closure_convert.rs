@@ -1,7 +1,7 @@
 use crate::common::*;
 use crate::ctx::{Ctx, VarId};
 use crate::knormal;
-use crate::knormal::BinOp;
+pub use crate::knormal::BinOp;
 use crate::var::CompilerPhase::ClosureConvert;
 use crate::var::Uniq;
 
