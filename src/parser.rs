@@ -28,17 +28,33 @@ pub enum Expr {
     // if <expr> then <expr> else <expr>
     If(Box<Expr>, Box<Expr>, Box<Expr>),
     // let <ident> = <expr> in <expr>
-    Let { bndr: VarId, rhs: Box<Expr>, body: Box<Expr> },
+    Let {
+        bndr: VarId,
+        rhs: Box<Expr>,
+        body: Box<Expr>,
+    },
     // <ident>
     Var(VarId),
     // let rec <ident> <ident>+ = <expr> in <expr>
-    LetRec { bndr: VarId, args: Vec<VarId>, rhs: Box<Expr>, body: Box<Expr> },
+    LetRec {
+        bndr: VarId,
+        args: Vec<VarId>,
+        rhs: Box<Expr>,
+        body: Box<Expr>,
+    },
     // <expr> <expr>+
-    App { fun: Box<Expr>, args: Vec<Expr> },
+    App {
+        fun: Box<Expr>,
+        args: Vec<Expr>,
+    },
     // <expr> (, <expr>)+
     Tuple(Vec<Expr>),
     // let ( <ident> (, <ident>)+ ) = <expr> in <expr>
-    LetTuple { bndrs: Vec<VarId>, rhs: Box<Expr>, body: Box<Expr> },
+    LetTuple {
+        bndrs: Vec<VarId>,
+        rhs: Box<Expr>,
+        body: Box<Expr>,
+    },
     // Array.create <expr> <expr>
     Array(Box<Expr>, Box<Expr>),
     // <expr> . ( <expr> )
@@ -207,7 +223,12 @@ impl<'a> Parser<'a> {
                         let rhs = Box::new(self.expr1(ctx, LET_PREC)?);
                         self.expect(Token::In, "'in'")?;
                         let body = Box::new(self.expr1(ctx, LET_PREC)?);
-                        Ok(Expr::LetRec { bndr, args, rhs, body })
+                        Ok(Expr::LetRec {
+                            bndr,
+                            args,
+                            rhs,
+                            body,
+                        })
                     }
                     Token::LParen => {
                         self.consume();
@@ -228,7 +249,11 @@ impl<'a> Parser<'a> {
                         let rhs = self.expr1(ctx, LET_PREC)?;
                         self.expect(Token::In, "in")?;
                         let body = self.expr1(ctx, INIT_PREC)?;
-                        Ok(Expr::LetTuple { bndrs, rhs: Box::new(rhs), body: Box::new(body) })
+                        Ok(Expr::LetTuple {
+                            bndrs,
+                            rhs: Box::new(rhs),
+                            body: Box::new(body),
+                        })
                     }
                     Token::Id(var) => {
                         let bndr = ctx.fresh_user_var(var);
@@ -257,7 +282,10 @@ impl<'a> Parser<'a> {
                 let e3 = self.expr1(ctx, INIT_PREC)?;
                 Ok(Expr::If(Box::new(e1), Box::new(e2), Box::new(e3)))
             }
-            other => Err(ParseErr::Unexpected { seen: other.clone(), expected: "expression" }),
+            other => Err(ParseErr::Unexpected {
+                seen: other.clone(),
+                expected: "expression",
+            }),
         }
     }
 
@@ -270,7 +298,11 @@ impl<'a> Parser<'a> {
                     self.consume();
                     let sym = ctx.fresh_generated_var(CompilerPhase::Parser);
                     let expr2 = self.expr1(ctx, prec)?;
-                    expr = Expr::Let { bndr: sym, rhs: Box::new(expr), body: Box::new(expr2) };
+                    expr = Expr::Let {
+                        bndr: sym,
+                        rhs: Box::new(expr),
+                        body: Box::new(expr2),
+                    };
                 }
                 Ok(Token::Plus) if prec < PLUS_MINUS_PREC => {
                     self.consume();
@@ -395,7 +427,10 @@ impl<'a> Parser<'a> {
                         }
                         _ => {
                             parsing_app = true;
-                            expr = Expr::App { fun: Box::new(expr), args: vec![expr_] };
+                            expr = Expr::App {
+                                fun: Box::new(expr),
+                                args: vec![expr_],
+                            };
                         }
                     },
                 },
@@ -413,7 +448,10 @@ impl<'a> Parser<'a> {
         let ret = self.expr1(ctx, INIT_PREC)?;
         match self.next_token() {
             Err(_) => Ok(ret),
-            Ok(next) => Err(ParseErr::Unexpected { seen: next.clone(), expected: "EOF" }),
+            Ok(next) => Err(ParseErr::Unexpected {
+                seen: next.clone(),
+                expected: "EOF",
+            }),
         }
     }
 
@@ -423,7 +461,10 @@ impl<'a> Parser<'a> {
             self.consume();
             Ok(())
         } else {
-            Err(ParseErr::Unexpected { seen: next_token.clone(), expected: str })
+            Err(ParseErr::Unexpected {
+                seen: next_token.clone(),
+                expected: str,
+            })
         }
     }
 
@@ -435,9 +476,10 @@ impl<'a> Parser<'a> {
                 self.tok_idx += 1;
                 Ok(id)
             }
-            Some(other) => {
-                Err(ParseErr::Unexpected { seen: other.clone(), expected: "identifier" })
-            }
+            Some(other) => Err(ParseErr::Unexpected {
+                seen: other.clone(),
+                expected: "identifier",
+            }),
         }
     }
 

@@ -69,12 +69,18 @@ impl Block {
                 Atom::Unit => Exit::Return(None),
                 Atom::Int(i) => {
                     let tmp = ctx.fresh_var();
-                    stmts.push(Asgn { lhs: tmp, rhs: Expr::Atom(Atom::Int(i)) });
+                    stmts.push(Asgn {
+                        lhs: tmp,
+                        rhs: Expr::Atom(Atom::Int(i)),
+                    });
                     Exit::Return(Some(tmp))
                 }
                 Atom::Float(f) => {
                     let tmp = ctx.fresh_var();
-                    stmts.push(Asgn { lhs: tmp, rhs: Expr::Atom(Atom::Float(f)) });
+                    stmts.push(Asgn {
+                        lhs: tmp,
+                        rhs: Expr::Atom(Atom::Float(f)),
+                    });
                     Exit::Return(Some(tmp))
                 }
                 Atom::Var(var) => Exit::Return(Some(var)),
@@ -85,7 +91,10 @@ impl Block {
                     // happen somehow?
                     Atom::Var(rhs) if lhs == rhs => {}
                     _ => {
-                        stmts.push(Asgn { lhs, rhs: Expr::Atom(value) });
+                        stmts.push(Asgn {
+                            lhs,
+                            rhs: Expr::Atom(value),
+                        });
                     }
                 }
                 Exit::Jump(label)
@@ -103,7 +112,13 @@ pub enum Exit {
     // instruction doesn't take any arguments, so we need a temporary for the return value in all
     // cases. 'None' is for returning unit.
     Return(Option<VarId>),
-    Branch { v1: VarId, v2: VarId, cond: Cmp, then_label: Label, else_label: Label },
+    Branch {
+        v1: VarId,
+        v2: VarId,
+        cond: Cmp,
+        then_label: Label,
+        else_label: Label,
+    },
     Jump(Label),
 }
 
@@ -200,28 +215,40 @@ fn cc_block(
 
         knormal::Expr::Neg(var) => {
             let tmp = ctx.fresh_var();
-            stmts.push(Asgn { lhs: tmp, rhs: Expr::Neg(var) });
+            stmts.push(Asgn {
+                lhs: tmp,
+                rhs: Expr::Neg(var),
+            });
             blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Var(tmp)));
             false
         }
 
         knormal::Expr::FNeg(var) => {
             let tmp = ctx.fresh_var();
-            stmts.push(Asgn { lhs: tmp, rhs: Expr::FNeg(var) });
+            stmts.push(Asgn {
+                lhs: tmp,
+                rhs: Expr::FNeg(var),
+            });
             blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Var(tmp)));
             false
         }
 
         knormal::Expr::IBinOp(BinOp { op, arg1, arg2 }) => {
             let tmp = sequel.get_ret_var(ctx);
-            stmts.push(Asgn { lhs: tmp, rhs: Expr::IBinOp(BinOp { op, arg1, arg2 }) });
+            stmts.push(Asgn {
+                lhs: tmp,
+                rhs: Expr::IBinOp(BinOp { op, arg1, arg2 }),
+            });
             blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Var(tmp)));
             false
         }
 
         knormal::Expr::FBinOp(BinOp { op, arg1, arg2 }) => {
             let tmp = sequel.get_ret_var(ctx);
-            stmts.push(Asgn { lhs: tmp, rhs: Expr::FBinOp(BinOp { op, arg1, arg2 }) });
+            stmts.push(Asgn {
+                lhs: tmp,
+                rhs: Expr::FBinOp(BinOp { op, arg1, arg2 }),
+            });
             blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Var(tmp)));
             false
         }
@@ -232,7 +259,13 @@ fn cc_block(
             blocks.push(Block {
                 label,
                 stmts,
-                exit: Exit::Branch { v1, v2, cond: cmp, then_label, else_label },
+                exit: Exit::Branch {
+                    v1,
+                    v2,
+                    cond: cmp,
+                    then_label,
+                    else_label,
+                },
             });
             cc_block(ctx, blocks, then_label, vec![], sequel.clone(), *e1);
             cc_block(ctx, blocks, else_label, vec![], sequel, *e2);
@@ -244,7 +277,12 @@ fn cc_block(
             false
         }
 
-        knormal::Expr::Let { id, ty: _, rhs, body } => {
+        knormal::Expr::Let {
+            id,
+            ty: _,
+            rhs,
+            body,
+        } => {
             let cont_label = ctx.fresh_label();
             let rhs_sequel = BlockSequel::Asgn(id, cont_label);
             let forked = cc_block(ctx, blocks, label, stmts, rhs_sequel, *rhs);
@@ -261,7 +299,13 @@ fn cc_block(
             }
         }
 
-        knormal::Expr::LetRec { name, ty: _, mut args, rhs, body } => {
+        knormal::Expr::LetRec {
+            name,
+            ty: _,
+            mut args,
+            rhs,
+            body,
+        } => {
             // TODO: Not sure about reusing 'name' in multiple places below.
 
             // After cc 'name' will refer to the closure tuple. For the function we'll need a fresh
@@ -292,8 +336,10 @@ fn cc_block(
             let mut entry_block_stmts = vec![];
             // Bind captured variables in function body
             for (fv_idx, fv) in closure_fvs.iter().enumerate() {
-                entry_block_stmts
-                    .push(Asgn { lhs: *fv, rhs: Expr::Get(name, Atom::Int(fv_idx as i64 + 1)) });
+                entry_block_stmts.push(Asgn {
+                    lhs: *fv,
+                    rhs: Expr::Get(name, Atom::Int(fv_idx as i64 + 1)),
+                });
             }
             cc_block(
                 ctx,
@@ -303,62 +349,89 @@ fn cc_block(
                 BlockSequel::Return,
                 *rhs,
             );
-            ctx.funs
-                .push(Fun { name: fun_var, entry: fun_entry_label, args, blocks: fun_blocks });
+            ctx.funs.push(Fun {
+                name: fun_var,
+                entry: fun_entry_label,
+                args,
+                blocks: fun_blocks,
+            });
 
             // Body
             let mut closure_tuple_args = closure_fvs;
             closure_tuple_args.insert(0, fun_var);
             let tuple_expr = Expr::Tuple(closure_tuple_args);
-            stmts.push(Asgn { lhs: name, rhs: tuple_expr });
+            stmts.push(Asgn {
+                lhs: name,
+                rhs: tuple_expr,
+            });
             cc_block(ctx, blocks, label, stmts, sequel, *body)
         }
 
         knormal::Expr::App(fun, mut args) => {
             // f(x) -> f.0(f, x)
             let fun_tmp = ctx.fresh_var();
-            stmts.push(Asgn { lhs: fun_tmp, rhs: Expr::TupleIdx(fun, 0) });
+            stmts.push(Asgn {
+                lhs: fun_tmp,
+                rhs: Expr::TupleIdx(fun, 0),
+            });
             args.insert(0, fun);
 
             let ret_tmp = sequel.get_ret_var(ctx);
 
-            stmts.push(Asgn { lhs: ret_tmp, rhs: Expr::App(fun_tmp, args) });
+            stmts.push(Asgn {
+                lhs: ret_tmp,
+                rhs: Expr::App(fun_tmp, args),
+            });
             blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
             false
         }
 
         knormal::Expr::ExtApp(ext_fn, args) => {
             let ret_tmp = sequel.get_ret_var(ctx);
-            stmts.push(Asgn { lhs: ret_tmp, rhs: Expr::ExtApp(ext_fn, args) });
+            stmts.push(Asgn {
+                lhs: ret_tmp,
+                rhs: Expr::ExtApp(ext_fn, args),
+            });
             blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
             false
         }
 
         knormal::Expr::Tuple(args) => {
             let ret_tmp = sequel.get_ret_var(ctx);
-            stmts.push(Asgn { lhs: ret_tmp, rhs: Expr::Tuple(args) });
+            stmts.push(Asgn {
+                lhs: ret_tmp,
+                rhs: Expr::Tuple(args),
+            });
             blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
             false
         }
 
         knormal::Expr::TupleIdx(tuple, idx) => {
             let ret_tmp = sequel.get_ret_var(ctx);
-            stmts.push(Asgn { lhs: ret_tmp, rhs: Expr::TupleIdx(tuple, idx) });
+            stmts.push(Asgn {
+                lhs: ret_tmp,
+                rhs: Expr::TupleIdx(tuple, idx),
+            });
             blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
             false
         }
 
         knormal::Expr::Get(array, idx) => {
             let ret_tmp = sequel.get_ret_var(ctx);
-            stmts.push(Asgn { lhs: ret_tmp, rhs: Expr::Get(array, Atom::Var(idx)) });
+            stmts.push(Asgn {
+                lhs: ret_tmp,
+                rhs: Expr::Get(array, Atom::Var(idx)),
+            });
             blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
             false
         }
 
         knormal::Expr::Put(array, idx, val) => {
             let ret_tmp = sequel.get_ret_var(ctx);
-            stmts
-                .push(Asgn { lhs: ret_tmp, rhs: Expr::Put(array, Atom::Var(idx), Atom::Var(val)) });
+            stmts.push(Asgn {
+                lhs: ret_tmp,
+                rhs: Expr::Put(array, Atom::Var(idx), Atom::Var(val)),
+            });
             blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
             false
         }
@@ -385,7 +458,12 @@ fn print_comma_sep<A>(
 
 impl Fun {
     pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result {
-        let Fun { name, entry: _, args, blocks } = self;
+        let Fun {
+            name,
+            entry: _,
+            args,
+            blocks,
+        } = self;
 
         write!(w, "function ")?;
         pp_id(ctx, *name, w)?;
@@ -419,13 +497,18 @@ impl Exit {
     pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result {
         use Exit::*;
         match self {
-            Return(None) =>
-                write!(w, "return"),
+            Return(None) => write!(w, "return"),
             Return(Some(var)) => {
                 write!(w, "return ")?;
                 pp_id(ctx, *var, w)
             }
-            Branch { v1, v2, cond, then_label, else_label } => {
+            Branch {
+                v1,
+                v2,
+                cond,
+                then_label,
+                else_label,
+            } => {
                 write!(w, "if ")?;
                 pp_id(ctx, *v1, w)?;
                 write!(w, " {} ", cond)?;
@@ -557,7 +640,12 @@ fn fvs(ctx: &Ctx, e: &knormal::Expr, acc: &mut FxHashSet<VarId>) {
             fvs(ctx, e1, acc);
             fvs(ctx, e2, acc);
         }
-        Let { id, ty: _, rhs, body } => {
+        Let {
+            id,
+            ty: _,
+            rhs,
+            body,
+        } => {
             fvs(ctx, rhs, acc);
             fvs(ctx, body, acc);
             acc.remove(id);
@@ -565,7 +653,13 @@ fn fvs(ctx: &Ctx, e: &knormal::Expr, acc: &mut FxHashSet<VarId>) {
         Var(id) => {
             fv(ctx, *id, acc);
         }
-        LetRec { name, ty: _, args, rhs, body } => {
+        LetRec {
+            name,
+            ty: _,
+            args,
+            rhs,
+            body,
+        } => {
             fvs(ctx, rhs, acc);
             fvs(ctx, body, acc);
             acc.remove(name);

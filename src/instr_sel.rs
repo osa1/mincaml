@@ -197,7 +197,8 @@ pub fn instr_sel(ctx: &mut IsCtx, fun: Fun) {
             succs: vec![],
             preds: vec![],
         });
-        ctx.block_indices.insert(block.label, first_block_idx + block_idx);
+        ctx.block_indices
+            .insert(block.label, first_block_idx + block_idx);
     }
 
     // Generate instructions, add predecessor and sucessors
@@ -226,37 +227,71 @@ fn instr_sel_block(ctx: &mut IsCtx, block: &closure_convert::Block, block_idx: u
     for Asgn { lhs, rhs } in &block.stmts {
         match rhs {
             Expr::Atom(Atom::Unit) => {
-                instrs.push(Instr::Movq { src: Arg::Imm(0), dest: Arg::Var(*lhs) });
+                instrs.push(Instr::Movq {
+                    src: Arg::Imm(0),
+                    dest: Arg::Var(*lhs),
+                });
             }
             Expr::Atom(Atom::Int(i)) => {
                 // TODO: Immediate argument can be 64-bit wide?
-                instrs.push(Instr::Movq { src: Arg::Imm(*i), dest: Arg::Var(*lhs) });
+                instrs.push(Instr::Movq {
+                    src: Arg::Imm(*i),
+                    dest: Arg::Var(*lhs),
+                });
             }
             Expr::Atom(Atom::Float(f)) => {
                 // I think there float immediate is not a thing, we need to go through memory
                 let label = ctx.fresh_label();
                 ctx.floats.push((label, *f));
-                instrs.push(Instr::Movq { src: Arg::Mem(label), dest: Arg::Var(*lhs) });
-            }
-            Expr::Atom(Atom::Var(var)) => {
-                instrs.push(Instr::Movq { src: Arg::Var(*var), dest: Arg::Var(*lhs) });
-            }
-            Expr::IBinOp(BinOp { op, arg1, arg2 }) => {
-                instrs.push(Instr::Movq { src: Arg::Var(*arg1), dest: Arg::Var(*lhs) });
-                instrs.push(match op {
-                    IntBinOp::Add => Instr::Addq { src: Arg::Var(*arg2), dest: Arg::Var(*lhs) },
-                    IntBinOp::Sub => Instr::Subq { src: Arg::Var(*arg2), dest: Arg::Var(*lhs) },
+                instrs.push(Instr::Movq {
+                    src: Arg::Mem(label),
+                    dest: Arg::Var(*lhs),
                 });
             }
-            Expr::FBinOp(BinOp { op: _, arg1: _, arg2: _ }) => todo!(),
+            Expr::Atom(Atom::Var(var)) => {
+                instrs.push(Instr::Movq {
+                    src: Arg::Var(*var),
+                    dest: Arg::Var(*lhs),
+                });
+            }
+            Expr::IBinOp(BinOp { op, arg1, arg2 }) => {
+                instrs.push(Instr::Movq {
+                    src: Arg::Var(*arg1),
+                    dest: Arg::Var(*lhs),
+                });
+                instrs.push(match op {
+                    IntBinOp::Add => Instr::Addq {
+                        src: Arg::Var(*arg2),
+                        dest: Arg::Var(*lhs),
+                    },
+                    IntBinOp::Sub => Instr::Subq {
+                        src: Arg::Var(*arg2),
+                        dest: Arg::Var(*lhs),
+                    },
+                });
+            }
+            Expr::FBinOp(BinOp {
+                op: _,
+                arg1: _,
+                arg2: _,
+            }) => todo!(),
             Expr::Neg(arg) => {
-                instrs.push(Instr::Movq { src: Arg::Var(*arg), dest: Arg::Var(*lhs) });
-                instrs.push(Instr::Negq { src: Arg::Var(*lhs) });
+                instrs.push(Instr::Movq {
+                    src: Arg::Var(*arg),
+                    dest: Arg::Var(*lhs),
+                });
+                instrs.push(Instr::Negq {
+                    src: Arg::Var(*lhs),
+                });
             }
             Expr::FNeg(_) => todo!(),
             Expr::App(fun, args) => {
                 let args = args.iter().map(|var| Arg::Var(*var)).collect();
-                instrs.push(Instr::Call { fun: Arg::Var(*fun), args, dest: Arg::Var(*lhs) });
+                instrs.push(Instr::Call {
+                    fun: Arg::Var(*fun),
+                    args,
+                    dest: Arg::Var(*lhs),
+                });
             }
             Expr::ExtApp(_, _) => todo!(),
             Expr::Tuple(_) => todo!(),
@@ -291,7 +326,9 @@ fn instr_sel_block(ctx: &mut IsCtx, block: &closure_convert::Block, block_idx: u
 
     match &block.exit {
         Exit::Return(opt_var) => {
-            instrs.push(Instr::Ret { value: opt_var.map(Arg::Var) });
+            instrs.push(Instr::Ret {
+                value: opt_var.map(Arg::Var),
+            });
         }
         Exit::Jump(target) => {
             instrs.push(Instr::Jmp { target: *target });
@@ -299,15 +336,42 @@ fn instr_sel_block(ctx: &mut IsCtx, block: &closure_convert::Block, block_idx: u
             ctx.block_details[target_block_idx].preds.push(block_idx);
             ctx.block_details[block_idx].succs.push(target_block_idx);
         }
-        Exit::Branch { v1, v2, cond, then_label, else_label } => {
-            instrs.push(Instr::Cmp { arg1: Arg::Var(*v1), arg2: Arg::Var(*v2) });
+        Exit::Branch {
+            v1,
+            v2,
+            cond,
+            then_label,
+            else_label,
+        } => {
+            instrs.push(Instr::Cmp {
+                arg1: Arg::Var(*v1),
+                arg2: Arg::Var(*v2),
+            });
             instrs.push(match cond {
-                Cmp::Equal => Instr::Je { target: *then_label, else_: *else_label },
-                Cmp::NotEqual => Instr::Jne { target: *then_label, else_: *else_label },
-                Cmp::LessThan => Instr::Jl { target: *then_label, else_: *else_label },
-                Cmp::LessThanOrEqual => Instr::Jle { target: *then_label, else_: *else_label },
-                Cmp::GreaterThan => Instr::Jg { target: *then_label, else_: *else_label },
-                Cmp::GreaterThanOrEqual => Instr::Jge { target: *then_label, else_: *else_label },
+                Cmp::Equal => Instr::Je {
+                    target: *then_label,
+                    else_: *else_label,
+                },
+                Cmp::NotEqual => Instr::Jne {
+                    target: *then_label,
+                    else_: *else_label,
+                },
+                Cmp::LessThan => Instr::Jl {
+                    target: *then_label,
+                    else_: *else_label,
+                },
+                Cmp::LessThanOrEqual => Instr::Jle {
+                    target: *then_label,
+                    else_: *else_label,
+                },
+                Cmp::GreaterThan => Instr::Jg {
+                    target: *then_label,
+                    else_: *else_label,
+                },
+                Cmp::GreaterThanOrEqual => Instr::Jge {
+                    target: *then_label,
+                    else_: *else_label,
+                },
             });
             let then_block_idx = *ctx.block_indices.get(&then_label).unwrap();
             let else_block_idx = *ctx.block_indices.get(&else_label).unwrap();
