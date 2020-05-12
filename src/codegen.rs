@@ -12,9 +12,9 @@ use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use fxhash::FxHashMap;
 
 use crate::closure_convert as cc;
+use crate::common::{FloatBinOp, IntBinOp};
 use crate::ctx::{Ctx, VarId};
 use crate::type_check as tc;
-use crate::common::{IntBinOp, FloatBinOp};
 
 struct CgCtx {}
 
@@ -25,7 +25,7 @@ pub fn codegen(
         args,
         blocks,
     }: &cc::Fun,
-) {
+) -> Function {
     let mut sig = Signature::new(CallConv::SystemV);
     for arg in args {
         let arg_type = ctx.var_type(*arg).unwrap();
@@ -43,32 +43,44 @@ pub fn codegen(
         },
         sig,
     );
-    let mut builder = FunctionBuilder::new(&mut func, &mut fn_builder_ctx);
+    {
+        let mut builder = FunctionBuilder::new(&mut func, &mut fn_builder_ctx);
 
-    let mut label_to_block: FxHashMap<cc::Label, Block> = Default::default();
+        let mut label_to_block: FxHashMap<cc::Label, Block> = Default::default();
 
-    for block in blocks {
-        let cranelift_block = builder.create_block();
-        label_to_block.insert(block.label, cranelift_block);
-    }
+        for block in blocks {
+            let cranelift_block = builder.create_block();
+            label_to_block.insert(block.label, cranelift_block);
+        }
 
-    for arg in args {
-        let _ = declare_var(ctx, &mut builder, *arg);
-    }
+        for arg in args {
+            let _ = declare_var(ctx, &mut builder, *arg);
+        }
 
-    let entry_block = *label_to_block.get(entry).unwrap();
-    builder.append_block_params_for_function_params(entry_block);
+        let entry_block = *label_to_block.get(entry).unwrap();
+        builder.append_block_params_for_function_params(entry_block);
 
-    for cc::Block { label, stmts, exit } in blocks {
-        let cranelift_block = *label_to_block.get(label).unwrap();
-        builder.switch_to_block(cranelift_block);
+        for cc::Block { label, stmts, exit } in blocks {
+            let cranelift_block = *label_to_block.get(label).unwrap();
+            builder.switch_to_block(cranelift_block);
 
-        for cc::Asgn { lhs, rhs } in stmts {
-            let val = rhs_value(ctx, &mut builder, rhs);
-            let var = declare_var(ctx, &mut builder, *lhs);
-            builder.def_var(var, val);
+            for cc::Asgn { lhs, rhs } in stmts {
+                let val = rhs_value(ctx, &mut builder, rhs);
+                let var = declare_var(ctx, &mut builder, *lhs);
+                builder.def_var(var, val);
+            }
         }
     }
+
+    let flags = settings::Flags::new(settings::builder());
+    let res = verify_function(&func, &flags);
+
+    println!("{}", func.display(None));
+    if let Err(errors) = res {
+        panic!("{}", errors);
+    }
+
+    func
 }
 
 fn type_abi_type(ty: &tc::Type) -> Type {
@@ -88,40 +100,26 @@ fn rhs_value(ctx: &Ctx, builder: &mut FunctionBuilder, rhs: &cc::Expr) -> Value 
     // let mut inst_builder = builder.ins();
 
     match rhs {
-        cc::Expr::Atom(cc::Atom::Unit) => {
-            builder.ins().iconst(I64, 0)
-        }
-        cc::Expr::Atom(cc::Atom::Int(i)) => {
-            builder.ins().iconst(I64, *i)
-        }
-        cc::Expr::Atom(cc::Atom::Float(f)) => {
-            builder.ins().f64const(*f)
-        }
-        cc::Expr::Atom(cc::Atom::Var(var)) => {
-            builder.use_var(varid_var(ctx, *var))
-        }
+        cc::Expr::Atom(cc::Atom::Unit) => builder.ins().iconst(I64, 0),
+        cc::Expr::Atom(cc::Atom::Int(i)) => builder.ins().iconst(I64, *i),
+        cc::Expr::Atom(cc::Atom::Float(f)) => builder.ins().f64const(*f),
+        cc::Expr::Atom(cc::Atom::Var(var)) => builder.use_var(varid_var(ctx, *var)),
         cc::Expr::IBinOp(cc::BinOp { op, arg1, arg2 }) => {
             let arg1 = builder.use_var(varid_var(ctx, *arg1));
             let arg2 = builder.use_var(varid_var(ctx, *arg2));
             match op {
-                IntBinOp::Add =>
-                    builder.ins().iadd(arg1, arg2),
-                IntBinOp::Sub =>
-                    builder.ins().isub(arg1, arg2),
+                IntBinOp::Add => builder.ins().iadd(arg1, arg2),
+                IntBinOp::Sub => builder.ins().isub(arg1, arg2),
             }
         }
         cc::Expr::FBinOp(cc::BinOp { op, arg1, arg2 }) => {
             let arg1 = builder.use_var(varid_var(ctx, *arg1));
             let arg2 = builder.use_var(varid_var(ctx, *arg2));
             match op {
-                FloatBinOp::Add =>
-                    builder.ins().fadd(arg1, arg2),
-                FloatBinOp::Sub =>
-                    builder.ins().fsub(arg1, arg2),
-                FloatBinOp::Mul =>
-                    builder.ins().fmul(arg1, arg2),
-                FloatBinOp::Div =>
-                    builder.ins().fdiv(arg1, arg2),
+                FloatBinOp::Add => builder.ins().fadd(arg1, arg2),
+                FloatBinOp::Sub => builder.ins().fsub(arg1, arg2),
+                FloatBinOp::Mul => builder.ins().fmul(arg1, arg2),
+                FloatBinOp::Div => builder.ins().fdiv(arg1, arg2),
             }
         }
         cc::Expr::Neg(var) => {
@@ -132,7 +130,7 @@ fn rhs_value(ctx: &Ctx, builder: &mut FunctionBuilder, rhs: &cc::Expr) -> Value 
             let arg = builder.use_var(varid_var(ctx, *var));
             builder.ins().fneg(arg)
         }
-        _ => todo!()
+        _ => todo!(),
     }
 }
 

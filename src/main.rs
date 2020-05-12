@@ -16,6 +16,7 @@ mod utils;
 mod var;
 
 use closure_convert::closure_convert;
+use codegen::codegen;
 use knormal::knormal;
 use lexer::{tokenize, Token};
 use parser::parse;
@@ -87,21 +88,15 @@ fn do_expr(expr_str: &str) -> i32 {
     let funs = closure_convert(&mut ctx, expr);
 
     let mut s = String::new();
-    for fun in funs {
+    for fun in &funs {
         fun.pp(&ctx, &mut s).unwrap();
     }
 
     println!("{}", s);
 
-    /*
-    let mut s = String::new();
-
-    for fun in pgm.funs {
-        fun.pp(&ctx, &mut s).unwrap();
+    for fun in &funs {
+        let _ = codegen(&ctx, fun);
     }
-
-    println!("{}", s);
-    */
 
     0
 }
