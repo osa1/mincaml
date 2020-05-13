@@ -199,7 +199,7 @@ pub fn knormal_(ctx: &mut Ctx, expr: parser::Expr) -> (Expr, Type) {
 
         parser::Expr::Var(var) => {
             // FIXME clone
-            (Expr::Var(var), (&*ctx.var_type(var).unwrap()).clone())
+            (Expr::Var(var), (&*ctx.var_type(var)).clone())
         }
 
         parser::Expr::LetRec {
@@ -210,7 +210,7 @@ pub fn knormal_(ctx: &mut Ctx, expr: parser::Expr) -> (Expr, Type) {
         } => {
             let mut arg_tys: Vec<Type> = Vec::with_capacity(args.len());
             for arg in &args {
-                arg_tys.push((&*ctx.var_type(*arg).unwrap()).clone());
+                arg_tys.push((&*ctx.var_type(*arg)).clone());
             }
 
             let (rhs, rhs_ty) = knormal_(ctx, *rhs);
@@ -287,7 +287,7 @@ pub fn knormal_(ctx: &mut Ctx, expr: parser::Expr) -> (Expr, Type) {
             let mut kbndrs: Vec<(VarId, Type)> = Vec::with_capacity(bndrs.len());
 
             for bndr in &bndrs {
-                let bndr_ty = (&*ctx.var_type(*bndr).unwrap()).clone();
+                let bndr_ty = (&*ctx.var_type(*bndr)).clone();
                 kbndrs.push((*bndr, bndr_ty));
             }
 
@@ -301,7 +301,7 @@ pub fn knormal_(ctx: &mut Ctx, expr: parser::Expr) -> (Expr, Type) {
                 .enumerate()
                 .rev()
                 .fold(body, |expr, (bndr_idx, bndr)| {
-                    let ty = (&*ctx.var_type(bndr).unwrap()).clone();
+                    let ty = (&*ctx.var_type(bndr)).clone();
                     Expr::Let {
                         id: bndr,
                         ty,

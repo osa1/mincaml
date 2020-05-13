@@ -76,8 +76,14 @@ impl Ctx {
         self.vars.get(var.0).name()
     }
 
-    pub fn var_type(&self, var: VarId) -> Option<Rc<Type>> {
-        self.ty_env.get(&var).map(|ty_id| self.get_type(*ty_id))
+    pub fn var_type(&self, var: VarId) -> Rc<Type> {
+        match self.ty_env.get(&var) {
+            None => {
+                let var = self.get_var(var);
+                panic!("Type of variable unknown: {} ({:?})", var, var);
+            }
+            Some(ty_id) => self.get_type(*ty_id).clone(),
+        }
     }
 
     pub fn fresh_tyvar(&mut self) -> TyVar {

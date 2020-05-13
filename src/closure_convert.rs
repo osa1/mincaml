@@ -338,7 +338,7 @@ fn cc_block(
             for (fv_idx, fv) in closure_fvs.iter().enumerate() {
                 entry_block_stmts.push(Asgn {
                     lhs: *fv,
-                    rhs: Expr::Get(name, Atom::Int(fv_idx as i64 + 1)),
+                    rhs: Expr::TupleIdx(name, fv_idx + 1),
                 });
             }
             cc_block(

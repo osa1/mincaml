@@ -1,8 +1,11 @@
 #![allow(dead_code)]
+#![allow(unreachable_code)]
+#![allow(unused_variables)]
 
 use cranelift_codegen::entity::EntityRef;
-use cranelift_codegen::ir::entities::{Block, Value};
+use cranelift_codegen::ir::entities::{Block, FuncRef, SigRef, Value};
 use cranelift_codegen::ir::types::*;
+use cranelift_codegen::ir::MemFlags;
 use cranelift_codegen::ir::{AbiParam, ExternalName, Function, InstBuilder, Signature};
 use cranelift_codegen::isa::CallConv;
 use cranelift_codegen::settings;
@@ -37,7 +40,7 @@ pub fn codegen(
         default_libcall_names(),
     ));
 
-    let malloc: FuncId = module
+    let malloc_id: FuncId = module
         .declare_function(
             "malloc",
             Linkage::Import,
@@ -51,7 +54,7 @@ pub fn codegen(
 
     let mut sig = Signature::new(CallConv::SystemV);
     for arg in args {
-        let arg_type = ctx.var_type(*arg).unwrap();
+        let arg_type = ctx.var_type(*arg);
         let arg_abi_type = type_abi_type(&*arg_type);
         sig.params.push(AbiParam::new(arg_abi_type));
     }
@@ -67,6 +70,10 @@ pub fn codegen(
         },
         sig,
     );
+
+    // FUNC_IN_FUNC???????????????????
+    let malloc = module.declare_func_in_func(malloc_id, &mut func);
+
     {
         let mut builder = FunctionBuilder::new(&mut func, &mut fn_builder_ctx);
 
@@ -89,7 +96,7 @@ pub fn codegen(
             builder.switch_to_block(cranelift_block);
 
             for cc::Asgn { lhs, rhs } in stmts {
-                let val = rhs_value(ctx, &mut builder, rhs);
+                let val = rhs_value(ctx, &mut builder, malloc, rhs);
                 let var = declare_var(ctx, &mut builder, *lhs);
                 builder.def_var(var, val);
             }
@@ -120,7 +127,7 @@ fn type_abi_type(ty: &tc::Type) -> Type {
     }
 }
 
-fn rhs_value(ctx: &Ctx, builder: &mut FunctionBuilder, rhs: &cc::Expr) -> Value {
+fn rhs_value(ctx: &Ctx, builder: &mut FunctionBuilder, malloc: FuncRef, rhs: &cc::Expr) -> Value {
     // let mut inst_builder = builder.ins();
 
     match rhs {
@@ -128,6 +135,7 @@ fn rhs_value(ctx: &Ctx, builder: &mut FunctionBuilder, rhs: &cc::Expr) -> Value 
         cc::Expr::Atom(cc::Atom::Int(i)) => builder.ins().iconst(I64, *i),
         cc::Expr::Atom(cc::Atom::Float(f)) => builder.ins().f64const(*f),
         cc::Expr::Atom(cc::Atom::Var(var)) => builder.use_var(varid_var(ctx, *var)),
+
         cc::Expr::IBinOp(cc::BinOp { op, arg1, arg2 }) => {
             let arg1 = builder.use_var(varid_var(ctx, *arg1));
             let arg2 = builder.use_var(varid_var(ctx, *arg2));
@@ -136,6 +144,7 @@ fn rhs_value(ctx: &Ctx, builder: &mut FunctionBuilder, rhs: &cc::Expr) -> Value 
                 IntBinOp::Sub => builder.ins().isub(arg1, arg2),
             }
         }
+
         cc::Expr::FBinOp(cc::BinOp { op, arg1, arg2 }) => {
             let arg1 = builder.use_var(varid_var(ctx, *arg1));
             let arg2 = builder.use_var(varid_var(ctx, *arg2));
@@ -146,24 +155,59 @@ fn rhs_value(ctx: &Ctx, builder: &mut FunctionBuilder, rhs: &cc::Expr) -> Value 
                 FloatBinOp::Div => builder.ins().fdiv(arg1, arg2),
             }
         }
+
         cc::Expr::Neg(var) => {
             let arg = builder.use_var(varid_var(ctx, *var));
             builder.ins().ineg(arg)
         }
+
         cc::Expr::FNeg(var) => {
             let arg = builder.use_var(varid_var(ctx, *var));
             builder.ins().fneg(arg)
         }
+
         cc::Expr::App(fun, args) => {
-            // https://github.com/bytecodealliance/simplejit-demo/blob/master/src/jit.rs#L395
-            todo!()
+            let fun_sig: SigRef = todo!();
+            let callee = builder.use_var(varid_var(ctx, *fun));
+            let arg_vals: Vec<Value> = args
+                .iter()
+                .map(|arg| builder.use_var(varid_var(ctx, *arg)))
+                .collect();
+            let call = builder.ins().call_indirect(fun_sig, callee, &arg_vals);
+            builder.inst_results(call)[0]
         }
-        _ => todo!(),
+
+        cc::Expr::Tuple(args) => {
+            let malloc_arg = builder.ins().iconst(I64, args.len() as i64);
+            let malloc_call = builder.ins().call(malloc, &[malloc_arg]);
+            let tuple = builder.inst_results(malloc_call)[0];
+            for (arg_idx, arg) in args.iter().enumerate() {
+                let arg = builder.use_var(varid_var(ctx, *arg));
+                // TODO: hard-coded word size
+                builder
+                    .ins()
+                    .store(MemFlags::new(), arg, tuple, (arg_idx * 8) as i32);
+            }
+            tuple
+        }
+
+        cc::Expr::TupleIdx(tuple, idx) => {
+            let tuple = builder.use_var(varid_var(ctx, *tuple));
+            // TODO: field type
+            // TODO: hard-coded word size
+            builder
+                .ins()
+                .load(I64, MemFlags::new(), tuple, (idx * 8) as i32)
+        }
+
+        _ => {
+            panic!("Unimplemented expr: {:?}", rhs);
+        }
     }
 }
 
 fn declare_var(ctx: &Ctx, builder: &mut FunctionBuilder, var: VarId) -> Variable {
-    let var_type = ctx.var_type(var).unwrap();
+    let var_type = ctx.var_type(var);
     let var_abi_type = type_abi_type(&*var_type);
     let cranelift_var = varid_var(ctx, var);
     builder.declare_var(cranelift_var, var_abi_type);
