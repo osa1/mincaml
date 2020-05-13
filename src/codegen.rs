@@ -114,19 +114,6 @@ pub fn codegen(
     func
 }
 
-fn type_abi_type(ty: &tc::Type) -> Type {
-    match ty {
-        tc::Type::Var(_) => panic!("type_abi_type: type variable: {:?}", ty),
-        tc::Type::Unit
-        | tc::Type::Bool
-        | tc::Type::Int
-        | tc::Type::Fun { .. }
-        | tc::Type::Tuple(_)
-        | tc::Type::Array(_) => I64,
-        tc::Type::Float => F64,
-    }
-}
-
 fn rhs_value(ctx: &Ctx, builder: &mut FunctionBuilder, malloc: FuncRef, rhs: &cc::Expr) -> Value {
     // let mut inst_builder = builder.ins();
 
@@ -217,4 +204,17 @@ fn declare_var(ctx: &Ctx, builder: &mut FunctionBuilder, var: VarId) -> Variable
 fn varid_var(ctx: &Ctx, var: VarId) -> Variable {
     let var = ctx.get_var(var);
     Variable::new(var.get_uniq().0.get() as usize)
+}
+
+fn type_abi_type(ty: &tc::Type) -> Type {
+    match ty {
+        tc::Type::Var(_) => panic!("type_abi_type: type variable: {:?}", ty),
+        tc::Type::Unit
+        | tc::Type::Bool
+        | tc::Type::Int
+        | tc::Type::Fun { .. }
+        | tc::Type::Tuple(_)
+        | tc::Type::Array(_) => I64,
+        tc::Type::Float => F64,
+    }
 }
