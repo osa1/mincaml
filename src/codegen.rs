@@ -22,11 +22,13 @@ use crate::ctx::{Ctx, VarId};
 struct CgCtx {}
 
 pub fn codegen(
-    ctx: &mut Ctx, cc::Fun {
+    ctx: &mut Ctx,
+    cc::Fun {
         name,
         entry,
         args,
         blocks,
+        return_type,
     }: &cc::Fun,
 ) -> Function {
     let codegen_flags: settings::Flags = settings::Flags::new(settings::builder());
@@ -55,8 +57,7 @@ pub fn codegen(
         let arg_abi_type = rep_type_abi(arg_type);
         sig.params.push(AbiParam::new(arg_abi_type));
     }
-    // TODO: return type
-    // sig.returns.push(AbiParam::new(I32));
+    sig.returns.push(AbiParam::new(rep_type_abi(*return_type)));
 
     let mut fn_builder_ctx = FunctionBuilderContext::new();
 

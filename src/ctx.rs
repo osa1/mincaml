@@ -91,19 +91,17 @@ impl Ctx {
 
     pub fn var_rep_type(&mut self, var: VarId) -> RepType {
         match self.rep_ty_env.get(&var) {
-            None => {
-                match self.ty_env.get(&var).map(|ty_id| self.get_type(*ty_id)) {
-                    None => {
-                        let var = self.get_var(var);
-                        panic!("RepType of variable unknown: {} ({:?})", var, var);
-                    }
-                    Some(ty) => {
-                        let rep_ty = RepType::from(&*ty);
-                        self.rep_ty_env.insert(var, rep_ty);
-                        rep_ty
-                    }
+            None => match self.ty_env.get(&var).map(|ty_id| self.get_type(*ty_id)) {
+                None => {
+                    let var = self.get_var(var);
+                    panic!("RepType of variable unknown: {} ({:?})", var, var);
                 }
-            }
+                Some(ty) => {
+                    let rep_ty = RepType::from(&*ty);
+                    self.rep_ty_env.insert(var, rep_ty);
+                    rep_ty
+                }
+            },
             Some(rep_ty) => *rep_ty,
         }
     }

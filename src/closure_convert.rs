@@ -28,6 +28,7 @@ pub struct Fun {
     pub entry: Label,
     pub args: Vec<VarId>,
     pub blocks: Vec<Block>,
+    pub return_type: RepType,
 }
 
 // Basic blocks
@@ -189,6 +190,7 @@ pub fn closure_convert(ctx: &mut Ctx, expr: knormal::Expr) -> Vec<Fun> {
         entry: entry_label,
         args: vec![],
         blocks: main_blocks,
+        return_type: RepType::Word,
     });
 
     cc_ctx.funs
@@ -303,7 +305,7 @@ fn cc_block(
 
         knormal::Expr::LetRec {
             name,
-            ty_id: _,
+            ty_id,
             mut args,
             rhs,
             body,
@@ -351,11 +353,19 @@ fn cc_block(
                 BlockSequel::Return,
                 *rhs,
             );
+
+            let fun_type = ctx.ctx.get_type(ty_id);
+            let fun_return_type = match &*fun_type {
+                Type::Fun { ret, .. } => RepType::from(&**ret),
+                _ => panic!("Non-function in function position"),
+            };
+
             ctx.funs.push(Fun {
                 name: fun_var,
                 entry: fun_entry_label,
                 args,
                 blocks: fun_blocks,
+                return_type: fun_return_type,
             });
 
             // Body
@@ -487,13 +497,14 @@ impl Fun {
             entry: _,
             args,
             blocks,
+            return_type,
         } = self;
 
         write!(w, "function ")?;
         pp_id(ctx, *name, w)?;
         write!(w, "(")?;
         print_comma_sep(ctx, &mut args.iter(), pp_id_ref, w)?;
-        writeln!(w, ")")?;
+        writeln!(w, ") -> {}", return_type)?;
 
         for block in blocks {
             block.pp(ctx, w)?;
