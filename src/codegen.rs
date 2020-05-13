@@ -1,8 +1,5 @@
-#![allow(dead_code)]
-#![allow(unreachable_code)]
-#![allow(unused_variables)]
-
 use cranelift_codegen::entity::EntityRef;
+use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::entities::{Block, FuncRef, SigRef, Value};
 use cranelift_codegen::ir::types::*;
 use cranelift_codegen::ir::MemFlags;
@@ -19,7 +16,7 @@ use fxhash::FxHashMap;
 
 use crate::cg_types::RepType;
 use crate::closure_convert as cc;
-use crate::common::{FloatBinOp, IntBinOp};
+use crate::common::{Cmp, FloatBinOp, IntBinOp};
 use crate::ctx::{Ctx, VarId};
 
 struct CgCtx {}
@@ -88,8 +85,9 @@ pub fn codegen(
             let _ = declare_var(ctx, &mut builder, *arg);
         }
 
-        let entry_block = *label_to_block.get(entry).unwrap();
-        builder.append_block_params_for_function_params(entry_block);
+        // TODO: When do I need this exactly?
+        // let entry_block = *label_to_block.get(entry).unwrap();
+        // builder.append_block_params_for_function_params(entry_block);
 
         for cc::Block { label, stmts, exit } in blocks {
             let cranelift_block = *label_to_block.get(label).unwrap();
@@ -99,6 +97,37 @@ pub fn codegen(
                 let val = rhs_value(ctx, &mut builder, malloc, rhs);
                 let var = declare_var(ctx, &mut builder, *lhs);
                 builder.def_var(var, val);
+            }
+
+            match exit {
+                cc::Exit::Return(Some(var)) => {
+                    let var = builder.use_var(varid_var(ctx, *var));
+                    builder.ins().return_(&[var]);
+                }
+                cc::Exit::Return(None) => {
+                    builder.ins().return_(&[]);
+                }
+                cc::Exit::Branch {
+                    v1,
+                    v2,
+                    cond,
+                    then_label,
+                    else_label,
+                } => {
+                    let cond = cranelift_cond(*cond);
+                    // TODO: float comparisons?
+                    let v1 = builder.use_var(varid_var(ctx, *v1));
+                    let v2 = builder.use_var(varid_var(ctx, *v2));
+                    let then_block = *label_to_block.get(then_label).unwrap();
+                    builder.ins().br_icmp(cond, v1, v2, then_block, &[]);
+                    let else_block = *label_to_block.get(else_label).unwrap();
+                    builder.ins().jump(else_block, &[]);
+                }
+                cc::Exit::Jump(label) => {
+                    let cranelift_block = *label_to_block.get(label).unwrap();
+                    // Not sure about the arguments here...
+                    builder.ins().jump(cranelift_block, &[]);
+                }
             }
         }
     }
@@ -210,5 +239,16 @@ fn rep_type_abi(ty: RepType) -> Type {
     match ty {
         RepType::Word => I64,
         RepType::Float => F64,
+    }
+}
+
+fn cranelift_cond(cond: Cmp) -> IntCC {
+    match cond {
+        Cmp::Equal => IntCC::Equal,
+        Cmp::NotEqual => IntCC::NotEqual,
+        Cmp::LessThan => IntCC::SignedLessThan,
+        Cmp::LessThanOrEqual => IntCC::SignedLessThanOrEqual,
+        Cmp::GreaterThan => IntCC::SignedGreaterThan,
+        Cmp::GreaterThanOrEqual => IntCC::SignedLessThanOrEqual,
     }
 }

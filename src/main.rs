@@ -88,12 +88,16 @@ fn do_expr(expr_str: &str) -> i32 {
 
     let funs = closure_convert(&mut ctx, expr);
 
+    println!("### Closure conversion:\n");
+
     let mut s = String::new();
     for fun in &funs {
         fun.pp(&ctx, &mut s).unwrap();
     }
 
     println!("{}", s);
+
+    println!("### Code generation:\n");
 
     for fun in &funs {
         let _ = codegen(&mut ctx, fun);
