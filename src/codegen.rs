@@ -19,18 +19,10 @@ use crate::closure_convert as cc;
 use crate::common::{Cmp, FloatBinOp, IntBinOp};
 use crate::ctx::{Ctx, VarId};
 
-struct CgCtx {}
-
 pub fn codegen(
     ctx: &mut Ctx,
-    cc::Fun {
-        name,
-        entry,
-        args,
-        blocks,
-        return_type,
-    }: &cc::Fun,
-) -> Function {
+    funs: &[cc::Fun],
+) {
     let codegen_flags: settings::Flags = settings::Flags::new(settings::builder());
     let mut module: Module<ObjectBackend> = Module::new(ObjectBuilder::new(
         // How does this know I'm building for x86_64 Linux?
@@ -51,97 +43,127 @@ pub fn codegen(
         )
         .unwrap();
 
-    let mut sig = Signature::new(CallConv::SystemV);
-    for arg in args {
-        let arg_type = ctx.var_rep_type(*arg);
-        let arg_abi_type = rep_type_abi(arg_type);
-        sig.params.push(AbiParam::new(arg_abi_type));
-    }
-    sig.returns.push(AbiParam::new(rep_type_abi(*return_type)));
-
-    let mut fn_builder_ctx = FunctionBuilderContext::new();
-
-    let mut func = Function::with_name_signature(
-        ExternalName::User {
-            namespace: 0,
-            index: entry.0.get(),
-        },
-        sig,
-    );
-
-    // FUNC_IN_FUNC???????????????????
-    let malloc = module.declare_func_in_func(malloc_id, &mut func);
-
+    let mut func_ids: FxHashMap<VarId, FuncId> = Default::default();
+    for cc::Fun {
+        name,
+        args,
+        return_type,
+        ..
+    } in funs
     {
-        let mut builder = FunctionBuilder::new(&mut func, &mut fn_builder_ctx);
+        let params: Vec<AbiParam> = args
+            .iter()
+            .map(|arg| AbiParam::new(rep_type_abi(ctx.var_rep_type(*arg))))
+            .collect();
 
-        let mut label_to_block: FxHashMap<cc::Label, Block> = Default::default();
+        let returns: Vec<AbiParam> = vec![AbiParam::new(rep_type_abi(*return_type))];
 
-        for block in blocks {
-            let cranelift_block = builder.create_block();
-            label_to_block.insert(block.label, cranelift_block);
-        }
+        let id: FuncId = module
+            .declare_function(
+                &*ctx.get_var(*name).name(),
+                Linkage::Local,
+                &Signature {
+                    params,
+                    returns,
+                    call_conv: CallConv::SystemV,
+                },
+            )
+            .unwrap();
+        func_ids.insert(*name, id);
+    }
 
+    for cc::Fun { name, entry, args, blocks, return_type } in funs {
+
+        let mut sig = Signature::new(CallConv::SystemV);
         for arg in args {
-            let _ = declare_var(ctx, &mut builder, *arg);
+            let arg_type = ctx.var_rep_type(*arg);
+            let arg_abi_type = rep_type_abi(arg_type);
+            sig.params.push(AbiParam::new(arg_abi_type));
         }
+        sig.returns.push(AbiParam::new(rep_type_abi(*return_type)));
 
-        // TODO: When do I need this exactly?
-        // let entry_block = *label_to_block.get(entry).unwrap();
-        // builder.append_block_params_for_function_params(entry_block);
+        let mut fn_builder_ctx = FunctionBuilderContext::new();
 
-        for cc::Block { label, stmts, exit } in blocks {
-            let cranelift_block = *label_to_block.get(label).unwrap();
-            builder.switch_to_block(cranelift_block);
+        let mut func = Function::with_name_signature(
+            ExternalName::User {
+                namespace: 0,
+                index: entry.0.get(),
+            },
+            sig,
+        );
 
-            for cc::Asgn { lhs, rhs } in stmts {
-                let val = rhs_value(ctx, &mut builder, malloc, rhs);
-                let var = declare_var(ctx, &mut builder, *lhs);
-                builder.def_var(var, val);
+        // FUNC_IN_FUNC???????????????????
+        let malloc = module.declare_func_in_func(malloc_id, &mut func);
+
+        {
+            let mut builder = FunctionBuilder::new(&mut func, &mut fn_builder_ctx);
+
+            let mut label_to_block: FxHashMap<cc::Label, Block> = Default::default();
+
+            for block in blocks {
+                let cranelift_block = builder.create_block();
+                label_to_block.insert(block.label, cranelift_block);
             }
 
-            match exit {
-                cc::Exit::Return(Some(var)) => {
-                    let var = builder.use_var(varid_var(ctx, *var));
-                    builder.ins().return_(&[var]);
+            for arg in args {
+                let _ = declare_var(ctx, &mut builder, *arg);
+            }
+
+            // TODO: When do I need this exactly?
+            // let entry_block = *label_to_block.get(entry).unwrap();
+            // builder.append_block_params_for_function_params(entry_block);
+
+            for cc::Block { label, stmts, exit } in blocks {
+                let cranelift_block = *label_to_block.get(label).unwrap();
+                builder.switch_to_block(cranelift_block);
+
+                for cc::Asgn { lhs, rhs } in stmts {
+                    let val = rhs_value(ctx, &mut builder, malloc, rhs);
+                    let var = declare_var(ctx, &mut builder, *lhs);
+                    builder.def_var(var, val);
                 }
-                cc::Exit::Return(None) => {
-                    builder.ins().return_(&[]);
-                }
-                cc::Exit::Branch {
-                    v1,
-                    v2,
-                    cond,
-                    then_label,
-                    else_label,
-                } => {
-                    let cond = cranelift_cond(*cond);
-                    // TODO: float comparisons?
-                    let v1 = builder.use_var(varid_var(ctx, *v1));
-                    let v2 = builder.use_var(varid_var(ctx, *v2));
-                    let then_block = *label_to_block.get(then_label).unwrap();
-                    builder.ins().br_icmp(cond, v1, v2, then_block, &[]);
-                    let else_block = *label_to_block.get(else_label).unwrap();
-                    builder.ins().jump(else_block, &[]);
-                }
-                cc::Exit::Jump(label) => {
-                    let cranelift_block = *label_to_block.get(label).unwrap();
-                    // Not sure about the arguments here...
-                    builder.ins().jump(cranelift_block, &[]);
+
+                match exit {
+                    cc::Exit::Return(Some(var)) => {
+                        let var = use_var(ctx, &mut builder, *var);
+                        builder.ins().return_(&[var]);
+                    }
+                    cc::Exit::Return(None) => {
+                        builder.ins().return_(&[]);
+                    }
+                    cc::Exit::Branch {
+                        v1,
+                        v2,
+                        cond,
+                        then_label,
+                        else_label,
+                    } => {
+                        let cond = cranelift_cond(*cond);
+                        // TODO: float comparisons?
+                        let v1 = use_var(ctx, &mut builder, *v1);
+                        let v2 = use_var(ctx, &mut builder, *v2);
+                        let then_block = *label_to_block.get(then_label).unwrap();
+                        builder.ins().br_icmp(cond, v1, v2, then_block, &[]);
+                        let else_block = *label_to_block.get(else_label).unwrap();
+                        builder.ins().jump(else_block, &[]);
+                    }
+                    cc::Exit::Jump(label) => {
+                        let cranelift_block = *label_to_block.get(label).unwrap();
+                        // Not sure about the arguments here...
+                        builder.ins().jump(cranelift_block, &[]);
+                    }
                 }
             }
         }
+
+        let flags = settings::Flags::new(settings::builder());
+        let res = verify_function(&func, &flags);
+
+        println!("{}", func.display(None));
+        if let Err(errors) = res {
+            panic!("{}", errors);
+        }
     }
-
-    let flags = settings::Flags::new(settings::builder());
-    let res = verify_function(&func, &flags);
-
-    println!("{}", func.display(None));
-    if let Err(errors) = res {
-        panic!("{}", errors);
-    }
-
-    func
 }
 
 fn rhs_value(ctx: &Ctx, builder: &mut FunctionBuilder, malloc: FuncRef, rhs: &cc::Expr) -> Value {
@@ -151,11 +173,11 @@ fn rhs_value(ctx: &Ctx, builder: &mut FunctionBuilder, malloc: FuncRef, rhs: &cc
         cc::Expr::Atom(cc::Atom::Unit) => builder.ins().iconst(I64, 0),
         cc::Expr::Atom(cc::Atom::Int(i)) => builder.ins().iconst(I64, *i),
         cc::Expr::Atom(cc::Atom::Float(f)) => builder.ins().f64const(*f),
-        cc::Expr::Atom(cc::Atom::Var(var)) => builder.use_var(varid_var(ctx, *var)),
+        cc::Expr::Atom(cc::Atom::Var(var)) => use_var(ctx, builder, *var),
 
         cc::Expr::IBinOp(cc::BinOp { op, arg1, arg2 }) => {
-            let arg1 = builder.use_var(varid_var(ctx, *arg1));
-            let arg2 = builder.use_var(varid_var(ctx, *arg2));
+            let arg1 = use_var(ctx, builder, *arg1);
+            let arg2 = use_var(ctx, builder, *arg2);
             match op {
                 IntBinOp::Add => builder.ins().iadd(arg1, arg2),
                 IntBinOp::Sub => builder.ins().isub(arg1, arg2),
@@ -163,8 +185,8 @@ fn rhs_value(ctx: &Ctx, builder: &mut FunctionBuilder, malloc: FuncRef, rhs: &cc
         }
 
         cc::Expr::FBinOp(cc::BinOp { op, arg1, arg2 }) => {
-            let arg1 = builder.use_var(varid_var(ctx, *arg1));
-            let arg2 = builder.use_var(varid_var(ctx, *arg2));
+            let arg1 = use_var(ctx, builder, *arg1);
+            let arg2 = use_var(ctx, builder, *arg2);
             match op {
                 FloatBinOp::Add => builder.ins().fadd(arg1, arg2),
                 FloatBinOp::Sub => builder.ins().fsub(arg1, arg2),
@@ -185,7 +207,7 @@ fn rhs_value(ctx: &Ctx, builder: &mut FunctionBuilder, malloc: FuncRef, rhs: &cc
 
         cc::Expr::App(fun, args) => {
             let fun_sig: SigRef = todo!();
-            let callee = builder.use_var(varid_var(ctx, *fun));
+            let callee = use_var(ctx, builder, *fun);
             let arg_vals: Vec<Value> = args
                 .iter()
                 .map(|arg| builder.use_var(varid_var(ctx, *arg)))
@@ -199,7 +221,7 @@ fn rhs_value(ctx: &Ctx, builder: &mut FunctionBuilder, malloc: FuncRef, rhs: &cc
             let malloc_call = builder.ins().call(malloc, &[malloc_arg]);
             let tuple = builder.inst_results(malloc_call)[0];
             for (arg_idx, arg) in args.iter().enumerate() {
-                let arg = builder.use_var(varid_var(ctx, *arg));
+                let arg = use_var(ctx, builder, *arg);
                 // TODO: hard-coded word size
                 builder
                     .ins()
@@ -228,7 +250,18 @@ fn declare_var(ctx: &mut Ctx, builder: &mut FunctionBuilder, var: VarId) -> Vari
     let var_abi_type = rep_type_abi(var_type);
     let cranelift_var = varid_var(ctx, var);
     builder.declare_var(cranelift_var, var_abi_type);
+
+    let var = ctx.get_var(var);
+    println!("declare_var: {} -> {:?}", var, cranelift_var);
+
     cranelift_var
+}
+
+fn use_var(ctx: &Ctx, builder: &mut FunctionBuilder, var: VarId) -> Value {
+    let var_ = ctx.get_var(var);
+    let cl_var = varid_var(ctx, var);
+    println!("use_var: {} -> {:?}", var_, cl_var);
+    builder.use_var(cl_var)
 }
 
 fn varid_var(ctx: &Ctx, var: VarId) -> Variable {

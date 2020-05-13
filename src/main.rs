@@ -99,9 +99,7 @@ fn do_expr(expr_str: &str) -> i32 {
 
     println!("### Code generation:\n");
 
-    for fun in &funs {
-        let _ = codegen(&mut ctx, fun);
-    }
+    codegen(&mut ctx, &funs);
 
     0
 }
