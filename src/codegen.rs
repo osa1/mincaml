@@ -25,7 +25,7 @@ use crate::ctx::{Ctx, VarId};
 struct CgCtx {}
 
 pub fn codegen(
-    ctx: &Ctx, cc::Fun {
+    ctx: &mut Ctx, cc::Fun {
         name,
         entry,
         args,
@@ -193,7 +193,7 @@ fn rhs_value(ctx: &Ctx, builder: &mut FunctionBuilder, malloc: FuncRef, rhs: &cc
     }
 }
 
-fn declare_var(ctx: &Ctx, builder: &mut FunctionBuilder, var: VarId) -> Variable {
+fn declare_var(ctx: &mut Ctx, builder: &mut FunctionBuilder, var: VarId) -> Variable {
     let var_type = ctx.var_rep_type(var);
     let var_abi_type = rep_type_abi(var_type);
     let cranelift_var = varid_var(ctx, var);
