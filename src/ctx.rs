@@ -1,3 +1,4 @@
+use crate::cg_types::RepType;
 use crate::closure_convert::Label;
 use crate::interner::{InternId, InternTable};
 use crate::type_check::{TyVar, Type};
@@ -13,25 +14,35 @@ pub struct VarId(InternId);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TypeId(InternId);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct LableId(InternId);
-
 pub struct Ctx {
     next_uniq: Uniq,
     tys: InternTable<Type>,
     vars: InternTable<Var>,
     ty_env: FxHashMap<VarId, TypeId>,
+    rep_ty_env: FxHashMap<VarId, RepType>,
     builtins: Vec<(VarId, TypeId)>,
+    // Ids for widely used types
+    int_id: TypeId,
+    float_id: TypeId,
+    unit_id: TypeId,
 }
 
 impl Default for Ctx {
     fn default() -> Self {
+        let mut tys: InternTable<Type> = Default::default();
+        let int_id = TypeId(tys.intern(Type::Int));
+        let float_id = TypeId(tys.intern(Type::Float));
+        let unit_id = TypeId(tys.intern(Type::Unit));
         let mut ctx = Ctx {
             next_uniq: Uniq(unsafe { NonZeroU32::new_unchecked(1) }),
             tys: Default::default(),
             vars: Default::default(),
             ty_env: Default::default(),
+            rep_ty_env: Default::default(),
             builtins: vec![],
+            int_id,
+            float_id,
+            unit_id,
         };
         ctx.add_builtin_vars();
         ctx
@@ -39,6 +50,18 @@ impl Default for Ctx {
 }
 
 impl Ctx {
+    pub fn int_type_id(&self) -> TypeId {
+        self.int_id
+    }
+
+    pub fn float_type_id(&self) -> TypeId {
+        self.float_id
+    }
+
+    pub fn unit_type_id(&self) -> TypeId {
+        self.unit_id
+    }
+
     fn fresh_uniq(&mut self) -> Uniq {
         let uniq = self.next_uniq;
         self.next_uniq.0 = unsafe { NonZeroU32::new_unchecked(self.next_uniq.0.get() + 1) };
@@ -53,6 +76,27 @@ impl Ctx {
     pub fn fresh_generated_var(&mut self, phase: CompilerPhase) -> VarId {
         let uniq = self.fresh_uniq();
         self.intern_var(Var::new_generated(phase, uniq))
+    }
+
+    pub fn set_var_type(&mut self, var: VarId, ty: TypeId) {
+        self.ty_env.insert(var, ty);
+    }
+
+    pub fn fresh_codegen_var(&mut self, phase: CompilerPhase, rep_type: RepType) -> VarId {
+        let uniq = self.fresh_uniq();
+        let var_id = self.intern_var(Var::new_generated(phase, uniq));
+        self.rep_ty_env.insert(var_id, rep_type);
+        var_id
+    }
+
+    pub fn var_rep_type(&self, var: VarId) -> RepType {
+        match self.rep_ty_env.get(&var) {
+            None => {
+                let var = self.get_var(var);
+                panic!("RepType of variable unknown: {} ({:?})", var, var);
+            }
+            Some(rep_ty) => *rep_ty,
+        }
     }
 
     pub fn fresh_builtin_var(&mut self, name: &str) -> VarId {
@@ -76,14 +120,19 @@ impl Ctx {
         self.vars.get(var.0).name()
     }
 
-    pub fn var_type(&self, var: VarId) -> Rc<Type> {
+    pub fn var_type_id(&self, var: VarId) -> TypeId {
         match self.ty_env.get(&var) {
             None => {
                 let var = self.get_var(var);
                 panic!("Type of variable unknown: {} ({:?})", var, var);
             }
-            Some(ty_id) => self.get_type(*ty_id).clone(),
+            Some(ty_id) => *ty_id,
         }
+    }
+
+    pub fn var_type(&self, var: VarId) -> Rc<Type> {
+        let ty_id = self.var_type_id(var);
+        self.get_type(ty_id).clone()
     }
 
     pub fn fresh_tyvar(&mut self) -> TyVar {
@@ -114,7 +163,7 @@ impl Ctx {
         VarId(self.vars.intern(var))
     }
 
-    fn intern_type(&mut self, ty: Type) -> TypeId {
+    pub fn intern_type(&mut self, ty: Type) -> TypeId {
         TypeId(self.tys.intern(ty))
     }
 

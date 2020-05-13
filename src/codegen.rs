@@ -17,10 +17,10 @@ use cranelift_object::{ObjectBackend, ObjectBuilder};
 
 use fxhash::FxHashMap;
 
+use crate::cg_types::RepType;
 use crate::closure_convert as cc;
 use crate::common::{FloatBinOp, IntBinOp};
 use crate::ctx::{Ctx, VarId};
-use crate::type_check as tc;
 
 struct CgCtx {}
 
@@ -54,8 +54,8 @@ pub fn codegen(
 
     let mut sig = Signature::new(CallConv::SystemV);
     for arg in args {
-        let arg_type = ctx.var_type(*arg);
-        let arg_abi_type = type_abi_type(&*arg_type);
+        let arg_type = ctx.var_rep_type(*arg);
+        let arg_abi_type = rep_type_abi(arg_type);
         sig.params.push(AbiParam::new(arg_abi_type));
     }
     // TODO: return type
@@ -194,8 +194,8 @@ fn rhs_value(ctx: &Ctx, builder: &mut FunctionBuilder, malloc: FuncRef, rhs: &cc
 }
 
 fn declare_var(ctx: &Ctx, builder: &mut FunctionBuilder, var: VarId) -> Variable {
-    let var_type = ctx.var_type(var);
-    let var_abi_type = type_abi_type(&*var_type);
+    let var_type = ctx.var_rep_type(var);
+    let var_abi_type = rep_type_abi(var_type);
     let cranelift_var = varid_var(ctx, var);
     builder.declare_var(cranelift_var, var_abi_type);
     cranelift_var
@@ -206,15 +206,9 @@ fn varid_var(ctx: &Ctx, var: VarId) -> Variable {
     Variable::new(var.get_uniq().0.get() as usize)
 }
 
-fn type_abi_type(ty: &tc::Type) -> Type {
+fn rep_type_abi(ty: RepType) -> Type {
     match ty {
-        tc::Type::Var(_) => panic!("type_abi_type: type variable: {:?}", ty),
-        tc::Type::Unit
-        | tc::Type::Bool
-        | tc::Type::Int
-        | tc::Type::Fun { .. }
-        | tc::Type::Tuple(_)
-        | tc::Type::Array(_) => I64,
-        tc::Type::Float => F64,
+        RepType::Word => I64,
+        RepType::Float => F64,
     }
 }

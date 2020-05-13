@@ -1,5 +1,6 @@
 #![feature(or_patterns, box_patterns)]
 
+mod cg_types;
 mod closure_convert;
 mod codegen;
 mod common;

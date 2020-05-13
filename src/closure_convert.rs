@@ -1,7 +1,9 @@
+use crate::cg_types::RepType;
 use crate::common::*;
 use crate::ctx::{Ctx, VarId};
 use crate::knormal;
 pub use crate::knormal::BinOp;
+use crate::type_check::Type;
 use crate::var::CompilerPhase::ClosureConvert;
 use crate::var::Uniq;
 
@@ -51,11 +53,11 @@ pub enum BlockSequel {
 }
 
 impl BlockSequel {
-    fn get_ret_var(&self, ctx: &mut CcCtx) -> VarId {
+    fn get_ret_var(&self, ctx: &mut CcCtx, ret_ty: RepType) -> VarId {
         use BlockSequel::*;
         match self {
             Asgn(var, _) => *var,
-            Return => ctx.fresh_var(),
+            Return => ctx.fresh_var(ret_ty),
         }
     }
 }
@@ -68,7 +70,7 @@ impl Block {
             BlockSequel::Return => match value {
                 Atom::Unit => Exit::Return(None),
                 Atom::Int(i) => {
-                    let tmp = ctx.fresh_var();
+                    let tmp = ctx.fresh_var(RepType::Word);
                     stmts.push(Asgn {
                         lhs: tmp,
                         rhs: Expr::Atom(Atom::Int(i)),
@@ -76,7 +78,7 @@ impl Block {
                     Exit::Return(Some(tmp))
                 }
                 Atom::Float(f) => {
-                    let tmp = ctx.fresh_var();
+                    let tmp = ctx.fresh_var(RepType::Float);
                     stmts.push(Asgn {
                         lhs: tmp,
                         rhs: Expr::Atom(Atom::Float(f)),
@@ -158,8 +160,8 @@ struct CcCtx<'ctx> {
 }
 
 impl<'ctx> CcCtx<'ctx> {
-    fn fresh_var(&mut self) -> VarId {
-        self.ctx.fresh_generated_var(ClosureConvert)
+    fn fresh_var(&mut self, rep_type: RepType) -> VarId {
+        self.ctx.fresh_codegen_var(ClosureConvert, rep_type)
     }
 
     fn fresh_label(&mut self) -> Label {
@@ -170,7 +172,7 @@ impl<'ctx> CcCtx<'ctx> {
 pub fn closure_convert(ctx: &mut Ctx, expr: knormal::Expr) -> Vec<Fun> {
     let mut cc_ctx = CcCtx { ctx, funs: vec![] };
 
-    let main_name = cc_ctx.fresh_var();
+    let main_name = cc_ctx.fresh_var(RepType::Word);
     let mut main_blocks = vec![];
     let entry_label = cc_ctx.fresh_label();
     cc_block(
@@ -214,7 +216,7 @@ fn cc_block(
         }
 
         knormal::Expr::Neg(var) => {
-            let tmp = ctx.fresh_var();
+            let tmp = ctx.fresh_var(RepType::Word);
             stmts.push(Asgn {
                 lhs: tmp,
                 rhs: Expr::Neg(var),
@@ -224,7 +226,7 @@ fn cc_block(
         }
 
         knormal::Expr::FNeg(var) => {
-            let tmp = ctx.fresh_var();
+            let tmp = ctx.fresh_var(RepType::Float);
             stmts.push(Asgn {
                 lhs: tmp,
                 rhs: Expr::FNeg(var),
@@ -234,7 +236,7 @@ fn cc_block(
         }
 
         knormal::Expr::IBinOp(BinOp { op, arg1, arg2 }) => {
-            let tmp = sequel.get_ret_var(ctx);
+            let tmp = sequel.get_ret_var(ctx, RepType::Word);
             stmts.push(Asgn {
                 lhs: tmp,
                 rhs: Expr::IBinOp(BinOp { op, arg1, arg2 }),
@@ -244,7 +246,7 @@ fn cc_block(
         }
 
         knormal::Expr::FBinOp(BinOp { op, arg1, arg2 }) => {
-            let tmp = sequel.get_ret_var(ctx);
+            let tmp = sequel.get_ret_var(ctx, RepType::Word);
             stmts.push(Asgn {
                 lhs: tmp,
                 rhs: Expr::FBinOp(BinOp { op, arg1, arg2 }),
@@ -279,7 +281,7 @@ fn cc_block(
 
         knormal::Expr::Let {
             id,
-            ty: _,
+            ty_id: _,
             rhs,
             body,
         } => {
@@ -301,7 +303,7 @@ fn cc_block(
 
         knormal::Expr::LetRec {
             name,
-            ty: _,
+            ty_id: _,
             mut args,
             rhs,
             body,
@@ -310,7 +312,7 @@ fn cc_block(
 
             // After cc 'name' will refer to the closure tuple. For the function we'll need a fresh
             // variable.
-            let fun_var = ctx.fresh_var();
+            let fun_var = ctx.fresh_var(RepType::Word);
 
             // Free variables of the closure will be moved to tuple payload
             // NOTE: An inefficiency here is that if we have deeply nested letrecs we'll be
@@ -369,14 +371,15 @@ fn cc_block(
 
         knormal::Expr::App(fun, mut args) => {
             // f(x) -> f.0(f, x)
-            let fun_tmp = ctx.fresh_var();
+            let fun_tmp = ctx.fresh_var(RepType::Word);
             stmts.push(Asgn {
                 lhs: fun_tmp,
                 rhs: Expr::TupleIdx(fun, 0),
             });
             args.insert(0, fun);
 
-            let ret_tmp = sequel.get_ret_var(ctx);
+            let ret_type = RepType::from(&*ctx.ctx.var_type(fun));
+            let ret_tmp = sequel.get_ret_var(ctx, ret_type);
 
             stmts.push(Asgn {
                 lhs: ret_tmp,
@@ -387,7 +390,7 @@ fn cc_block(
         }
 
         knormal::Expr::ExtApp(ext_fn, args) => {
-            let ret_tmp = sequel.get_ret_var(ctx);
+            let ret_tmp = sequel.get_ret_var(ctx, RepType::Word); // FIXME: type
             stmts.push(Asgn {
                 lhs: ret_tmp,
                 rhs: Expr::ExtApp(ext_fn, args),
@@ -397,7 +400,7 @@ fn cc_block(
         }
 
         knormal::Expr::Tuple(args) => {
-            let ret_tmp = sequel.get_ret_var(ctx);
+            let ret_tmp = sequel.get_ret_var(ctx, RepType::Word);
             stmts.push(Asgn {
                 lhs: ret_tmp,
                 rhs: Expr::Tuple(args),
@@ -407,7 +410,14 @@ fn cc_block(
         }
 
         knormal::Expr::TupleIdx(tuple, idx) => {
-            let ret_tmp = sequel.get_ret_var(ctx);
+            let elem_ty = match &*ctx.ctx.var_type(tuple) {
+                Type::Tuple(args) => RepType::from(&args[idx]),
+                other => panic!(
+                    "Non-tuple type in tuple position: {:?} (type={:?})",
+                    tuple, other
+                ),
+            };
+            let ret_tmp = sequel.get_ret_var(ctx, elem_ty);
             stmts.push(Asgn {
                 lhs: ret_tmp,
                 rhs: Expr::TupleIdx(tuple, idx),
@@ -417,7 +427,14 @@ fn cc_block(
         }
 
         knormal::Expr::Get(array, idx) => {
-            let ret_tmp = sequel.get_ret_var(ctx);
+            let elem_ty = match &*ctx.ctx.var_type(array) {
+                Type::Array(elem_ty) => RepType::from(&**elem_ty),
+                other => panic!(
+                    "Non-array type in array position: {:?} (type={:?})",
+                    array, other
+                ),
+            };
+            let ret_tmp = sequel.get_ret_var(ctx, elem_ty);
             stmts.push(Asgn {
                 lhs: ret_tmp,
                 rhs: Expr::Get(array, Atom::Var(idx)),
@@ -427,7 +444,14 @@ fn cc_block(
         }
 
         knormal::Expr::Put(array, idx, val) => {
-            let ret_tmp = sequel.get_ret_var(ctx);
+            let elem_ty = match &*ctx.ctx.var_type(array) {
+                Type::Array(elem_ty) => RepType::from(&**elem_ty),
+                other => panic!(
+                    "Non-array type in array position: {:?} (type={:?})",
+                    array, other
+                ),
+            };
+            let ret_tmp = sequel.get_ret_var(ctx, elem_ty);
             stmts.push(Asgn {
                 lhs: ret_tmp,
                 rhs: Expr::Put(array, Atom::Var(idx), Atom::Var(val)),
@@ -642,7 +666,7 @@ fn fvs(ctx: &Ctx, e: &knormal::Expr, acc: &mut FxHashSet<VarId>) {
         }
         Let {
             id,
-            ty: _,
+            ty_id: _,
             rhs,
             body,
         } => {
@@ -655,7 +679,7 @@ fn fvs(ctx: &Ctx, e: &knormal::Expr, acc: &mut FxHashSet<VarId>) {
         }
         LetRec {
             name,
-            ty: _,
+            ty_id: _,
             args,
             rhs,
             body,
