@@ -8,6 +8,9 @@ use cranelift_codegen::isa::CallConv;
 use cranelift_codegen::settings;
 use cranelift_codegen::verifier::verify_function;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
+use cranelift_module::{default_libcall_names, FuncId, Linkage, Module};
+use cranelift_native;
+use cranelift_object::{ObjectBackend, ObjectBuilder};
 
 use fxhash::FxHashMap;
 
@@ -26,6 +29,26 @@ pub fn codegen(
         blocks,
     }: &cc::Fun,
 ) -> Function {
+    let codegen_flags: settings::Flags = settings::Flags::new(settings::builder());
+    let mut module: Module<ObjectBackend> = Module::new(ObjectBuilder::new(
+        // How does this know I'm building for x86_64 Linux?
+        cranelift_native::builder().unwrap().finish(codegen_flags),
+        [1, 2, 3, 4, 5, 6, 7, 8], // TODO: what is this?
+        default_libcall_names(),
+    ));
+
+    let malloc: FuncId = module
+        .declare_function(
+            "malloc",
+            Linkage::Import,
+            &Signature {
+                params: vec![AbiParam::new(I64)],
+                returns: vec![AbiParam::new(I64)],
+                call_conv: CallConv::SystemV,
+            },
+        )
+        .unwrap();
+
     let mut sig = Signature::new(CallConv::SystemV);
     for arg in args {
         let arg_type = ctx.var_type(*arg).unwrap();
@@ -36,6 +59,7 @@ pub fn codegen(
     // sig.returns.push(AbiParam::new(I32));
 
     let mut fn_builder_ctx = FunctionBuilderContext::new();
+
     let mut func = Function::with_name_signature(
         ExternalName::User {
             namespace: 0,
@@ -129,6 +153,10 @@ fn rhs_value(ctx: &Ctx, builder: &mut FunctionBuilder, rhs: &cc::Expr) -> Value 
         cc::Expr::FNeg(var) => {
             let arg = builder.use_var(varid_var(ctx, *var));
             builder.ins().fneg(arg)
+        }
+        cc::Expr::App(fun, args) => {
+            // https://github.com/bytecodealliance/simplejit-demo/blob/master/src/jit.rs#L395
+            todo!()
         }
         _ => todo!(),
     }
