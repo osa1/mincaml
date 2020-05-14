@@ -137,6 +137,8 @@ fn do_expr(expr_str: &str) -> i32 {
 }
 
 fn report_pass_stats(pass_stats: &[PassStats]) {
+    // TODO: align columns
+    // TODO: show percentage of allocs and times of each pass
     println!("--------------------------------------------------------");
     let mut total_elapsed: Duration = Duration::from_micros(0);
     let mut total_allocated: usize = 0;
