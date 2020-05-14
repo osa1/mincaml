@@ -147,12 +147,9 @@ pub fn codegen(ctx: &mut Ctx, funs: &[cc::Fun]) {
                 }
 
                 match exit {
-                    cc::Exit::Return(Some(var)) => {
+                    cc::Exit::Return(var) => {
                         let var = use_var(ctx, &module, &mut builder, &arg_map, &fun_map, *var);
                         builder.ins().return_(&[var]);
-                    }
-                    cc::Exit::Return(None) => {
-                        builder.ins().return_(&[]);
                     }
                     cc::Exit::Branch {
                         v1,
@@ -240,14 +237,18 @@ fn rhs_value(
             builder.ins().fneg(arg)
         }
 
-        cc::Expr::App(fun, args) => {
+        cc::Expr::App(fun, args, ret_type) => {
             let params: Vec<AbiParam> = args
                 .iter()
-                .map(|arg| AbiParam::new(rep_type_abi(ctx.var_rep_type(*arg))))
+                .map(|arg| AbiParam::new(rep_type_abi(*ret_type)))
                 .collect();
 
             let returns: Vec<AbiParam> = vec![AbiParam::new(I64)]; // FIXME: return type unknown
-            let fun_sig = Signature { params, returns, call_conv: CallConv::SystemV };
+            let fun_sig = Signature {
+                params,
+                returns,
+                call_conv: CallConv::SystemV,
+            };
             let fun_sig_ref = builder.import_signature(fun_sig);
 
             let callee = use_var(ctx, module, builder, arg_map, fun_map, *fun);
@@ -295,7 +296,7 @@ fn declare_var(ctx: &mut Ctx, builder: &mut FunctionBuilder, var: VarId) -> Vari
     builder.declare_var(cranelift_var, var_abi_type);
 
     let var = ctx.get_var(var);
-    // println!("declare_var: {} -> {:?}", var, cranelift_var);
+    println!("declare_var: {} -> {:?}", var, cranelift_var);
 
     cranelift_var
 }
@@ -315,7 +316,7 @@ fn use_var(
 
     let var_ = ctx.get_var(var);
     let cl_var = varid_var(ctx, var);
-    // println!("use_var: {} -> {:?}", var_, cl_var);
+    println!("use_var: {} -> {:?}", var_, cl_var);
     builder.use_var(cl_var)
 }
 

@@ -1,6 +1,6 @@
 use crate::cg_types::RepType;
 use crate::common::*;
-use crate::ctx::{Ctx, VarId};
+use crate::ctx::{Ctx, TypeId, VarId};
 use crate::knormal;
 pub use crate::knormal::BinOp;
 use crate::type_check::Type;
@@ -69,14 +69,21 @@ impl Block {
     ) -> Block {
         let exit = match sequel {
             BlockSequel::Return => match value {
-                Atom::Unit => Exit::Return(None),
+                Atom::Unit => {
+                    let tmp = ctx.fresh_var(RepType::Word);
+                    stmts.push(Asgn {
+                        lhs: tmp,
+                        rhs: Expr::Atom(Atom::Unit),
+                    });
+                    Exit::Return(tmp)
+                }
                 Atom::Int(i) => {
                     let tmp = ctx.fresh_var(RepType::Word);
                     stmts.push(Asgn {
                         lhs: tmp,
                         rhs: Expr::Atom(Atom::Int(i)),
                     });
-                    Exit::Return(Some(tmp))
+                    Exit::Return(tmp)
                 }
                 Atom::Float(f) => {
                     let tmp = ctx.fresh_var(RepType::Float);
@@ -84,9 +91,9 @@ impl Block {
                         lhs: tmp,
                         rhs: Expr::Atom(Atom::Float(f)),
                     });
-                    Exit::Return(Some(tmp))
+                    Exit::Return(tmp)
                 }
-                Atom::Var(var) => Exit::Return(Some(var)),
+                Atom::Var(var) => Exit::Return(var),
             },
             BlockSequel::Asgn(lhs, label) => {
                 match value {
@@ -114,7 +121,7 @@ pub enum Exit {
     // We always return a variable to keep things simpler in instruction selection: the 'ret'
     // instruction doesn't take any arguments, so we need a temporary for the return value in all
     // cases. 'None' is for returning unit.
-    Return(Option<VarId>),
+    Return(VarId),
     Branch {
         v1: VarId,
         v2: VarId,
@@ -133,7 +140,7 @@ pub enum Expr {
     FBinOp(BinOp<FloatBinOp>),
     Neg(VarId),
     FNeg(VarId),
-    App(VarId, Vec<VarId>),
+    App(VarId, Vec<VarId>, RepType),
     ExtApp(String, Vec<VarId>),
     // Tuple allocation
     Tuple(Vec<VarId>), // TODO: Lower this more?
@@ -393,7 +400,7 @@ fn cc_block(
 
             stmts.push(Asgn {
                 lhs: ret_tmp,
-                rhs: Expr::App(fun_tmp, args),
+                rhs: Expr::App(fun_tmp, args, ret_type),
             });
             blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
             false
@@ -532,8 +539,7 @@ impl Exit {
     pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result {
         use Exit::*;
         match self {
-            Return(None) => write!(w, "return"),
-            Return(Some(var)) => {
+            Return(var) => {
                 write!(w, "return ")?;
                 pp_id(ctx, *var, w)
             }
@@ -597,7 +603,7 @@ impl Expr {
                 write!(w, "-.")?;
                 pp_id(ctx, *var, w)
             }
-            App(fun, args) => {
+            App(fun, args, _) => {
                 pp_id(ctx, *fun, w)?;
                 write!(w, "(")?;
                 print_comma_sep(ctx, &mut args.iter(), pp_id_ref, w)?;
