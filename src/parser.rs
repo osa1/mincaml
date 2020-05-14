@@ -279,7 +279,7 @@ impl<'a> Parser<'a> {
                 self.expect(Token::Then, "'then'")?;
                 let e2 = self.expr1(ctx, INIT_PREC)?;
                 self.expect(Token::Else, "'else'")?;
-                let e3 = self.expr1(ctx, INIT_PREC)?;
+                let e3 = self.expr1(ctx, IF_PREC)?;
                 Ok(Expr::If(Box::new(e1), Box::new(e2), Box::new(e3)))
             }
             other => Err(ParseErr::Unexpected {
