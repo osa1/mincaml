@@ -188,8 +188,12 @@ pub fn codegen(ctx: &mut Ctx, funs: &[cc::Fun]) {
                         builder.ins().jump(cranelift_block, &[]);
                     }
                 }
+
+                builder.seal_block(cranelift_block);
             }
         }
+
+        builder.finalize();
 
         let flags = settings::Flags::new(settings::builder());
         let res = verify_function(&context.func, &flags);
@@ -202,8 +206,8 @@ pub fn codegen(ctx: &mut Ctx, funs: &[cc::Fun]) {
         module
             .define_function(func_id, &mut context, &mut NullTrapSink {})
             .unwrap();
-        module.clear_context(&mut context);
-        module.finalize_definitions();
+        // module.clear_context(&mut context);
+        // module.finalize_definitions();
     }
 }
 
