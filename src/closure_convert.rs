@@ -330,6 +330,7 @@ fn cc_block(
             let closure_fvs: Vec<VarId> = {
                 let mut closure_fvs: FxHashSet<VarId> = Default::default();
                 fvs(ctx.ctx, &*rhs, &mut closure_fvs);
+                closure_fvs.remove(&name);
                 for arg in &args {
                     closure_fvs.remove(arg);
                 }
