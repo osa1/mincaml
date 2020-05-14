@@ -23,6 +23,7 @@ pub enum Type {
     Var(TyVar),
 }
 
+/*
 impl Type {
     pub fn is_array(&self) -> bool {
         match self {
@@ -31,6 +32,7 @@ impl Type {
         }
     }
 }
+*/
 
 #[derive(Debug)]
 pub enum TypeErr {

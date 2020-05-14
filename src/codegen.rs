@@ -4,7 +4,7 @@ use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::entities::{Block, FuncRef, SigRef, Value};
 use cranelift_codegen::ir::types::*;
 use cranelift_codegen::ir::MemFlags;
-use cranelift_codegen::ir::{AbiParam, ExternalName, Function, InstBuilder, Signature};
+use cranelift_codegen::ir::{AbiParam, InstBuilder, Signature};
 use cranelift_codegen::isa::CallConv;
 use cranelift_codegen::settings;
 use cranelift_codegen::verifier::verify_function;
@@ -240,16 +240,19 @@ fn rhs_value(
         cc::Expr::App(fun, args, ret_type) => {
             let params: Vec<AbiParam> = args
                 .iter()
-                .map(|arg| AbiParam::new(rep_type_abi(*ret_type)))
+                .map(|arg| {
+                    let arg_ty = ctx.var_rep_type(*arg);
+                    AbiParam::new(rep_type_abi(arg_ty))
+                })
                 .collect();
 
-            let returns: Vec<AbiParam> = vec![AbiParam::new(I64)]; // FIXME: return type unknown
+            let returns: Vec<AbiParam> = vec![AbiParam::new(rep_type_abi(*ret_type))];
             let fun_sig = Signature {
                 params,
                 returns,
                 call_conv: CallConv::SystemV,
             };
-            let fun_sig_ref = builder.import_signature(fun_sig);
+            let fun_sig_ref: SigRef = builder.import_signature(fun_sig);
 
             let callee = use_var(ctx, module, builder, arg_map, fun_map, *fun);
             let arg_vals: Vec<Value> = args
@@ -295,8 +298,8 @@ fn declare_var(ctx: &mut Ctx, builder: &mut FunctionBuilder, var: VarId) -> Vari
     let cranelift_var = varid_var(ctx, var);
     builder.declare_var(cranelift_var, var_abi_type);
 
-    let var = ctx.get_var(var);
-    println!("declare_var: {} -> {:?}", var, cranelift_var);
+    // let var = ctx.get_var(var);
+    // println!("declare_var: {} -> {:?}", var, cranelift_var);
 
     cranelift_var
 }
@@ -314,9 +317,9 @@ fn use_var(
         return builder.ins().func_addr(I64, func_ref);
     }
 
-    let var_ = ctx.get_var(var);
+    // let var_ = ctx.get_var(var);
     let cl_var = varid_var(ctx, var);
-    println!("use_var: {} -> {:?}", var_, cl_var);
+    // println!("use_var: {} -> {:?}", var_, cl_var);
     builder.use_var(cl_var)
 }
 

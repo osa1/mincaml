@@ -1,6 +1,6 @@
 use crate::cg_types::RepType;
 use crate::common::*;
-use crate::ctx::{Ctx, TypeId, VarId};
+use crate::ctx::{Ctx, VarId};
 use crate::knormal;
 pub use crate::knormal::BinOp;
 use crate::type_check::Type;
