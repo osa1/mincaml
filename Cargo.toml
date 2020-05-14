@@ -8,6 +8,10 @@ edition = "2018"
 name = "mc"
 path = "src/main.rs"
 
+[[bin]]
+name = "test"
+path = "test/main.rs"
+
 [dependencies]
 cranelift-codegen = "0.63"
 cranelift-frontend = "0.63"
