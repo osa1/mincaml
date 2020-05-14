@@ -94,7 +94,14 @@ fn norm_ty(substs: &SubstEnv, ty: Type) -> Type {
         },
         Type::Tuple(args) => Type::Tuple(args.into_iter().map(|ty| norm_ty(substs, ty)).collect()),
         Type::Array(ty) => Type::Array(Box::new(norm_ty(substs, *ty))),
-        Type::Var(_) => norm_ty(substs, deref_ty(substs, &ty).clone()),
+        Type::Var(_) => {
+            let deref = deref_ty(substs, &ty).clone();
+            if deref == ty {
+                ty
+            } else {
+                norm_ty(substs, deref)
+            }
+        }
     }
 }
 
@@ -395,6 +402,7 @@ fn unify(subst_env: &mut SubstEnv, ty1: &Type, ty2: &Type) -> Result<(), TypeErr
             if occurs_check(subst_env, *var, ty) {
                 return Err(TypeErr::InfiniteType(ty1, ty2));
             }
+            // println!("unify {:?} ~ {:?}", var, ty);
             subst_env.insert(*var, ty.clone());
             Ok(())
         }
