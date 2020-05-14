@@ -70,16 +70,13 @@ pub fn codegen(ctx: &mut Ctx, funs: &[cc::Fun]) {
 
         let returns: Vec<AbiParam> = vec![AbiParam::new(rep_type_abi(*return_type))];
 
+        let sig = Signature {
+            params,
+            returns,
+            call_conv: CallConv::SystemV,
+        };
         let id: FuncId = module
-            .declare_function(
-                &*ctx.get_var(*name).name(),
-                Linkage::Local,
-                &Signature {
-                    params,
-                    returns,
-                    call_conv: CallConv::SystemV,
-                },
-            )
+            .declare_function(&*ctx.get_var(*name).name(), Linkage::Local, &sig)
             .unwrap();
         fun_map.insert(*name, id);
     }
@@ -212,7 +209,7 @@ pub fn codegen(ctx: &mut Ctx, funs: &[cc::Fun]) {
 }
 
 fn rhs_value(
-    ctx: &Ctx, module: &Module<ObjectBackend>, builder: &mut FunctionBuilder,
+    ctx: &mut Ctx, module: &Module<ObjectBackend>, builder: &mut FunctionBuilder,
     arg_map: &FxHashMap<VarId, Value>, fun_map: &FxHashMap<VarId, FuncId>, malloc: FuncRef,
     rhs: &cc::Expr,
 ) -> Value {
@@ -253,13 +250,21 @@ fn rhs_value(
         }
 
         cc::Expr::App(fun, args) => {
-            let fun_sig: SigRef = todo!();
+            let params: Vec<AbiParam> = args
+                .iter()
+                .map(|arg| AbiParam::new(rep_type_abi(ctx.var_rep_type(*arg))))
+                .collect();
+
+            let returns: Vec<AbiParam> = vec![AbiParam::new(I64)]; // FIXME: return type unknown
+            let fun_sig = Signature { params, returns, call_conv: CallConv::SystemV };
+            let fun_sig_ref = builder.import_signature(fun_sig);
+
             let callee = use_var(ctx, module, builder, arg_map, fun_map, *fun);
             let arg_vals: Vec<Value> = args
                 .iter()
                 .map(|arg| builder.use_var(varid_var(ctx, *arg)))
                 .collect();
-            let call = builder.ins().call_indirect(fun_sig, callee, &arg_vals);
+            let call = builder.ins().call_indirect(fun_sig_ref, callee, &arg_vals);
             builder.inst_results(call)[0]
         }
 
