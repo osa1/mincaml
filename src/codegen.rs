@@ -81,8 +81,6 @@ pub fn codegen(ctx: &mut Ctx, funs: &[cc::Fun]) {
         fun_map.insert(*name, id);
     }
 
-    println!("End of shared state");
-
     //
     // End of shared state
     //
@@ -114,14 +112,7 @@ pub fn codegen(ctx: &mut Ctx, funs: &[cc::Fun]) {
             .declare_function(&*func_name, Linkage::Local, &signature)
             .unwrap();
 
-        // let function_name = function.prototype.function_name.to_string();
-        // let func_id = self.prototype(&function.prototype, Linkage::Export)?;
-
-        println!("Creating malloc ref");
-
         let malloc: FuncRef = module.declare_func_in_func(malloc_id, &mut context.func);
-
-        println!("Done createing malloc ref");
 
         let mut builder: FunctionBuilder =
             FunctionBuilder::new(&mut context.func, &mut fn_builder_ctx);
@@ -304,7 +295,7 @@ fn declare_var(ctx: &mut Ctx, builder: &mut FunctionBuilder, var: VarId) -> Vari
     builder.declare_var(cranelift_var, var_abi_type);
 
     let var = ctx.get_var(var);
-    println!("declare_var: {} -> {:?}", var, cranelift_var);
+    // println!("declare_var: {} -> {:?}", var, cranelift_var);
 
     cranelift_var
 }
@@ -324,7 +315,7 @@ fn use_var(
 
     let var_ = ctx.get_var(var);
     let cl_var = varid_var(ctx, var);
-    println!("use_var: {} -> {:?}", var_, cl_var);
+    // println!("use_var: {} -> {:?}", var_, cl_var);
     builder.use_var(cl_var)
 }
 
