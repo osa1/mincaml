@@ -177,7 +177,7 @@ impl<'ctx> CcCtx<'ctx> {
     }
 }
 
-pub fn closure_convert(ctx: &mut Ctx, expr: knormal::Expr) -> Vec<Fun> {
+pub fn closure_convert(ctx: &mut Ctx, expr: knormal::Expr) -> (Vec<Fun>, VarId) {
     let mut cc_ctx = CcCtx { ctx, funs: vec![] };
 
     let main_name = cc_ctx.fresh_var(RepType::Word);
@@ -200,7 +200,7 @@ pub fn closure_convert(ctx: &mut Ctx, expr: knormal::Expr) -> Vec<Fun> {
         return_type: RepType::Word,
     });
 
-    cc_ctx.funs
+    (cc_ctx.funs, main_name)
 }
 
 // Returns whether the added block was a fork (i.e. then or else branch of an if)

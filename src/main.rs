@@ -114,7 +114,7 @@ fn do_expr(expr_str: &str) -> i32 {
     // println!("K normalized:");
     // println!("{:?}", expr);
 
-    let funs = record_pass_stats(&mut pass_stats, "closure convert", || {
+    let (funs, main) = record_pass_stats(&mut pass_stats, "closure convert", || {
         closure_convert(&mut ctx, expr)
     });
 
@@ -129,7 +129,7 @@ fn do_expr(expr_str: &str) -> i32 {
 
     println!("### Code generation:\n");
 
-    record_pass_stats(&mut pass_stats, "codegen", || codegen(&mut ctx, &funs));
+    record_pass_stats(&mut pass_stats, "codegen", || codegen(&mut ctx, &funs, main));
 
     report_pass_stats(&pass_stats);
 
@@ -139,6 +139,7 @@ fn do_expr(expr_str: &str) -> i32 {
 fn report_pass_stats(pass_stats: &[PassStats]) {
     // TODO: align columns
     // TODO: show percentage of allocs and times of each pass
+    // TODO: maintain a counter for max res?
     println!("--------------------------------------------------------");
     let mut total_elapsed: Duration = Duration::from_micros(0);
     let mut total_allocated: usize = 0;

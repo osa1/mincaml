@@ -12,16 +12,18 @@ use cranelift_codegen::Context;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use cranelift_module::{default_libcall_names, DataId, FuncId, Linkage, Module};
 use cranelift_native;
-use cranelift_object::{ObjectBackend, ObjectBuilder};
+use cranelift_object::{ObjectBackend, ObjectBuilder, ObjectProduct};
 
 use fxhash::FxHashMap;
+use std::fs::File;
+use std::io::Write;
 
 use crate::cg_types::RepType;
 use crate::closure_convert as cc;
 use crate::common::{Cmp, FloatBinOp, IntBinOp};
 use crate::ctx::{Ctx, VarId};
 
-pub fn codegen(ctx: &mut Ctx, funs: &[cc::Fun]) {
+pub fn codegen(ctx: &mut Ctx, funs: &[cc::Fun], main_id: VarId) {
     //
     // State shared between all functions in the compilation unit
     //
@@ -236,9 +238,18 @@ pub fn codegen(ctx: &mut Ctx, funs: &[cc::Fun]) {
         module
             .define_function(func_id, &mut context, &mut NullTrapSink {})
             .unwrap();
-        // module.clear_context(&mut context);
-        // module.finalize_definitions();
+        module.clear_context(&mut context);
     }
+
+    // Generate main
+    let main_func_id: FuncId = *fun_map.get(&main_id).unwrap();
+    make_main(&mut module, &mut fn_builder_ctx, main_func_id);
+
+    module.finalize_definitions();
+
+    let object: ObjectProduct = module.finish();
+    let bytes: Vec<u8> = object.emit().unwrap();
+    File::create("a.o").unwrap().write(&bytes).unwrap();
 }
 
 fn rhs_value(
@@ -398,4 +409,38 @@ fn cranelift_cond(cond: Cmp) -> IntCC {
         Cmp::GreaterThan => IntCC::SignedGreaterThan,
         Cmp::GreaterThanOrEqual => IntCC::SignedLessThanOrEqual,
     }
+}
+
+// main_id: Variable for the main expression.
+fn make_main(module: &mut Module<ObjectBackend>, fun_ctx: &mut FunctionBuilderContext, main_id: FuncId) {
+    let mut context = module.make_context();
+    context.func.signature = Signature {
+        params: vec![],
+        returns: vec![AbiParam::new(I32)],
+        call_conv: CallConv::SystemV,
+    };
+    let main_func_id: FuncId = module
+        .declare_function("main", Linkage::Export, &context.func.signature)
+        .unwrap();
+    let mut builder: FunctionBuilder = FunctionBuilder::new(&mut context.func, fun_ctx);
+    let block = builder.create_block();
+    builder.switch_to_block(block);
+    let expr_func_ref: FuncRef = module.declare_func_in_func(main_id, builder.func);
+    builder.ins().call(expr_func_ref, &[]);
+    let ret = builder.ins().iconst(I32, 0);
+    builder.ins().return_(&[ret]);
+    builder.seal_block(block);
+
+    let flags = settings::Flags::new(settings::builder());
+    let res = verify_function(&context.func, &flags);
+
+    println!("{}", context.func.display(None));
+    if let Err(errors) = res {
+        panic!("{}", errors);
+    }
+
+    module
+        .define_function(main_func_id, &mut context, &mut NullTrapSink {})
+        .unwrap();
+    module.clear_context(&mut context);
 }
