@@ -9,22 +9,6 @@ fn main() {
 
     let file_name: &OsStr = file_path.file_stem().unwrap();
 
-    let mut ocamlc_output: OsString = file_name.to_owned();
-    ocamlc_output.push("_ocamlc");
-
-    let ocamlc_ret = Command::new("ocamlc")
-        .args(&[
-            file_path.to_str().unwrap(),
-            "-o",
-            ocamlc_output.to_str().unwrap(),
-        ])
-        .spawn()
-        .unwrap()
-        .wait()
-        .unwrap();
-
-    println!("ocamlc: {}", ocamlc_ret);
-
     let mc_ret = Command::new("target/debug/mc")
         .arg(file_path.to_str().unwrap())
         .stdout(Stdio::null())
@@ -56,8 +40,13 @@ fn main() {
 
     println!("gcc link: {}", gcc_link_ret);
 
-    println!("Running ocamlc-generated executable.. {:?}", ocamlc_output);
-    let _ = Command::new(&format!("./{}", ocamlc_output.to_str().unwrap()))
+    let mut ocamlc_output: OsString = file_name.to_owned();
+    ocamlc_output.push("_ocamlc");
+
+    println!("Running with ocaml.. {:?}", ocamlc_output);
+    let ocamlc_ret = Command::new("ocaml")
+        .arg(file_path.to_str().unwrap())
+        .stderr(Stdio::null())
         .spawn()
         .unwrap()
         .wait()
