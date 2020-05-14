@@ -1,7 +1,7 @@
 use cranelift_codegen::binemit::NullTrapSink;
 use cranelift_codegen::entity::EntityRef;
 use cranelift_codegen::ir::condcodes::IntCC;
-use cranelift_codegen::ir::entities::{Block, FuncRef, SigRef, Value};
+use cranelift_codegen::ir::entities::{Block, FuncRef, GlobalValue, SigRef, Value};
 use cranelift_codegen::ir::types::*;
 use cranelift_codegen::ir::MemFlags;
 use cranelift_codegen::ir::{AbiParam, InstBuilder, Signature};
@@ -10,7 +10,7 @@ use cranelift_codegen::settings;
 use cranelift_codegen::verifier::verify_function;
 use cranelift_codegen::Context;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
-use cranelift_module::{default_libcall_names, FuncId, Linkage, Module};
+use cranelift_module::{default_libcall_names, DataId, FuncId, Linkage, Module};
 use cranelift_native;
 use cranelift_object::{ObjectBackend, ObjectBuilder};
 
@@ -51,6 +51,13 @@ pub fn codegen(ctx: &mut Ctx, funs: &[cc::Fun]) {
             },
         )
         .unwrap();
+
+    let print_int_id: DataId = module
+        .declare_data("print_int", Linkage::Import, false, false, None)
+        .unwrap();
+
+    let mut data_map: FxHashMap<VarId, DataId> = Default::default();
+    data_map.insert(ctx.print_int_var(), print_int_id);
 
     // Map function names do FuncIds. When a variable used is a function we need to (1) import it
     // in the using function (using `module.declare_func_in_func` which is a terrible name for
@@ -139,16 +146,38 @@ pub fn codegen(ctx: &mut Ctx, funs: &[cc::Fun]) {
                 let cranelift_block = *label_to_block.get(label).unwrap();
                 builder.switch_to_block(cranelift_block);
 
-                for cc::Asgn { lhs, rhs } in stmts {
-                    let val =
-                        rhs_value(ctx, &module, &mut builder, &arg_map, &fun_map, malloc, rhs);
+                for asgn in stmts {
+                    // let mut s = String::new();
+                    // asgn.pp(&ctx, &mut s);
+                    // println!("stmt: {}", s);
+
+                    let cc::Asgn { lhs, rhs } = asgn;
+
+                    let val = rhs_value(
+                        ctx,
+                        &module,
+                        &mut builder,
+                        &arg_map,
+                        &fun_map,
+                        &data_map,
+                        malloc,
+                        rhs,
+                    );
                     let var = declare_var(ctx, &mut builder, *lhs);
                     builder.def_var(var, val);
                 }
 
                 match exit {
                     cc::Exit::Return(var) => {
-                        let var = use_var(ctx, &module, &mut builder, &arg_map, &fun_map, *var);
+                        let var = use_var(
+                            ctx,
+                            &module,
+                            &mut builder,
+                            &arg_map,
+                            &fun_map,
+                            &data_map,
+                            *var,
+                        );
                         builder.ins().return_(&[var]);
                     }
                     cc::Exit::Branch {
@@ -160,8 +189,24 @@ pub fn codegen(ctx: &mut Ctx, funs: &[cc::Fun]) {
                     } => {
                         let cond = cranelift_cond(*cond);
                         // TODO: float comparisons?
-                        let v1 = use_var(ctx, &module, &mut builder, &arg_map, &fun_map, *v1);
-                        let v2 = use_var(ctx, &module, &mut builder, &arg_map, &fun_map, *v2);
+                        let v1 = use_var(
+                            ctx,
+                            &module,
+                            &mut builder,
+                            &arg_map,
+                            &fun_map,
+                            &data_map,
+                            *v1,
+                        );
+                        let v2 = use_var(
+                            ctx,
+                            &module,
+                            &mut builder,
+                            &arg_map,
+                            &fun_map,
+                            &data_map,
+                            *v2,
+                        );
                         let then_block = *label_to_block.get(then_label).unwrap();
                         builder.ins().br_icmp(cond, v1, v2, then_block, &[]);
                         let else_block = *label_to_block.get(else_label).unwrap();
@@ -198,18 +243,20 @@ pub fn codegen(ctx: &mut Ctx, funs: &[cc::Fun]) {
 
 fn rhs_value(
     ctx: &mut Ctx, module: &Module<ObjectBackend>, builder: &mut FunctionBuilder,
-    arg_map: &FxHashMap<VarId, Value>, fun_map: &FxHashMap<VarId, FuncId>, malloc: FuncRef,
-    rhs: &cc::Expr,
+    arg_map: &FxHashMap<VarId, Value>, fun_map: &FxHashMap<VarId, FuncId>,
+    data_map: &FxHashMap<VarId, DataId>, malloc: FuncRef, rhs: &cc::Expr,
 ) -> Value {
     match rhs {
         cc::Expr::Atom(cc::Atom::Unit) => builder.ins().iconst(I64, 0),
         cc::Expr::Atom(cc::Atom::Int(i)) => builder.ins().iconst(I64, *i),
         cc::Expr::Atom(cc::Atom::Float(f)) => builder.ins().f64const(*f),
-        cc::Expr::Atom(cc::Atom::Var(var)) => use_var(ctx, module, builder, arg_map, fun_map, *var),
+        cc::Expr::Atom(cc::Atom::Var(var)) => {
+            use_var(ctx, module, builder, arg_map, fun_map, data_map, *var)
+        }
 
         cc::Expr::IBinOp(cc::BinOp { op, arg1, arg2 }) => {
-            let arg1 = use_var(ctx, module, builder, arg_map, fun_map, *arg1);
-            let arg2 = use_var(ctx, module, builder, arg_map, fun_map, *arg2);
+            let arg1 = use_var(ctx, module, builder, arg_map, fun_map, data_map, *arg1);
+            let arg2 = use_var(ctx, module, builder, arg_map, fun_map, data_map, *arg2);
             match op {
                 IntBinOp::Add => builder.ins().iadd(arg1, arg2),
                 IntBinOp::Sub => builder.ins().isub(arg1, arg2),
@@ -217,8 +264,8 @@ fn rhs_value(
         }
 
         cc::Expr::FBinOp(cc::BinOp { op, arg1, arg2 }) => {
-            let arg1 = use_var(ctx, module, builder, arg_map, fun_map, *arg1);
-            let arg2 = use_var(ctx, module, builder, arg_map, fun_map, *arg2);
+            let arg1 = use_var(ctx, module, builder, arg_map, fun_map, data_map, *arg1);
+            let arg2 = use_var(ctx, module, builder, arg_map, fun_map, data_map, *arg2);
             match op {
                 FloatBinOp::Add => builder.ins().fadd(arg1, arg2),
                 FloatBinOp::Sub => builder.ins().fsub(arg1, arg2),
@@ -254,10 +301,11 @@ fn rhs_value(
             };
             let fun_sig_ref: SigRef = builder.import_signature(fun_sig);
 
-            let callee = use_var(ctx, module, builder, arg_map, fun_map, *fun);
+            let callee = use_var(ctx, module, builder, arg_map, fun_map, data_map, *fun);
+
             let arg_vals: Vec<Value> = args
                 .iter()
-                .map(|arg| builder.use_var(varid_var(ctx, *arg)))
+                .map(|arg| use_var(ctx, module, builder, arg_map, fun_map, data_map, *arg))
                 .collect();
             let call = builder.ins().call_indirect(fun_sig_ref, callee, &arg_vals);
             builder.inst_results(call)[0]
@@ -268,7 +316,7 @@ fn rhs_value(
             let malloc_call = builder.ins().call(malloc, &[malloc_arg]);
             let tuple = builder.inst_results(malloc_call)[0];
             for (arg_idx, arg) in args.iter().enumerate() {
-                let arg = use_var(ctx, module, builder, &arg_map, &fun_map, *arg);
+                let arg = use_var(ctx, module, builder, &arg_map, &fun_map, data_map, *arg);
                 // TODO: hard-coded word size
                 builder
                     .ins()
@@ -278,7 +326,7 @@ fn rhs_value(
         }
 
         cc::Expr::TupleIdx(tuple, idx) => {
-            let tuple = use_var(ctx, module, builder, &arg_map, &fun_map, *tuple);
+            let tuple = use_var(ctx, module, builder, &arg_map, &fun_map, &data_map, *tuple);
             // TODO: field type
             // TODO: hard-coded word size
             builder
@@ -306,7 +354,8 @@ fn declare_var(ctx: &mut Ctx, builder: &mut FunctionBuilder, var: VarId) -> Vari
 
 fn use_var(
     ctx: &Ctx, module: &Module<ObjectBackend>, builder: &mut FunctionBuilder,
-    arg_map: &FxHashMap<VarId, Value>, fun_map: &FxHashMap<VarId, FuncId>, var: VarId,
+    arg_map: &FxHashMap<VarId, Value>, fun_map: &FxHashMap<VarId, FuncId>,
+    data_map: &FxHashMap<VarId, DataId>, var: VarId,
 ) -> Value {
     if let Some(val) = arg_map.get(&var) {
         return *val;
@@ -315,6 +364,11 @@ fn use_var(
     if let Some(func_id) = fun_map.get(&var) {
         let func_ref = module.declare_func_in_func(*func_id, builder.func);
         return builder.ins().func_addr(I64, func_ref);
+    }
+
+    if let Some(data_id) = data_map.get(&var) {
+        let data_ref: GlobalValue = module.declare_data_in_func(*data_id, builder.func);
+        return builder.ins().global_value(I64, data_ref);
     }
 
     // let var_ = ctx.get_var(var);

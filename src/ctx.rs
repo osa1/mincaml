@@ -25,6 +25,8 @@ pub struct Ctx {
     int_id: TypeId,
     float_id: TypeId,
     unit_id: TypeId,
+    // Built-in var ids
+    print_int_var: Option<VarId>,
 }
 
 impl Default for Ctx {
@@ -43,6 +45,7 @@ impl Default for Ctx {
             int_id,
             float_id,
             unit_id,
+            print_int_var: None,
         };
         ctx.add_builtin_vars();
         ctx
@@ -60,6 +63,10 @@ impl Ctx {
 
     pub fn unit_type_id(&self) -> TypeId {
         self.unit_id
+    }
+
+    pub fn print_int_var(&self) -> VarId {
+        self.print_int_var.unwrap()
     }
 
     fn fresh_uniq(&mut self) -> Uniq {
@@ -188,6 +195,7 @@ impl Ctx {
         });
 
         let print_int_var = self.fresh_builtin_var("print_int");
+        self.print_int_var = Some(print_int_var);
         let print_int_ty = self.intern_type(Type::Fun {
             args: vec![Type::Int],
             ret: Box::new(Type::Unit),
