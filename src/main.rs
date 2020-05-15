@@ -8,7 +8,6 @@ mod ctx;
 mod interner;
 mod knormal;
 mod lexer;
-mod liveness;
 mod locals;
 mod parser;
 mod perf;

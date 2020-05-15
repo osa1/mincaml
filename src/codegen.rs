@@ -98,7 +98,6 @@ pub fn codegen(ctx: &mut Ctx, funs: &[cc::Fun], main_id: VarId) {
 
     for cc::Fun {
         name,
-        entry,
         args,
         blocks,
         return_type,

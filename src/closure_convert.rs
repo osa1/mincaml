@@ -25,7 +25,6 @@ pub struct Program {
 #[derive(Debug)]
 pub struct Fun {
     pub name: VarId,
-    pub entry: Label,
     pub args: Vec<VarId>,
     pub blocks: Vec<Block>,
     pub return_type: RepType,
@@ -194,7 +193,6 @@ pub fn closure_convert(ctx: &mut Ctx, expr: knormal::Expr) -> (Vec<Fun>, VarId) 
 
     cc_ctx.funs.push(Fun {
         name: main_name,
-        entry: entry_label,
         args: vec![],
         blocks: main_blocks,
         return_type: RepType::Word,
@@ -370,7 +368,6 @@ fn cc_block(
 
             ctx.funs.push(Fun {
                 name: fun_var,
-                entry: fun_entry_label,
                 args,
                 blocks: fun_blocks,
                 return_type: fun_return_type,
@@ -502,7 +499,6 @@ impl Fun {
     pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result {
         let Fun {
             name,
-            entry: _,
             args,
             blocks,
             return_type,
