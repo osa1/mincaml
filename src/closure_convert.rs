@@ -144,11 +144,11 @@ pub enum Expr {
     // Tuple allocation
     Tuple(Vec<VarId>), // TODO: Lower this more?
     // Tuple field read
-    TupleIdx(VarId, usize),
+    TupleGet(VarId, usize),
     // Array field read
-    Get(VarId, Atom),
+    ArrayGet(VarId, Atom),
     // Array field write
-    Put(VarId, Atom, Atom),
+    ArrayPut(VarId, Atom, Atom),
 }
 
 #[derive(Debug, PartialEq)]
@@ -348,7 +348,7 @@ fn cc_block(
             for (fv_idx, fv) in closure_fvs.iter().enumerate() {
                 entry_block_stmts.push(Asgn {
                     lhs: *fv,
-                    rhs: Expr::TupleIdx(name, fv_idx + 1),
+                    rhs: Expr::TupleGet(name, fv_idx + 1),
                 });
             }
             cc_block(
@@ -389,7 +389,7 @@ fn cc_block(
             let fun_tmp = ctx.fresh_var(RepType::Word);
             stmts.push(Asgn {
                 lhs: fun_tmp,
-                rhs: Expr::TupleIdx(fun, 0),
+                rhs: Expr::TupleGet(fun, 0),
             });
             args.insert(0, fun);
 
@@ -427,7 +427,7 @@ fn cc_block(
             false
         }
 
-        knormal::Expr::TupleIdx(tuple, idx) => {
+        knormal::Expr::TupleGet(tuple, idx) => {
             let elem_ty = match &*ctx.ctx.var_type(tuple) {
                 Type::Tuple(args) => RepType::from(&args[idx]),
                 other => panic!(
@@ -438,13 +438,13 @@ fn cc_block(
             let ret_tmp = sequel.get_ret_var(ctx, elem_ty);
             stmts.push(Asgn {
                 lhs: ret_tmp,
-                rhs: Expr::TupleIdx(tuple, idx),
+                rhs: Expr::TupleGet(tuple, idx),
             });
             blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
             false
         }
 
-        knormal::Expr::Get(array, idx) => {
+        knormal::Expr::ArrayGet(array, idx) => {
             let elem_ty = match &*ctx.ctx.var_type(array) {
                 Type::Array(elem_ty) => RepType::from(&**elem_ty),
                 other => panic!(
@@ -455,13 +455,13 @@ fn cc_block(
             let ret_tmp = sequel.get_ret_var(ctx, elem_ty);
             stmts.push(Asgn {
                 lhs: ret_tmp,
-                rhs: Expr::Get(array, Atom::Var(idx)),
+                rhs: Expr::ArrayGet(array, Atom::Var(idx)),
             });
             blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
             false
         }
 
-        knormal::Expr::Put(array, idx, val) => {
+        knormal::Expr::ArrayPut(array, idx, val) => {
             let elem_ty = match &*ctx.ctx.var_type(array) {
                 Type::Array(elem_ty) => RepType::from(&**elem_ty),
                 other => panic!(
@@ -472,7 +472,7 @@ fn cc_block(
             let ret_tmp = sequel.get_ret_var(ctx, elem_ty);
             stmts.push(Asgn {
                 lhs: ret_tmp,
-                rhs: Expr::Put(array, Atom::Var(idx), Atom::Var(val)),
+                rhs: Expr::ArrayPut(array, Atom::Var(idx), Atom::Var(val)),
             });
             blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
             false
@@ -628,17 +628,17 @@ impl Expr {
                 print_comma_sep(ctx, &mut args.iter(), pp_id_ref, w)?;
                 write!(w, ")")
             }
-            TupleIdx(tuple, idx) => {
+            TupleGet(tuple, idx) => {
                 pp_id(ctx, *tuple, w)?;
                 write!(w, ".{}", idx)
             }
-            Get(array, idx) => {
+            ArrayGet(array, idx) => {
                 pp_id(ctx, *array, w)?;
                 write!(w, ".(")?;
                 idx.pp(ctx, w)?;
                 write!(w, ")")
             }
-            Put(array, idx, val) => {
+            ArrayPut(array, idx, val) => {
                 pp_id(ctx, *array, w)?;
                 write!(w, ".(")?;
                 idx.pp(ctx, w)?;
@@ -729,14 +729,14 @@ fn fvs(ctx: &Ctx, e: &knormal::Expr, acc: &mut FxHashSet<VarId>) {
                 fv(ctx, *arg, acc);
             }
         }
-        TupleIdx(arg, _) => {
+        TupleGet(arg, _) => {
             fv(ctx, *arg, acc);
         }
-        Get(arg1, arg2) => {
+        ArrayGet(arg1, arg2) => {
             fv(ctx, *arg1, acc);
             fv(ctx, *arg2, acc);
         }
-        Put(arg1, arg2, arg3) => {
+        ArrayPut(arg1, arg2, arg3) => {
             fv(ctx, *arg1, acc);
             fv(ctx, *arg2, acc);
             fv(ctx, *arg3, acc);

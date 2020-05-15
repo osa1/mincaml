@@ -56,7 +56,10 @@ pub enum Expr {
         body: Box<Expr>,
     },
     // Array.create <expr> <expr>
-    Array(Box<Expr>, Box<Expr>),
+    Array {
+        len: Box<Expr>,
+        elem: Box<Expr>,
+    },
     // <expr> . ( <expr> )
     Get(Box<Expr>, Box<Expr>),
     // <expr> . ( <expr> ) <- <expr>
@@ -189,7 +192,10 @@ impl<'a> Parser<'a> {
                 self.consume();
                 let expr1 = self.expr0(ctx, APP_PREC)?;
                 let expr2 = self.expr0(ctx, APP_PREC)?;
-                Ok(Expr::Array(Box::new(expr1), Box::new(expr2)))
+                Ok(Expr::Array {
+                    len: Box::new(expr1),
+                    elem: Box::new(expr2),
+                })
             }
             Token::Let => {
                 self.consume();

@@ -334,11 +334,11 @@ fn type_check(
             ret
         }
 
-        Expr::Array(e1, e2) => {
-            let e1_ty = type_check(ctx, ty_env, subst_env, scope, e1)?;
-            unify(subst_env, &e1_ty, &Type::Int)?;
-            let e2_ty = type_check(ctx, ty_env, subst_env, scope, e2)?;
-            Ok(Type::Array(Box::new(e2_ty)))
+        Expr::Array { len, elem } => {
+            let len_ty = type_check(ctx, ty_env, subst_env, scope, len)?;
+            unify(subst_env, &len_ty, &Type::Int)?;
+            let elem_ty = type_check(ctx, ty_env, subst_env, scope, elem)?;
+            Ok(Type::Array(Box::new(elem_ty)))
         }
 
         Expr::Get(e1, e2) => {

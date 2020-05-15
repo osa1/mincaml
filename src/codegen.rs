@@ -331,7 +331,7 @@ fn rhs_value(
             tuple
         }
 
-        cc::Expr::TupleIdx(tuple, idx) => {
+        cc::Expr::TupleGet(tuple, idx) => {
             let tuple = use_var(ctx, module, builder, &arg_map, &fun_map, &data_map, *tuple);
             // TODO: field type
             // TODO: hard-coded word size
@@ -340,9 +340,11 @@ fn rhs_value(
                 .load(I64, MemFlags::new(), tuple, (idx * 8) as i32)
         }
 
-        _ => {
-            panic!("Unimplemented expr: {:?}", rhs);
-        }
+        cc::Expr::ArrayGet(_array, _idx) => todo!(),
+
+        cc::Expr::ArrayPut(_array, _idx, _val) => todo!(),
+
+        cc::Expr::ExtApp(_, _) => todo!(),
     }
 }
 

@@ -34,11 +34,11 @@ pub enum Expr {
     // Tuple allocation
     Tuple(Vec<VarId>),
     // Tuple field read
-    TupleIdx(VarId, usize),
+    TupleGet(VarId, usize),
     // Array field read
-    Get(VarId, VarId),
+    ArrayGet(VarId, VarId),
     // Array field write
-    Put(VarId, VarId, VarId),
+    ArrayPut(VarId, VarId, VarId),
 }
 
 #[derive(Debug, Clone)]
@@ -315,7 +315,7 @@ pub fn knormal_(ctx: &mut Ctx, expr: parser::Expr) -> (Expr, TypeId) {
                     Expr::Let {
                         id: bndr,
                         ty_id,
-                        rhs: Box::new(Expr::TupleIdx(rhs_id, bndr_idx)),
+                        rhs: Box::new(Expr::TupleGet(rhs_id, bndr_idx)),
                         body: Box::new(expr),
                     }
                 });
@@ -323,7 +323,7 @@ pub fn knormal_(ctx: &mut Ctx, expr: parser::Expr) -> (Expr, TypeId) {
             (rhs_tmp.finish(e), body_ty)
         }
 
-        parser::Expr::Array(e1, e2) => {
+        parser::Expr::Array { len: e1, elem: e2 } => {
             let (e1, e1_ty_id) = knormal_(ctx, *e1);
             assert_eq!(e1_ty_id, int);
             let (e2, e2_ty_id) = knormal_(ctx, *e2);
@@ -355,7 +355,7 @@ pub fn knormal_(ctx: &mut Ctx, expr: parser::Expr) -> (Expr, TypeId) {
             let (e1_tmp, e1_id) = mk_let(ctx, e1, e1_ty_id);
             let (e2_tmp, e2_id) = mk_let(ctx, e2, e2_ty_id);
 
-            let e = e1_tmp.finish(e2_tmp.finish(Expr::Get(e1_id, e2_id)));
+            let e = e1_tmp.finish(e2_tmp.finish(Expr::ArrayGet(e1_id, e2_id)));
 
             (e, ctx.intern_type(elem_ty))
         }
@@ -371,7 +371,8 @@ pub fn knormal_(ctx: &mut Ctx, expr: parser::Expr) -> (Expr, TypeId) {
             let (e2_tmp, e2_id) = mk_let(ctx, e2, e2_ty_id);
             let (e3_tmp, e3_id) = mk_let(ctx, e3, e3_ty_id);
 
-            let e = e1_tmp.finish(e2_tmp.finish(e3_tmp.finish(Expr::Put(e1_id, e2_id, e3_id))));
+            let e =
+                e1_tmp.finish(e2_tmp.finish(e3_tmp.finish(Expr::ArrayPut(e1_id, e2_id, e3_id))));
 
             (e, unit)
         }
