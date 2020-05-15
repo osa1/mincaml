@@ -37,7 +37,7 @@ impl Default for Ctx {
         let unit_id = TypeId(tys.intern(Type::Unit));
         let mut ctx = Ctx {
             next_uniq: Uniq(unsafe { NonZeroU32::new_unchecked(1) }),
-            tys: Default::default(),
+            tys,
             vars: Default::default(),
             ty_env: Default::default(),
             rep_ty_env: Default::default(),
