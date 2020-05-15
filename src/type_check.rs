@@ -441,7 +441,7 @@ impl Type {
                 ret.pp(w)
             }
             Tuple(args) => {
-                assert!(args.is_empty());
+                assert!(!args.is_empty());
                 args[0].pp(w)?;
                 for arg in &args[1..] {
                     w.write_str(" * ")?;
