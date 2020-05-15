@@ -150,9 +150,7 @@ impl Ctx {
     }
 
     pub fn var_type_(&self, var: VarId) -> Option<Rc<Type>> {
-        self.ty_env
-            .get(&var)
-            .map(|ty_id| self.tys.get(ty_id.0))
+        self.ty_env.get(&var).map(|ty_id| self.tys.get(ty_id.0))
     }
 
     pub fn fresh_tyvar(&mut self) -> TyVar {
