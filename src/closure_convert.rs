@@ -140,11 +140,12 @@ pub enum Expr {
     Neg(VarId),
     FNeg(VarId),
     App(VarId, Vec<VarId>, RepType),
-    ExtApp(String, Vec<VarId>),
     // Tuple allocation
     Tuple(Vec<VarId>), // TODO: Lower this more?
     // Tuple field read
     TupleGet(VarId, usize),
+    // Array allocation
+    ArrayAlloc { len: VarId, elem: VarId },
     // Array field read
     ArrayGet(VarId, Atom),
     // Array field write
@@ -407,16 +408,6 @@ fn cc_block(
             false
         }
 
-        knormal::Expr::ExtApp(ext_fn, args) => {
-            let ret_tmp = sequel.get_ret_var(ctx, RepType::Word); // FIXME: type
-            stmts.push(Asgn {
-                lhs: ret_tmp,
-                rhs: Expr::ExtApp(ext_fn, args),
-            });
-            blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
-            false
-        }
-
         knormal::Expr::Tuple(args) => {
             let ret_tmp = sequel.get_ret_var(ctx, RepType::Word);
             stmts.push(Asgn {
@@ -439,6 +430,16 @@ fn cc_block(
             stmts.push(Asgn {
                 lhs: ret_tmp,
                 rhs: Expr::TupleGet(tuple, idx),
+            });
+            blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
+            false
+        }
+
+        knormal::Expr::ArrayAlloc { len, elem } => {
+            let ret_tmp = sequel.get_ret_var(ctx, RepType::Word);
+            stmts.push(Asgn {
+                lhs: ret_tmp,
+                rhs: Expr::ArrayAlloc { len, elem },
             });
             blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
             false
@@ -618,11 +619,6 @@ impl Expr {
                 print_comma_sep(ctx, &mut args.iter(), pp_id_ref, w)?;
                 write!(w, ")")
             }
-            ExtApp(ext_fun, args) => {
-                write!(w, "{}(", ext_fun)?;
-                print_comma_sep(ctx, &mut args.iter(), pp_id_ref, w)?;
-                write!(w, ")")
-            }
             Tuple(args) => {
                 write!(w, "(")?;
                 print_comma_sep(ctx, &mut args.iter(), pp_id_ref, w)?;
@@ -631,6 +627,14 @@ impl Expr {
             TupleGet(tuple, idx) => {
                 pp_id(ctx, *tuple, w)?;
                 write!(w, ".{}", idx)
+            }
+            ArrayAlloc { len, elem } => {
+                // Printing in Rust syntax here?
+                w.write_str("[")?;
+                pp_id(ctx, *elem, w)?;
+                w.write_str("; ")?;
+                pp_id(ctx, *len, w)?;
+                w.write_str("]")
             }
             ArrayGet(array, idx) => {
                 pp_id(ctx, *array, w)?;
@@ -724,13 +728,17 @@ fn fvs(ctx: &Ctx, e: &knormal::Expr, acc: &mut FxHashSet<VarId>) {
                 fv(ctx, *arg, acc);
             }
         }
-        ExtApp(_, args) | Tuple(args) => {
+        Tuple(args) => {
             for arg in args {
                 fv(ctx, *arg, acc);
             }
         }
         TupleGet(arg, _) => {
             fv(ctx, *arg, acc);
+        }
+        ArrayAlloc { len, elem } => {
+            fv(ctx, *len, acc);
+            fv(ctx, *elem, acc);
         }
         ArrayGet(arg1, arg2) => {
             fv(ctx, *arg1, acc);

@@ -29,12 +29,15 @@ pub enum Expr {
         body: Box<Expr>,
     },
     App(VarId, Vec<VarId>),
-    // A C call
-    ExtApp(String, Vec<VarId>),
     // Tuple allocation
     Tuple(Vec<VarId>),
     // Tuple field read
     TupleGet(VarId, usize),
+    // Array allocation
+    ArrayAlloc {
+        len: VarId,
+        elem: VarId,
+    },
     // Array field read
     ArrayGet(VarId, VarId),
     // Array field write
@@ -323,24 +326,20 @@ pub fn knormal_(ctx: &mut Ctx, expr: parser::Expr) -> (Expr, TypeId) {
             (rhs_tmp.finish(e), body_ty)
         }
 
-        parser::Expr::Array { len: e1, elem: e2 } => {
-            let (e1, e1_ty_id) = knormal_(ctx, *e1);
-            assert_eq!(e1_ty_id, int);
-            let (e2, e2_ty_id) = knormal_(ctx, *e2);
-            let e2_ty = (&*ctx.get_type(e2_ty_id)).clone();
-            let (e1_tmp, e1_id) = mk_let(ctx, e1, e1_ty_id);
-            let (e2_tmp, e2_id) = mk_let(ctx, e2, e2_ty_id);
-
-            let array_fun = match &e2_ty {
-                Type::Float => "create_float_array".to_string(),
-                _ => "create_array".to_string(),
-            };
-
-            let app = Expr::ExtApp(array_fun, vec![e1_id, e2_id]);
+        parser::Expr::Array { len, elem } => {
+            let (len, len_ty_id) = knormal_(ctx, *len);
+            assert_eq!(len_ty_id, int);
+            let (elem, elem_ty_id) = knormal_(ctx, *elem);
+            let elem_ty = (&*ctx.get_type(elem_ty_id)).clone();
+            let (len_tmp, len_id) = mk_let(ctx, len, len_ty_id);
+            let (elem_tmp, elem_id) = mk_let(ctx, elem, elem_ty_id);
 
             (
-                e1_tmp.finish(e2_tmp.finish(app)),
-                ctx.intern_type(Type::Array(Box::new(e2_ty))),
+                len_tmp.finish(elem_tmp.finish(Expr::ArrayAlloc {
+                    len: len_id,
+                    elem: elem_id,
+                })),
+                ctx.intern_type(Type::Array(Box::new(elem_ty))),
             )
         }
 

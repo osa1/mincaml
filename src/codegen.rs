@@ -340,11 +340,11 @@ fn rhs_value(
                 .load(I64, MemFlags::new(), tuple, (idx * 8) as i32)
         }
 
+        cc::Expr::ArrayAlloc { len, elem } => todo!(),
+
         cc::Expr::ArrayGet(_array, _idx) => todo!(),
 
         cc::Expr::ArrayPut(_array, _idx, _val) => todo!(),
-
-        cc::Expr::ExtApp(_, _) => todo!(),
     }
 }
 
