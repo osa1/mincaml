@@ -69,7 +69,7 @@ impl Ctx {
         self.print_int_var.unwrap()
     }
 
-    fn fresh_uniq(&mut self) -> Uniq {
+    pub fn fresh_uniq(&mut self) -> Uniq {
         let uniq = self.next_uniq;
         self.next_uniq.0 = unsafe { NonZeroU32::new_unchecked(self.next_uniq.0.get() + 1) };
         uniq

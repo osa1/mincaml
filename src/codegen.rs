@@ -141,7 +141,7 @@ pub fn codegen(ctx: &mut Ctx, funs: &[cc::Fun], main_id: VarId) -> Vec<u8> {
                 .collect();
 
             for cc::Block { label, stmts, exit } in blocks {
-                let cranelift_block = *label_to_block.get(label).unwrap();
+                let mut cranelift_block = *label_to_block.get(label).unwrap();
                 builder.switch_to_block(cranelift_block);
 
                 for asgn in stmts {
@@ -151,9 +151,10 @@ pub fn codegen(ctx: &mut Ctx, funs: &[cc::Fun], main_id: VarId) -> Vec<u8> {
 
                     let cc::Asgn { lhs, rhs } = asgn;
 
-                    let val = rhs_value(
+                    let (block, val) = rhs_value(
                         ctx,
                         &module,
+                        cranelift_block,
                         &mut builder,
                         &arg_map,
                         &fun_map,
@@ -161,6 +162,7 @@ pub fn codegen(ctx: &mut Ctx, funs: &[cc::Fun], main_id: VarId) -> Vec<u8> {
                         malloc,
                         rhs,
                     );
+                    cranelift_block = block;
                     let var = declare_var(ctx, &mut builder, *lhs);
                     builder.def_var(var, val);
                 }
@@ -221,6 +223,8 @@ pub fn codegen(ctx: &mut Ctx, funs: &[cc::Fun], main_id: VarId) -> Vec<u8> {
             }
         }
 
+        // println!("Function before finalizing:");
+        // println!("{}", builder.display(None));
         builder.finalize();
 
         let flags = settings::Flags::new(settings::builder());
@@ -228,7 +232,7 @@ pub fn codegen(ctx: &mut Ctx, funs: &[cc::Fun], main_id: VarId) -> Vec<u8> {
 
         println!("{}", context.func.display(None));
         if let Err(errors) = res {
-            panic!("{}", errors);
+            println!("{}", errors);
         }
 
         module
@@ -248,46 +252,49 @@ pub fn codegen(ctx: &mut Ctx, funs: &[cc::Fun], main_id: VarId) -> Vec<u8> {
 }
 
 fn rhs_value(
-    ctx: &mut Ctx, module: &Module<ObjectBackend>, builder: &mut FunctionBuilder,
+    ctx: &mut Ctx, module: &Module<ObjectBackend>, block: Block, builder: &mut FunctionBuilder,
     arg_map: &FxHashMap<VarId, Value>, fun_map: &FxHashMap<VarId, FuncId>,
     data_map: &FxHashMap<VarId, DataId>, malloc: FuncRef, rhs: &cc::Expr,
-) -> Value {
+) -> (Block, Value) {
     match rhs {
-        cc::Expr::Atom(cc::Atom::Unit) => builder.ins().iconst(I64, 0),
-        cc::Expr::Atom(cc::Atom::Int(i)) => builder.ins().iconst(I64, *i),
-        cc::Expr::Atom(cc::Atom::Float(f)) => builder.ins().f64const(*f),
-        cc::Expr::Atom(cc::Atom::Var(var)) => {
-            use_var(ctx, module, builder, arg_map, fun_map, data_map, *var)
-        }
+        cc::Expr::Atom(cc::Atom::Unit) => (block, builder.ins().iconst(I64, 0)),
+        cc::Expr::Atom(cc::Atom::Int(i)) => (block, builder.ins().iconst(I64, *i)),
+        cc::Expr::Atom(cc::Atom::Float(f)) => (block, builder.ins().f64const(*f)),
+        cc::Expr::Atom(cc::Atom::Var(var)) => (
+            block,
+            use_var(ctx, module, builder, arg_map, fun_map, data_map, *var),
+        ),
 
         cc::Expr::IBinOp(cc::BinOp { op, arg1, arg2 }) => {
             let arg1 = use_var(ctx, module, builder, arg_map, fun_map, data_map, *arg1);
             let arg2 = use_var(ctx, module, builder, arg_map, fun_map, data_map, *arg2);
-            match op {
+            let val = match op {
                 IntBinOp::Add => builder.ins().iadd(arg1, arg2),
                 IntBinOp::Sub => builder.ins().isub(arg1, arg2),
-            }
+            };
+            (block, val)
         }
 
         cc::Expr::FBinOp(cc::BinOp { op, arg1, arg2 }) => {
             let arg1 = use_var(ctx, module, builder, arg_map, fun_map, data_map, *arg1);
             let arg2 = use_var(ctx, module, builder, arg_map, fun_map, data_map, *arg2);
-            match op {
+            let val = match op {
                 FloatBinOp::Add => builder.ins().fadd(arg1, arg2),
                 FloatBinOp::Sub => builder.ins().fsub(arg1, arg2),
                 FloatBinOp::Mul => builder.ins().fmul(arg1, arg2),
                 FloatBinOp::Div => builder.ins().fdiv(arg1, arg2),
-            }
+            };
+            (block, val)
         }
 
         cc::Expr::Neg(var) => {
             let arg = use_var(ctx, module, builder, arg_map, fun_map, data_map, *var);
-            builder.ins().ineg(arg)
+            (block, builder.ins().ineg(arg))
         }
 
         cc::Expr::FNeg(var) => {
             let arg = use_var(ctx, module, builder, arg_map, fun_map, data_map, *var);
-            builder.ins().fneg(arg)
+            (block, builder.ins().fneg(arg))
         }
 
         cc::Expr::App(fun, args, ret_type) => {
@@ -314,7 +321,7 @@ fn rhs_value(
                 .map(|arg| use_var(ctx, module, builder, arg_map, fun_map, data_map, *arg))
                 .collect();
             let call = builder.ins().call_indirect(fun_sig_ref, callee, &arg_vals);
-            builder.inst_results(call)[0]
+            (block, builder.inst_results(call)[0])
         }
 
         cc::Expr::Tuple(args) => {
@@ -328,19 +335,83 @@ fn rhs_value(
                     .ins()
                     .store(MemFlags::new(), arg, tuple, (arg_idx * 8) as i32);
             }
-            tuple
+            (block, tuple)
         }
 
         cc::Expr::TupleGet(tuple, idx) => {
             let tuple = use_var(ctx, module, builder, &arg_map, &fun_map, &data_map, *tuple);
             // TODO: field type
             // TODO: hard-coded word size
-            builder
+            let val = builder
                 .ins()
-                .load(I64, MemFlags::new(), tuple, (idx * 8) as i32)
+                .load(I64, MemFlags::new(), tuple, (idx * 8) as i32);
+            (block, val)
         }
 
-        cc::Expr::ArrayAlloc { len, elem } => todo!(),
+        cc::Expr::ArrayAlloc { len, elem } => {
+            // Allocate array, move elements to array locations in a loop. Why lower it this much
+            // here? Reasons:
+            //
+            // - I don't want to introduce mutable variables in cc or knormal.
+            //
+            // - I want to generate code as early as possible in compilation and will probably
+            //   merge knormal and cc at some point and do more work here.
+            //
+            // - I want to learn more about cranelift, especially how to deal with mutable
+            //   variables and how to introduce loops.
+            //
+            // NB. update varibles with `def_var`
+
+            let len_val = use_var(ctx, module, builder, &arg_map, &fun_map, &data_map, *len);
+            let word_size = builder.ins().iconst(I64, 8); // TODO: hard-coded word size
+            let size_val = builder.ins().imul(len_val, word_size);
+            let malloc_call = builder.ins().call(malloc, &[size_val]);
+            let array = builder.inst_results(malloc_call)[0];
+
+            let elem_val = use_var(ctx, module, builder, &arg_map, &fun_map, &data_map, *elem);
+
+            let array_bound_uniq = ctx.fresh_uniq();
+            let array_bound_var = Variable::new(array_bound_uniq.0.get() as usize);
+            builder.declare_var(array_bound_var, I64);
+            let array_bound_val = builder.ins().iadd(array, size_val);
+            builder.def_var(array_bound_var, array_bound_val);
+
+            let loop_block = builder.create_block();
+            let loop_doit_block = builder.create_block(); // block after loop condition (loop body)
+            let cont_block = builder.create_block();
+
+            // Introduce a variable for current index
+            let idx_uniq = ctx.fresh_uniq();
+            let idx_var = Variable::new(idx_uniq.0.get() as usize);
+            builder.declare_var(idx_var, I64);
+            builder.def_var(idx_var, array);
+            builder.ins().jump(loop_block, &[]);
+            builder.seal_block(block);
+
+            builder.switch_to_block(loop_block);
+            // if loc == array_bound { jmp cont; }
+            let idx_val = builder.use_var(idx_var);
+            builder
+                .ins()
+                .br_icmp(IntCC::Equal, idx_val, array_bound_val, cont_block, &[]);
+            builder.ins().fallthrough(loop_doit_block, &[]);
+
+            builder.switch_to_block(loop_doit_block);
+            // If not, then move 'elem' to the location, bump index, loop
+            // TODO: what about floats?
+            builder.ins().store(MemFlags::new(), elem_val, idx_val, 0);
+            let word_size = builder.ins().iconst(I64, 8);
+            let next_idx = builder.ins().iadd(idx_val, word_size);
+            builder.def_var(idx_var, next_idx);
+            builder.ins().jump(loop_block, &[]);
+
+            builder.seal_block(loop_block);
+            builder.seal_block(loop_doit_block);
+
+            builder.switch_to_block(cont_block);
+
+            (cont_block, array)
+        }
 
         cc::Expr::ArrayGet(_array, _idx) => todo!(),
 
