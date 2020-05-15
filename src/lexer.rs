@@ -273,6 +273,7 @@ impl<'a> Lexer<'a> {
                         let invalid = self.flush_buf();
                         return Err(LexErr::InvalidFloat { found: invalid });
                     } else {
+                        self.buf.push('.');
                         self.consume();
                         dot_seen = true;
                     }
