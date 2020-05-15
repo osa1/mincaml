@@ -16,14 +16,13 @@ impl fmt::Display for Uniq {
     }
 }
 
-// NOTE: Display outputs start with '#' for non-user variables (generated, builtin, external)
+// NOTE: Display outputs start with '#' for non-user variables (generated, builtin)
 
 #[derive(Debug, Clone)]
 pub enum Var {
     User(UserVar),
     Generated(GeneratedVar),
     Builtin(BuiltinVar),
-    // External(ExternalVar),
 }
 
 impl Var {
@@ -32,7 +31,6 @@ impl Var {
             Var::User(var) => var.get_unique(),
             Var::Generated(var) => var.get_unique(),
             Var::Builtin(var) => var.get_unique(),
-            // Var::External(var) => var.get_unique(),
         }
     }
 
@@ -59,7 +57,6 @@ impl Var {
             Var::User(var) => var.name(),
             Var::Generated(var) => var.name(),
             Var::Builtin(var) => var.name(),
-            // Var::External(var) => var.name(),
         }
     }
 
@@ -91,7 +88,6 @@ impl fmt::Display for Var {
             Var::User(var) => var.fmt(f),
             Var::Generated(var) => var.fmt(f),
             Var::Builtin(var) => var.fmt(f),
-            // Var::External(var) => var.fmt(f),
         }
     }
 }
@@ -182,9 +178,7 @@ impl GeneratedVar {
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub enum CompilerPhase {
     Parser,
-    // TyChecker,
     KNormal,
-    // ANormal,
     ClosureConvert,
 }
 
@@ -193,9 +187,7 @@ impl CompilerPhase {
         use CompilerPhase::*;
         match self {
             Parser => "p",
-            // TyChecker => "tc",
             KNormal => "kn",
-            // ANormal => "an",
             ClosureConvert => "cc",
         }
     }
@@ -236,41 +228,3 @@ impl BuiltinVar {
         self.name.clone()
     }
 }
-
-/*
-#[derive(Debug, Clone)]
-pub struct ExternalVar {
-    name: Rc<str>,
-    uniq: Uniq,
-}
-
-impl fmt::Display for ExternalVar {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "#ext[{}]", self.name)
-    }
-}
-
-impl PartialEq<ExternalVar> for ExternalVar {
-    fn eq(&self, other: &Self) -> bool {
-        self.uniq == other.uniq
-    }
-}
-
-impl Eq for ExternalVar {}
-
-impl Hash for ExternalVar {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.uniq.hash(state)
-    }
-}
-
-impl ExternalVar {
-    fn get_unique(&self) -> Uniq {
-        self.uniq
-    }
-
-    fn name(&self) -> Rc<str> {
-        self.name.clone()
-    }
-}
-*/
