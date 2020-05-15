@@ -193,28 +193,29 @@ fn link(path: &str, object_code: ObjectCode) -> i32 {
         .unwrap();
 
     // Build RTS
-    let _ = Command::new("gcc")
+    let output = Command::new("gcc")
         .args(&["rts.c", "-c"])
-        .stderr(Stdio::piped())
-        .stdout(Stdio::piped())
         .spawn()
         .unwrap()
         .wait_with_output()
         .unwrap();
 
+    assert!(output.status.success());
+
     // Link
-    let _ = Command::new("gcc")
+    let output = Command::new("gcc")
         .args(&[
             o_file_name.to_str().unwrap(),
             "rts.o",
             "-o",
             file_name.to_str().unwrap(),
         ])
-        .stderr(Stdio::piped())
         .spawn()
         .unwrap()
         .wait_with_output()
         .unwrap();
+
+    assert!(output.status.success());
 
     0
 }
