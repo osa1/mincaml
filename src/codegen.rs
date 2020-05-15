@@ -19,6 +19,7 @@ use crate::cg_types::RepType;
 use crate::closure_convert as cc;
 use crate::common::{Cmp, FloatBinOp, IntBinOp};
 use crate::ctx::{Ctx, VarId};
+use crate::type_check;
 
 pub fn codegen(ctx: &mut Ctx, funs: &[cc::Fun], main_id: VarId) -> Vec<u8> {
     //
@@ -398,7 +399,6 @@ fn rhs_value(
 
             builder.switch_to_block(loop_doit_block);
             // If not, then move 'elem' to the location, bump index, loop
-            // TODO: what about floats?
             builder.ins().store(MemFlags::new(), elem_val, idx_val, 0);
             let word_size = builder.ins().iconst(I64, 8);
             let next_idx = builder.ins().iadd(idx_val, word_size);
@@ -414,16 +414,21 @@ fn rhs_value(
         }
 
         cc::Expr::ArrayGet(array, idx) => {
+            let var_type = ctx.var_type(*array);
+            let elem_type = match &*var_type {
+                type_check::Type::Array(elem_type) => rep_type_abi(RepType::from(&**elem_type)),
+                _ => panic!("Non-array in array location"),
+            };
+
             let array = use_var(ctx, module, builder, arg_map, fun_map, data_map, *array);
             let idx = use_var(ctx, module, builder, arg_map, fun_map, data_map, *idx);
             let word_size = builder.ins().iconst(I64, 8);
             let offset = builder.ins().imul(idx, word_size);
-            // TODO: floats
             (
                 block,
                 builder
                     .ins()
-                    .load_complex(I64, MemFlags::new(), &[array, offset], 0),
+                    .load_complex(elem_type, MemFlags::new(), &[array, offset], 0),
             )
         }
 
@@ -433,7 +438,6 @@ fn rhs_value(
             let val = use_var(ctx, module, builder, arg_map, fun_map, data_map, *val);
             let word_size = builder.ins().iconst(I64, 8);
             let offset = builder.ins().imul(idx, word_size);
-            // TODO: floats
             builder
                 .ins()
                 .store_complex(MemFlags::new(), val, &[array, offset], 0);
