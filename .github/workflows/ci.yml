@@ -1,0 +1,29 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  Linux_default:
+    name: 'Build and test'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Get nightly toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+            toolchain: nightly
+            components: rustfmt
+            override: true
+
+      - name: Build
+        run: cargo build --verbose
+
+      - name: Run unit/doc tests
+        run: cargo test --all --verbose
+
+      - name: Install reference compiler (ocaml)
+        run: sudo apt-get install ocaml
+
+      - name: Run test programs
+        run: ./target/debug/test
