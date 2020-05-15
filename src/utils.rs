@@ -59,16 +59,19 @@ pub fn show_arg_list(ctx: &Ctx, args: &[VarId]) -> String {
 
 static BASE62_CHARS: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
+// TODO: What does this print for 62??
 pub fn base62_encode(uniq: Uniq, w: &mut dyn Write) -> fmt::Result {
-    let uniq = uniq.0.get();
+    let mut c = uniq.0.get() as usize;
+    loop {
+        if c < 62 {
+            w.write_char(char::from(BASE62_CHARS[c as usize]))?;
+            break;
+        }
 
-    let mut i = uniq % 62;
-    let mut r = uniq / 62;
-
-    while i != 0 {
-        w.write_char(char::from(BASE62_CHARS[i as usize]))?;
-        i = r % 62;
-        r /= 62;
+        let q = c % 62;
+        let r = c / 62;
+        w.write_char(char::from(BASE62_CHARS[q as usize]))?;
+        c = r;
     }
 
     Ok(())
