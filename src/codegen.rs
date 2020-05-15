@@ -52,12 +52,17 @@ pub fn codegen(ctx: &mut Ctx, funs: &[cc::Fun], main_id: VarId) -> Vec<u8> {
         )
         .unwrap();
 
-    let print_int_id: DataId = module
-        .declare_data("print_int", Linkage::Import, false, false, None)
-        .unwrap();
-
     let mut data_map: FxHashMap<VarId, DataId> = Default::default();
-    data_map.insert(ctx.print_int_var(), print_int_id);
+
+    for (builtin_var_id, _ty_id) in ctx.builtins() {
+        let var = ctx.get_var(*builtin_var_id);
+        let name = var.name();
+
+        let id: DataId = module
+            .declare_data(&*name, Linkage::Import, false, false, None)
+            .unwrap();
+        data_map.insert(*builtin_var_id, id);
+    }
 
     // Map function names do FuncIds. When a variable used is a function we need to (1) import it
     // in the using function (using `module.declare_func_in_func` which is a terrible name for
