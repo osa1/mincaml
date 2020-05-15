@@ -3,5 +3,5 @@
  * polymorphism, so the type `forall a . a -> a` is simply not allowed or
  * supported *)
 
-let rec f x = f x in
+(* let rec f x = f x in *)
 print_int 5
