@@ -329,7 +329,7 @@ fn rhs_value(
             let malloc_call = builder.ins().call(malloc, &[malloc_arg]);
             let tuple = builder.inst_results(malloc_call)[0];
             for (arg_idx, arg) in args.iter().enumerate() {
-                let arg = use_var(ctx, module, builder, &arg_map, &fun_map, data_map, *arg);
+                let arg = use_var(ctx, module, builder, arg_map, fun_map, data_map, *arg);
                 // TODO: hard-coded word size
                 builder
                     .ins()
@@ -339,7 +339,7 @@ fn rhs_value(
         }
 
         cc::Expr::TupleGet(tuple, idx) => {
-            let tuple = use_var(ctx, module, builder, &arg_map, &fun_map, &data_map, *tuple);
+            let tuple = use_var(ctx, module, builder, arg_map, fun_map, data_map, *tuple);
             // TODO: field type
             // TODO: hard-coded word size
             let val = builder
@@ -362,13 +362,13 @@ fn rhs_value(
             //
             // NB. update varibles with `def_var`
 
-            let len_val = use_var(ctx, module, builder, &arg_map, &fun_map, &data_map, *len);
+            let len_val = use_var(ctx, module, builder, arg_map, fun_map, data_map, *len);
             let word_size = builder.ins().iconst(I64, 8); // TODO: hard-coded word size
             let size_val = builder.ins().imul(len_val, word_size);
             let malloc_call = builder.ins().call(malloc, &[size_val]);
             let array = builder.inst_results(malloc_call)[0];
 
-            let elem_val = use_var(ctx, module, builder, &arg_map, &fun_map, &data_map, *elem);
+            let elem_val = use_var(ctx, module, builder, arg_map, fun_map, data_map, *elem);
 
             let array_bound_uniq = ctx.fresh_uniq();
             let array_bound_var = Variable::new(array_bound_uniq.0.get() as usize);
@@ -413,9 +413,33 @@ fn rhs_value(
             (cont_block, array)
         }
 
-        cc::Expr::ArrayGet(_array, _idx) => todo!(),
+        cc::Expr::ArrayGet(array, idx) => {
+            let array = use_var(ctx, module, builder, arg_map, fun_map, data_map, *array);
+            let idx = use_var(ctx, module, builder, arg_map, fun_map, data_map, *idx);
+            let word_size = builder.ins().iconst(I64, 8);
+            let offset = builder.ins().imul(idx, word_size);
+            // TODO: floats
+            (
+                block,
+                builder
+                    .ins()
+                    .load_complex(I64, MemFlags::new(), &[array, offset], 0),
+            )
+        }
 
-        cc::Expr::ArrayPut(_array, _idx, _val) => todo!(),
+        cc::Expr::ArrayPut(array, idx, val) => {
+            let array = use_var(ctx, module, builder, arg_map, fun_map, data_map, *array);
+            let idx = use_var(ctx, module, builder, arg_map, fun_map, data_map, *idx);
+            let val = use_var(ctx, module, builder, arg_map, fun_map, data_map, *val);
+            let word_size = builder.ins().iconst(I64, 8);
+            let offset = builder.ins().imul(idx, word_size);
+            // TODO: floats
+            builder
+                .ins()
+                .store_complex(MemFlags::new(), val, &[array, offset], 0);
+            let ret = builder.ins().iconst(I64, 0);
+            (block, ret)
+        }
     }
 }
 

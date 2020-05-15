@@ -147,9 +147,9 @@ pub enum Expr {
     // Array allocation
     ArrayAlloc { len: VarId, elem: VarId },
     // Array field read
-    ArrayGet(VarId, Atom),
+    ArrayGet(VarId, VarId),
     // Array field write
-    ArrayPut(VarId, Atom, Atom),
+    ArrayPut(VarId, VarId, VarId),
 }
 
 #[derive(Debug, PartialEq)]
@@ -456,7 +456,7 @@ fn cc_block(
             let ret_tmp = sequel.get_ret_var(ctx, elem_ty);
             stmts.push(Asgn {
                 lhs: ret_tmp,
-                rhs: Expr::ArrayGet(array, Atom::Var(idx)),
+                rhs: Expr::ArrayGet(array, idx),
             });
             blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
             false
@@ -473,7 +473,7 @@ fn cc_block(
             let ret_tmp = sequel.get_ret_var(ctx, elem_ty);
             stmts.push(Asgn {
                 lhs: ret_tmp,
-                rhs: Expr::ArrayPut(array, Atom::Var(idx), Atom::Var(val)),
+                rhs: Expr::ArrayPut(array, idx, val),
             });
             blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
             false
@@ -639,15 +639,15 @@ impl Expr {
             ArrayGet(array, idx) => {
                 pp_id(ctx, *array, w)?;
                 write!(w, ".(")?;
-                idx.pp(ctx, w)?;
+                pp_id(ctx, *idx, w)?;
                 write!(w, ")")
             }
             ArrayPut(array, idx, val) => {
                 pp_id(ctx, *array, w)?;
                 write!(w, ".(")?;
-                idx.pp(ctx, w)?;
+                pp_id(ctx, *idx, w)?;
                 write!(w, ") <- ")?;
-                val.pp(ctx, w)
+                pp_id(ctx, *val, w)
             }
         }
     }
