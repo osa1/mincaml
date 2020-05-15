@@ -25,8 +25,6 @@ pub struct Ctx {
     int_id: TypeId,
     float_id: TypeId,
     unit_id: TypeId,
-    // Built-in var ids
-    print_int_var: Option<VarId>,
 }
 
 impl Default for Ctx {
@@ -45,7 +43,6 @@ impl Default for Ctx {
             int_id,
             float_id,
             unit_id,
-            print_int_var: None,
         };
         ctx.add_builtin_vars();
         ctx
@@ -63,10 +60,6 @@ impl Ctx {
 
     pub fn unit_type_id(&self) -> TypeId {
         self.unit_id
-    }
-
-    pub fn print_int_var(&self) -> VarId {
-        self.print_int_var.unwrap()
     }
 
     pub fn fresh_uniq(&mut self) -> Uniq {
@@ -113,9 +106,9 @@ impl Ctx {
         }
     }
 
-    pub fn fresh_builtin_var(&mut self, name: &str) -> VarId {
+    fn fresh_builtin_var(&mut self, user_name: &str, symbol_name: &str) -> VarId {
         let uniq = self.fresh_uniq();
-        self.intern_var(Var::new_builtin(name, uniq))
+        self.intern_var(Var::new_builtin(user_name, symbol_name, uniq))
     }
 
     pub fn fresh_label(&mut self) -> Label {
@@ -172,7 +165,7 @@ impl Ctx {
         self.get_var(id).is_builtin()
     }
 
-    fn add_builtin_type(&mut self, var: VarId, ty: TypeId) {
+    fn add_builtin(&mut self, var: VarId, ty: TypeId) {
         self.ty_env.insert(var, ty);
         self.builtins.push((var, ty));
     }
@@ -198,44 +191,43 @@ impl Ctx {
             ret: Box::new(Type::Int),
         });
 
-        let print_int_var = self.fresh_builtin_var("print_int");
-        self.print_int_var = Some(print_int_var);
+        let print_int_var = self.fresh_builtin_var("print_int", "mc_print_int");
         let print_int_ty = self.intern_type(Type::Fun {
             args: vec![Type::Int],
             ret: Box::new(Type::Unit),
         });
-        self.add_builtin_type(print_int_var, print_int_ty);
+        self.add_builtin(print_int_var, print_int_ty);
 
-        let print_newline_var = self.fresh_builtin_var("print_newline");
+        let print_newline_var = self.fresh_builtin_var("print_newline", "mc_print_newline");
         let print_newline_ty = self.intern_type(Type::Fun {
             args: vec![Type::Unit],
             ret: Box::new(Type::Unit),
         });
-        self.add_builtin_type(print_newline_var, print_newline_ty);
+        self.add_builtin(print_newline_var, print_newline_ty);
 
-        let float_of_int_var = self.fresh_builtin_var("float_of_int");
+        let float_of_int_var = self.fresh_builtin_var("float_of_int", "mc_float_of_int");
         let float_of_int_ty = self.intern_type(Type::Fun {
             args: vec![Type::Int],
             ret: Box::new(Type::Float),
         });
-        self.add_builtin_type(float_of_int_var, float_of_int_ty);
+        self.add_builtin(float_of_int_var, float_of_int_ty);
 
-        let int_of_float_var = self.fresh_builtin_var("int_of_float");
-        self.add_builtin_type(int_of_float_var, float_int);
+        let int_of_float_var = self.fresh_builtin_var("int_of_float", "mc_int_of_float");
+        self.add_builtin(int_of_float_var, float_int);
 
-        let truncate_var = self.fresh_builtin_var("truncate");
-        self.add_builtin_type(truncate_var, float_int);
+        let truncate_var = self.fresh_builtin_var("truncate", "mc_truncate");
+        self.add_builtin(truncate_var, float_int);
 
-        let abs_float_var = self.fresh_builtin_var("abs_float");
-        self.add_builtin_type(abs_float_var, float_float);
+        let abs_float_var = self.fresh_builtin_var("abs_float", "mc_abs_float");
+        self.add_builtin(abs_float_var, float_float);
 
-        let sqrt_var = self.fresh_builtin_var("sqrt");
-        self.add_builtin_type(sqrt_var, float_float);
+        let sqrt_var = self.fresh_builtin_var("sqrt", "mc_sqrt");
+        self.add_builtin(sqrt_var, float_float);
 
-        let sin_var = self.fresh_builtin_var("sin");
-        self.add_builtin_type(sin_var, float_float);
+        let sin_var = self.fresh_builtin_var("sin", "mc_sin");
+        self.add_builtin(sin_var, float_float);
 
-        let cos_var = self.fresh_builtin_var("cos");
-        self.add_builtin_type(cos_var, float_float);
+        let cos_var = self.fresh_builtin_var("cos", "mc_cos");
+        self.add_builtin(cos_var, float_float);
     }
 }

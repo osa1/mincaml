@@ -26,7 +26,7 @@ use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 use std::process::exit;
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::time::{Duration, Instant};
 
 #[cfg(debug_assertions)]
@@ -209,6 +209,7 @@ fn link(path: &str, object_code: ObjectCode) -> i32 {
             "rts.o",
             "-o",
             file_name.to_str().unwrap(),
+            "-lm", // link math library
         ])
         .spawn()
         .unwrap()

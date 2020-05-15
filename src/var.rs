@@ -45,9 +45,10 @@ impl Var {
         Var::Generated(GeneratedVar::new(phase, uniq))
     }
 
-    pub fn new_builtin(name: &str, uniq: Uniq) -> Var {
+    pub fn new_builtin(user_name: &str, symbol_name: &str, uniq: Uniq) -> Var {
         Var::Builtin(BuiltinVar {
-            name: name.into(),
+            user_name: user_name.into(),
+            symbol_name: symbol_name.into(),
             uniq,
         })
     }
@@ -57,6 +58,13 @@ impl Var {
             Var::User(var) => var.name(),
             Var::Generated(var) => var.name(),
             Var::Builtin(var) => var.name(),
+        }
+    }
+
+    pub fn symbol_name(&self) -> Rc<str> {
+        match self {
+            Var::Builtin(var) => var.symbol_name(),
+            _ => panic!("symbol_name of non-builtin variable"),
         }
     }
 
@@ -195,13 +203,14 @@ impl CompilerPhase {
 
 #[derive(Debug, Clone)]
 pub struct BuiltinVar {
-    name: Rc<str>,
+    user_name: Rc<str>,
+    symbol_name: Rc<str>,
     uniq: Uniq,
 }
 
 impl fmt::Display for BuiltinVar {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "#builtin[{}]", self.name)
+        write!(f, "#builtin[{}]", self.user_name)
     }
 }
 
@@ -225,6 +234,10 @@ impl BuiltinVar {
     }
 
     fn name(&self) -> Rc<str> {
-        self.name.clone()
+        self.user_name.clone()
+    }
+
+    fn symbol_name(&self) -> Rc<str> {
+        self.symbol_name.clone()
     }
 }

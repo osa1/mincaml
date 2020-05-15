@@ -56,7 +56,7 @@ pub fn codegen(ctx: &mut Ctx, funs: &[cc::Fun], main_id: VarId) -> Vec<u8> {
 
     for (builtin_var_id, _ty_id) in ctx.builtins() {
         let var = ctx.get_var(*builtin_var_id);
-        let name = var.name();
+        let name = var.symbol_name();
 
         let id: DataId = module
             .declare_data(&*name, Linkage::Import, false, false, None)
