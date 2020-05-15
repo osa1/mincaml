@@ -115,7 +115,7 @@ fn run_test(path: &Path) -> TestResult {
             stderr,
             stdout,
         }) => TestResult::Fail(format!(
-            "Generated program returned {}\nstderr: {:?}\nstdout: {:?})",
+            "Generated program returned {}\nstderr: {:?}\nstdout: {:?}",
             exit_code, stderr, stdout
         )),
     }
