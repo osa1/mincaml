@@ -562,6 +562,15 @@ impl Asgn {
     pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result {
         let Asgn { lhs, rhs } = self;
         pp_id(ctx, *lhs, w)?;
+        write!(w, ": ")?;
+        match ctx.var_type_(*lhs) {
+            Some(var_type) => {
+                var_type.pp(w)?;
+            }
+            None => {
+                w.write_str("???")?;
+            }
+        }
         write!(w, " = ")?;
         rhs.pp(ctx, w)
     }
@@ -643,7 +652,8 @@ impl Atom {
         match self {
             Unit => write!(w, "()"),
             Int(i) => write!(w, "{}", i),
-            Float(f) => write!(w, "{}", f),
+            // Use debug format in floats, otherwise "1.0" is printed as "1"
+            Float(f) => write!(w, "{:?}", f),
             Var(var) => pp_id(ctx, *var, w),
         }
     }

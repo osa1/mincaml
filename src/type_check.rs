@@ -422,3 +422,39 @@ fn unify(subst_env: &mut SubstEnv, ty1: &Type, ty2: &Type) -> Result<(), TypeErr
         _ => Err(TypeErr::UnifyError(ty1.clone(), ty2.clone())),
     }
 }
+
+use std::fmt;
+
+impl Type {
+    pub fn pp(&self, w: &mut dyn fmt::Write) -> fmt::Result {
+        use Type::*;
+        match self {
+            Unit => w.write_str("()"),
+            Bool => w.write_str("bool"),
+            Int => w.write_str("int"),
+            Float => w.write_str("float"),
+            Fun { args, ret } => {
+                for arg in args {
+                    arg.pp(w)?;
+                    w.write_str(" -> ")?;
+                }
+                ret.pp(w)
+            }
+            Tuple(args) => {
+                assert!(args.is_empty());
+                args[0].pp(w)?;
+                for arg in &args[1..] {
+                    w.write_str(" * ")?;
+                    arg.pp(w)?;
+                }
+                Ok(())
+            }
+            Array(ty) => {
+                w.write_str("[")?;
+                ty.pp(w)?;
+                w.write_str("]")
+            }
+            Var(var) => write!(w, "{}", var),
+        }
+    }
+}
