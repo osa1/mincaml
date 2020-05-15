@@ -1,62 +1,77 @@
 use std::env;
-use std::ffi::{OsStr, OsString};
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::{Command, Output, Stdio};
 
-fn main() {
-    let args: Vec<String> = env::args().collect();
-    let file_path = Path::new(&args[1]);
+fn run_ocaml(file_path: &str) -> String {
+    let ret: Output = Command::new("ocaml")
+        .arg(file_path)
+        .stderr(Stdio::null())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap()
+        .wait_with_output()
+        .unwrap();
 
-    let file_name: &OsStr = file_path.file_stem().unwrap();
+    String::from_utf8(ret.stdout).unwrap()
+}
 
-    let mc_ret = Command::new("target/debug/mc")
-        .arg(file_path.to_str().unwrap())
+fn run_mc(file_path_str: &str) -> String {
+    let file_path = Path::new(file_path_str);
+    let file_name = file_path.file_stem().unwrap();
+    let file_name_str = file_name.to_str().unwrap();
+
+    let mc_out = Command::new("target/debug/mc")
+        .arg(file_path_str)
         .stdout(Stdio::null())
         .spawn()
         .unwrap()
         .wait()
         .unwrap();
 
-    println!("mc: {}", mc_ret);
+    assert!(mc_out.success());
 
-    let gcc_rts_ret = Command::new("gcc")
+    let gcc_out = Command::new("gcc")
         .args(&["rts.c", "-c"])
         .spawn()
         .unwrap()
         .wait()
         .unwrap();
 
-    println!("gcc rts.c: {}", gcc_rts_ret);
+    assert!(gcc_out.success());
 
-    let mut mc_output: OsString = file_name.to_owned();
-    mc_output.push("_mc");
+    let mut mc_output = file_name_str.to_owned();
+    mc_output.push_str("_mc");
 
-    let gcc_link_ret = Command::new("gcc")
-        .args(&["a.o", "rts.o", "-o", mc_output.to_str().unwrap()])
+    let gcc_out = Command::new("gcc")
+        .args(&["a.o", "rts.o", "-o", &mc_output])
         .spawn()
         .unwrap()
         .wait()
         .unwrap();
 
-    println!("gcc link: {}", gcc_link_ret);
+    assert!(gcc_out.success());
 
-    let mut ocamlc_output: OsString = file_name.to_owned();
-    ocamlc_output.push("_ocamlc");
-
-    println!("Running with ocaml.. {:?}", ocamlc_output);
-    let ocamlc_ret = Command::new("ocaml")
-        .arg(file_path.to_str().unwrap())
-        .stderr(Stdio::null())
+    let run_out = Command::new(&format!("./{}", mc_output))
+        .stdout(Stdio::piped())
         .spawn()
         .unwrap()
-        .wait()
+        .wait_with_output()
         .unwrap();
 
-    println!("$\nRunning mc-generated executable.. {:?}", mc_output);
-    let _ = Command::new(&format!("./{}", mc_output.to_str().unwrap()))
-        .spawn()
-        .unwrap()
-        .wait()
-        .unwrap();
-    println!("$");
+    assert!(run_out.status.success());
+
+    String::from_utf8(run_out.stdout).unwrap()
+}
+
+fn main() {
+    let args: Vec<String> = env::args().collect();
+    let file_path_str = &args[1];
+
+    let ocaml_out = run_ocaml(file_path_str);
+    let mc_out = run_mc(file_path_str);
+
+    println!("ocaml_out: {}", ocaml_out);
+    println!("mc_out: {}", ocaml_out);
+
+    assert_eq!(mc_out, ocaml_out);
 }
