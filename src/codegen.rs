@@ -14,15 +14,13 @@ use cranelift_module::{default_libcall_names, DataId, FuncId, Linkage, Module};
 use cranelift_object::{ObjectBackend, ObjectBuilder, ObjectProduct};
 
 use fxhash::FxHashMap;
-use std::fs::File;
-use std::io::Write;
 
 use crate::cg_types::RepType;
 use crate::closure_convert as cc;
 use crate::common::{Cmp, FloatBinOp, IntBinOp};
 use crate::ctx::{Ctx, VarId};
 
-pub fn codegen(ctx: &mut Ctx, funs: &[cc::Fun], main_id: VarId) {
+pub fn codegen(ctx: &mut Ctx, funs: &[cc::Fun], main_id: VarId) -> Vec<u8> {
     //
     // State shared between all functions in the compilation unit
     //
@@ -246,8 +244,7 @@ pub fn codegen(ctx: &mut Ctx, funs: &[cc::Fun], main_id: VarId) {
     module.finalize_definitions();
 
     let object: ObjectProduct = module.finish();
-    let bytes: Vec<u8> = object.emit().unwrap();
-    File::create("a.o").unwrap().write_all(&bytes).unwrap();
+    object.emit().unwrap()
 }
 
 fn rhs_value(

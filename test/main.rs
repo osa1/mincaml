@@ -26,17 +26,12 @@ enum McError {
         stderr: String,
         stdout: String,
     },
-    GccError {
-        command: String,
-        exit_code: ExitStatus,
-        stderr: String,
-    },
 }
 
 fn run_mc(file_path_str: &str) -> Result<String, McError> {
     let file_path = Path::new(file_path_str);
-    let file_name = file_path.file_stem().unwrap();
-    let file_name_str = file_name.to_str().unwrap();
+    let file_stem = file_path.file_stem().unwrap();
+    let file_stem_str = file_stem.to_str().unwrap();
 
     {
         let Output { status, stderr, .. } = Command::new("target/debug/mc")
@@ -57,52 +52,11 @@ fn run_mc(file_path_str: &str) -> Result<String, McError> {
         }
     }
 
-    {
-        let Output { status, stderr, .. } = Command::new("gcc")
-            .args(&["rts.c", "-c"])
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap()
-            .wait_with_output()
-            .unwrap();
-
-        if !status.success() || !stderr.is_empty() {
-            let stderr = String::from_utf8(stderr).unwrap();
-            return Err(McError::GccError {
-                command: "gcc rts.c -c".to_string(),
-                exit_code: status,
-                stderr,
-            });
-        }
-    }
-
-    let mut mc_output = file_name_str.to_owned();
-    mc_output.push_str("_mc");
-
-    {
-        let Output { status, stderr, .. } = Command::new("gcc")
-            .args(&["a.o", "rts.o", "-o", &mc_output])
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap()
-            .wait_with_output()
-            .unwrap();
-
-        if !status.success() || !stderr.is_empty() {
-            let stderr = String::from_utf8(stderr).unwrap();
-            return Err(McError::GccError {
-                command: format!("gcc a.o rts.o -o {}", mc_output),
-                exit_code: status,
-                stderr,
-            });
-        }
-    }
-
     let Output {
         status,
         stdout,
         stderr,
-    } = Command::new(&format!("./{}", mc_output))
+    } = Command::new(&format!("./{}", file_stem_str))
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -150,14 +104,6 @@ fn run_test(path: &Path) -> TestResult {
         }) => TestResult::Fail(format!(
             "Generated program returned {}\nstderr: {:?}\nstdout: {:?})",
             exit_code, stderr, stdout
-        )),
-        Err(McError::GccError {
-            command,
-            exit_code,
-            stderr,
-        }) => TestResult::Fail(format!(
-            "gcc error: command: {}\nexit code: {}\nstderr: {:?}",
-            command, exit_code, stderr
         )),
     }
 }

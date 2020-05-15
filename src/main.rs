@@ -22,7 +22,11 @@ use lexer::{tokenize, Token};
 use parser::parse;
 use type_check::type_check_pgm;
 
+use std::fs::File;
+use std::io::Write;
+use std::path::Path;
 use std::process::exit;
+use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 #[cfg(debug_assertions)]
@@ -70,14 +74,16 @@ fn record_pass_stats<A, F: FnOnce() -> A>(
     ret
 }
 
-fn do_expr(expr_str: &str) -> i32 {
+type ObjectCode = Vec<u8>;
+
+fn do_expr(expr_str: &str) -> Option<ObjectCode> {
     let mut pass_stats: Vec<PassStats> = Vec::with_capacity(10);
 
     let tokens: Vec<Token> =
         match record_pass_stats(&mut pass_stats, "tokenize", || tokenize(expr_str)) {
             Err(err) => {
                 println!("Lexer error: {:#?}", err);
-                return 1;
+                return None;
             }
             Ok(tokens) => tokens,
         };
@@ -89,7 +95,7 @@ fn do_expr(expr_str: &str) -> i32 {
     let mut expr = match record_pass_stats(&mut pass_stats, "parse", || parse(&mut ctx, &tokens)) {
         Err(err) => {
             println!("Parser error: {:#?}", err);
-            return 1;
+            return None;
         }
         Ok(expr) => expr,
     };
@@ -101,7 +107,7 @@ fn do_expr(expr_str: &str) -> i32 {
     }) {
         Err(err) => {
             println!("Type error: {:#?}", err);
-            return 1;
+            return None;
         }
         Ok(()) => {}
     };
@@ -128,13 +134,13 @@ fn do_expr(expr_str: &str) -> i32 {
 
     println!("### Code generation:\n");
 
-    record_pass_stats(&mut pass_stats, "codegen", || {
+    let object_code = record_pass_stats(&mut pass_stats, "codegen", || {
         codegen(&mut ctx, &funs, main)
     });
 
     report_pass_stats(&pass_stats);
 
-    0
+    Some(object_code)
 }
 
 fn report_pass_stats(pass_stats: &[PassStats]) {
@@ -163,7 +169,52 @@ fn report_pass_stats(pass_stats: &[PassStats]) {
     println!("--------------------------------------------------------");
 }
 
-fn do_file(file: &str) -> i32 {
-    let contents = std::fs::read_to_string(file).unwrap();
-    do_expr(&contents)
+fn do_file(path: &str) -> i32 {
+    let contents = std::fs::read_to_string(path).unwrap();
+    match do_expr(&contents) {
+        None => 1,
+        Some(object_code) => link(path, object_code),
+    }
+}
+
+fn link(path: &str, object_code: ObjectCode) -> i32 {
+    println!("Linking ...");
+
+    let path = Path::new(path);
+
+    let file_name = path.file_stem().unwrap().to_owned();
+
+    let mut o_file_name = file_name.clone();
+    o_file_name.push(".o");
+
+    File::create(&o_file_name)
+        .unwrap()
+        .write_all(&object_code)
+        .unwrap();
+
+    // Build RTS
+    let _ = Command::new("gcc")
+        .args(&["rts.c", "-c"])
+        .stderr(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap()
+        .wait_with_output()
+        .unwrap();
+
+    // Link
+    let _ = Command::new("gcc")
+        .args(&[
+            o_file_name.to_str().unwrap(),
+            "rts.o",
+            "-o",
+            file_name.to_str().unwrap(),
+        ])
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap()
+        .wait_with_output()
+        .unwrap();
+
+    0
 }
