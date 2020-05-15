@@ -348,6 +348,19 @@ fn rhs_value(
             let tuple_type = ctx.var_type(*tuple);
             let elem_type = match &*tuple_type {
                 type_check::Type::Tuple(args) => rep_type_abi(RepType::from(&args[*idx])),
+                type_check::Type::Fun { .. } => {
+                    // NOTE DISGUSTING HACK: This case happens after closure conversion where we
+                    // turn functions into tuples (closures) and in application code when we see
+                    //
+                    //   f x
+                    //
+                    // we instead do
+                    //
+                    //   f.0 x
+                    //
+                    // Note sure how to best implement/fix this, so for now we allow this case.
+                    I64
+                }
                 other => panic!("Non-tuple in tuple position: {:?}", other),
             };
 
