@@ -254,7 +254,7 @@ fn cc_block(
         }
 
         knormal::Expr::FBinOp(BinOp { op, arg1, arg2 }) => {
-            let tmp = sequel.get_ret_var(ctx, RepType::Word);
+            let tmp = sequel.get_ret_var(ctx, RepType::Float);
             stmts.push(Asgn {
                 lhs: tmp,
                 rhs: Expr::FBinOp(BinOp { op, arg1, arg2 }),
