@@ -345,12 +345,18 @@ fn rhs_value(
         }
 
         cc::Expr::TupleGet(tuple, idx) => {
+            let tuple_type = ctx.var_type(*tuple);
+            let elem_type = match &*tuple_type {
+                type_check::Type::Tuple(args) => rep_type_abi(RepType::from(&args[*idx])),
+                other => panic!("Non-tuple in tuple position: {:?}", other),
+            };
+
             let tuple = use_var(ctx, module, builder, arg_map, fun_map, data_map, *tuple);
-            // TODO: field type
+
             // TODO: hard-coded word size
             let val = builder
                 .ins()
-                .load(I64, MemFlags::new(), tuple, (idx * 8) as i32);
+                .load(elem_type, MemFlags::new(), tuple, (idx * 8) as i32);
             (block, val)
         }
 
