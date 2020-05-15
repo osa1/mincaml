@@ -27,8 +27,8 @@ double mc_float_of_int_f(FunctionClosure *self, int64_t i) {
 
 FunctionClosure mc_float_of_int = { .function = &mc_float_of_int_f };
 
-int64_t mc_int_of_float_f(FunctionClosure *self, float f) {
-    return (int64_t)f;
+int64_t mc_int_of_float_f(FunctionClosure *self, double d) {
+    return (int64_t)d;
 }
 
 FunctionClosure mc_int_of_float = { .function = &mc_int_of_float_f };
