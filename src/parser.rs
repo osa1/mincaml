@@ -158,6 +158,7 @@ impl<'a> Parser<'a> {
                         Ok(Expr::Unit)
                     }
                     _ => {
+                        // Parse everything until ')'
                         let expr = self.expr1(ctx, INIT_PREC)?;
                         self.expect(Token::RParen, "')'")?;
                         Ok(expr)
@@ -190,7 +191,7 @@ impl<'a> Parser<'a> {
                 let expr2 = self.expr0(ctx, APP_PREC)?;
                 Ok(Expr::Array(Box::new(expr1), Box::new(expr2)))
             }
-            Token::Let if prec <= LET_PREC => {
+            Token::Let => {
                 self.consume();
                 match self.next_token()? {
                     Token::Rec => {
@@ -220,7 +221,8 @@ impl<'a> Parser<'a> {
                             }
                         }
                         self.expect(Token::Equal, "'='")?;
-                        let rhs = Box::new(self.expr1(ctx, LET_PREC)?);
+                        // Parse everything until 'in'
+                        let rhs = Box::new(self.expr1(ctx, INIT_PREC)?);
                         self.expect(Token::In, "'in'")?;
                         let body = Box::new(self.expr1(ctx, LET_PREC)?);
                         Ok(Expr::LetRec {
@@ -246,9 +248,10 @@ impl<'a> Parser<'a> {
                         }
                         self.expect(Token::RParen, "')'")?;
                         self.expect(Token::Equal, "'='")?;
-                        let rhs = self.expr1(ctx, LET_PREC)?;
+                        // Parse everything until '='
+                        let rhs = self.expr1(ctx, INIT_PREC)?;
                         self.expect(Token::In, "in")?;
-                        let body = self.expr1(ctx, INIT_PREC)?;
+                        let body = self.expr1(ctx, IN_PREC)?;
                         Ok(Expr::LetTuple {
                             bndrs,
                             rhs: Box::new(rhs),
@@ -259,7 +262,8 @@ impl<'a> Parser<'a> {
                         let bndr = ctx.fresh_user_var(var);
                         self.consume();
                         self.expect(Token::Equal, "'='")?;
-                        let rhs = Box::new(self.expr1(ctx, LET_PREC)?);
+                        // Parse everything until 'in'
+                        let rhs = Box::new(self.expr1(ctx, INIT_PREC)?);
                         self.expect(Token::In, "'in'")?;
                         let body = Box::new(self.expr1(ctx, IN_PREC)?);
                         Ok(Expr::Let { bndr, rhs, body })
@@ -275,8 +279,10 @@ impl<'a> Parser<'a> {
             }
             Token::If if prec <= IF_PREC => {
                 self.consume();
-                let e1 = self.expr1(ctx, IF_PREC)?;
+                // Parse evertying until 'then'
+                let e1 = self.expr1(ctx, INIT_PREC)?;
                 self.expect(Token::Then, "'then'")?;
+                // Parse everything until 'else'
                 let e2 = self.expr1(ctx, INIT_PREC)?;
                 self.expect(Token::Else, "'else'")?;
                 let e3 = self.expr1(ctx, IF_PREC)?;
@@ -379,6 +385,7 @@ impl<'a> Parser<'a> {
                 Ok(Token::Dot) if prec < DOT_PREC => {
                     self.consume();
                     self.expect(Token::LParen, "'('")?;
+                    // Parse everything until ')'
                     let expr1 = self.expr1(ctx, INIT_PREC)?;
                     self.expect(Token::RParen, "')'")?;
                     match self.next_token() {
