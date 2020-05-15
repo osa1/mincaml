@@ -296,14 +296,6 @@ pub fn knormal_(ctx: &mut Ctx, expr: parser::Expr) -> (Expr, TypeId) {
         }
 
         parser::Expr::LetTuple { bndrs, rhs, body } => {
-            // Convert body with binders in scope
-            let mut kbndrs: Vec<(VarId, Type)> = Vec::with_capacity(bndrs.len());
-
-            for bndr in &bndrs {
-                let bndr_ty = (&*ctx.var_type(*bndr)).clone();
-                kbndrs.push((*bndr, bndr_ty));
-            }
-
             let (body, body_ty) = knormal_(ctx, *body);
 
             let (rhs, rhs_ty) = knormal_(ctx, *rhs);
