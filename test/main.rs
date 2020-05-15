@@ -1,3 +1,4 @@
+use std::env;
 use std::ffi::OsStr;
 use std::fs;
 use std::path::Path;
@@ -20,6 +21,7 @@ enum McError {
     CompileError {
         exit_code: ExitStatus,
         stderr: String,
+        stdout: String,
     },
     RunError {
         exit_code: ExitStatus,
@@ -34,10 +36,14 @@ fn run_mc(file_path_str: &str) -> Result<String, McError> {
     let file_stem_str = file_stem.to_str().unwrap();
 
     {
-        let Output { status, stderr, .. } = Command::new("target/debug/mc")
+        let Output {
+            status,
+            stderr,
+            stdout,
+        } = Command::new("target/debug/mc")
             .arg(file_path_str)
             .stderr(Stdio::piped())
-            .stdout(Stdio::null())
+            .stdout(Stdio::piped())
             .spawn()
             .unwrap()
             .wait_with_output()
@@ -45,9 +51,11 @@ fn run_mc(file_path_str: &str) -> Result<String, McError> {
 
         if !status.success() || !stderr.is_empty() {
             let stderr = String::from_utf8(stderr).unwrap();
+            let stdout = String::from_utf8(stdout).unwrap();
             return Err(McError::CompileError {
                 exit_code: status,
                 stderr,
+                stdout,
             });
         }
     }
@@ -94,9 +102,14 @@ fn run_test(path: &Path) -> TestResult {
                 TestResult::Fail(s)
             }
         }
-        Err(McError::CompileError { exit_code, stderr }) => {
-            TestResult::Fail(format!("mc returned {}\nstderr:\n{}", exit_code, stderr))
-        }
+        Err(McError::CompileError {
+            exit_code,
+            stderr,
+            stdout,
+        }) => TestResult::Fail(format!(
+            "mc returned {}\nstderr:\n{}stdout:\n{}",
+            exit_code, stderr, stdout
+        )),
         Err(McError::RunError {
             exit_code,
             stderr,
@@ -108,6 +121,16 @@ fn run_test(path: &Path) -> TestResult {
     }
 }
 
+fn report(result: TestResult) {
+    match result {
+        TestResult::Pass => println!("OK"),
+        TestResult::Fail(reason) => {
+            println!("FAIL");
+            println!("{}", reason);
+        }
+    }
+}
+
 // Run all .ml files in a directory as tests
 fn run_dir(dir: &Path) {
     for entry in fs::read_dir(dir).unwrap() {
@@ -116,13 +139,7 @@ fn run_dir(dir: &Path) {
         if path.extension() == Some(OsStr::new("ml")) {
             // println!("{:?}", path);
             print!("{} ... ", path.to_str().unwrap());
-            match run_test(&path) {
-                TestResult::Pass => println!("OK"),
-                TestResult::Fail(reason) => {
-                    println!("FAIL");
-                    println!("{}", reason);
-                }
-            }
+            report(run_test(&path));
         } else if entry.file_type().unwrap().is_dir() {
             run_dir(&path);
         }
@@ -130,5 +147,19 @@ fn run_dir(dir: &Path) {
 }
 
 fn main() {
-    run_dir(Path::new("programs"));
+    let args: Vec<String> = env::args().collect();
+    match &args[1..] {
+        [] => run_dir(Path::new("programs")),
+        [target] => {
+            let target_path = Path::new(target);
+            if target_path.is_file() {
+                report(run_test(target_path));
+            } else {
+                run_dir(target_path);
+            }
+        }
+        _ => {
+            println!("USAGE: test [target]");
+        }
+    }
 }
