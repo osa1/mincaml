@@ -331,7 +331,8 @@ fn rhs_value(
         }
 
         cc::Expr::Tuple(args) => {
-            let malloc_arg = builder.ins().iconst(I64, args.len() as i64);
+            // TODO: hard-coded word size below
+            let malloc_arg = builder.ins().iconst(I64, args.len() as i64 * 8);
             let malloc_call = builder.ins().call(malloc, &[malloc_arg]);
             let tuple = builder.inst_results(malloc_call)[0];
             for (arg_idx, arg) in args.iter().enumerate() {
