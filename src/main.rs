@@ -128,7 +128,9 @@ fn do_expr(expr_str: &str) -> i32 {
 
     println!("### Code generation:\n");
 
-    record_pass_stats(&mut pass_stats, "codegen", || codegen(&mut ctx, &funs, main));
+    record_pass_stats(&mut pass_stats, "codegen", || {
+        codegen(&mut ctx, &funs, main)
+    });
 
     report_pass_stats(&pass_stats);
 

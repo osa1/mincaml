@@ -146,7 +146,7 @@ impl Ctx {
 
     pub fn var_type(&self, var: VarId) -> Rc<Type> {
         let ty_id = self.var_type_id(var);
-        self.get_type(ty_id).clone()
+        self.get_type(ty_id)
     }
 
     pub fn fresh_tyvar(&mut self) -> TyVar {

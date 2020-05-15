@@ -57,8 +57,7 @@ pub fn show_arg_list(ctx: &Ctx, args: &[VarId]) -> String {
     s
 }
 
-static BASE62_CHARS: &'static [u8] =
-    b"0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+static BASE62_CHARS: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 pub fn base62_encode(uniq: Uniq, w: &mut dyn Write) -> fmt::Result {
     let uniq = uniq.0.get();
