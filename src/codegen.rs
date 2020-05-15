@@ -284,12 +284,12 @@ fn rhs_value(
         }
 
         cc::Expr::Neg(var) => {
-            let arg = builder.use_var(varid_var(ctx, *var));
+            let arg = use_var(ctx, module, builder, arg_map, fun_map, data_map, *var);
             builder.ins().ineg(arg)
         }
 
         cc::Expr::FNeg(var) => {
-            let arg = builder.use_var(varid_var(ctx, *var));
+            let arg = use_var(ctx, module, builder, arg_map, fun_map, data_map, *var);
             builder.ins().fneg(arg)
         }
 
