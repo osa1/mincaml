@@ -27,7 +27,7 @@ impl InternId {
 #[derive(Debug)]
 pub struct InternTable<K> {
     // table_id: u32,
-    map: FxHashMap<K, InternId>,
+    map: FxHashMap<Rc<K>, InternId>,
     values: Vec<Rc<K>>,
 }
 
@@ -52,8 +52,11 @@ where
             Some(intern_id) => *intern_id,
             None => {
                 let idx = self.values.len();
-                self.values.push(Rc::new(k));
-                InternId::from_u32(idx as u32)
+                let k = Rc::new(k);
+                self.values.push(k.clone());
+                let id = InternId::from_u32(idx as u32);
+                self.map.insert(k, id);
+                id
             }
         }
     }
