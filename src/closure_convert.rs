@@ -393,12 +393,15 @@ fn cc_block(
             });
             args.insert(0, fun);
 
-            let ret_type = RepType::from(&*ctx.ctx.var_type(fun));
-            let ret_tmp = sequel.get_ret_var(ctx, ret_type);
+            let fun_ret_ty = match &*ctx.ctx.var_type(fun) {
+                Type::Fun { args: _, ret } => RepType::from(&**ret),
+                other => panic!("Non-function in function position: {:?}", other),
+            };
+            let ret_tmp = sequel.get_ret_var(ctx, fun_ret_ty);
 
             stmts.push(Asgn {
                 lhs: ret_tmp,
-                rhs: Expr::App(fun_tmp, args, ret_type),
+                rhs: Expr::App(fun_tmp, args, fun_ret_ty),
             });
             blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
             false
