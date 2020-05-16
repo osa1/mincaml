@@ -99,7 +99,10 @@ fn run_test(path: &Path) -> TestResult {
             if mc_out == ocaml_out {
                 TestResult::Pass
             } else {
-                let s = format!("Expected: {:?}\nFound: {:?}\n", ocaml_out, mc_out);
+                use std::fmt::Write;
+                let mut s = String::new();
+                writeln!(&mut s, "Expected: {:?}", ocaml_out).unwrap();
+                writeln!(&mut s, "Found:    {:?}", mc_out).unwrap();
                 TestResult::Fail(s)
             }
         }
