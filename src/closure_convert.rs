@@ -1,8 +1,8 @@
+use crate::anormal;
+pub use crate::anormal::BinOp;
 use crate::cg_types::RepType;
 use crate::common::*;
 use crate::ctx::{Ctx, VarId};
-use crate::knormal;
-pub use crate::knormal::BinOp;
 use crate::type_check::Type;
 use crate::var::CompilerPhase::ClosureConvert;
 use crate::var::Uniq;
@@ -171,7 +171,7 @@ impl<'ctx> CcCtx<'ctx> {
     }
 }
 
-pub fn closure_convert(ctx: &mut Ctx, expr: knormal::Expr) -> (Vec<Fun>, VarId) {
+pub fn closure_convert(ctx: &mut Ctx, expr: anormal::Expr) -> (Vec<Fun>, VarId) {
     let mut cc_ctx = CcCtx { ctx, funs: vec![] };
 
     let main_name = cc_ctx.fresh_var(RepType::Word);
@@ -199,25 +199,25 @@ pub fn closure_convert(ctx: &mut Ctx, expr: knormal::Expr) -> (Vec<Fun>, VarId) 
 // Returns whether the added block was a fork (i.e. then or else branch of an if)
 fn cc_block(
     ctx: &mut CcCtx, blocks: &mut Vec<Block>, label: Label, mut stmts: Vec<Asgn>,
-    sequel: BlockSequel, expr: knormal::Expr,
+    sequel: BlockSequel, expr: anormal::Expr,
 ) -> bool {
     match expr {
-        knormal::Expr::Unit => {
+        anormal::Expr::Unit => {
             blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Unit));
             false
         }
 
-        knormal::Expr::Int(i) => {
+        anormal::Expr::Int(i) => {
             blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Int(i)));
             false
         }
 
-        knormal::Expr::Float(f) => {
+        anormal::Expr::Float(f) => {
             blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Float(f)));
             false
         }
 
-        knormal::Expr::Neg(var) => {
+        anormal::Expr::Neg(var) => {
             let tmp = ctx.fresh_var(RepType::Word);
             stmts.push(Asgn {
                 lhs: tmp,
@@ -227,7 +227,7 @@ fn cc_block(
             false
         }
 
-        knormal::Expr::FNeg(var) => {
+        anormal::Expr::FNeg(var) => {
             let tmp = ctx.fresh_var(RepType::Float);
             stmts.push(Asgn {
                 lhs: tmp,
@@ -237,7 +237,7 @@ fn cc_block(
             false
         }
 
-        knormal::Expr::IBinOp(BinOp { op, arg1, arg2 }) => {
+        anormal::Expr::IBinOp(BinOp { op, arg1, arg2 }) => {
             let tmp = sequel.get_ret_var(ctx, RepType::Word);
             stmts.push(Asgn {
                 lhs: tmp,
@@ -247,7 +247,7 @@ fn cc_block(
             false
         }
 
-        knormal::Expr::FBinOp(BinOp { op, arg1, arg2 }) => {
+        anormal::Expr::FBinOp(BinOp { op, arg1, arg2 }) => {
             let tmp = sequel.get_ret_var(ctx, RepType::Float);
             stmts.push(Asgn {
                 lhs: tmp,
@@ -257,7 +257,7 @@ fn cc_block(
             false
         }
 
-        knormal::Expr::If(v1, v2, cmp, e1, e2) => {
+        anormal::Expr::If(v1, v2, cmp, e1, e2) => {
             let then_label = ctx.fresh_label();
             let else_label = ctx.fresh_label();
             blocks.push(Block {
@@ -276,12 +276,12 @@ fn cc_block(
             true
         }
 
-        knormal::Expr::Var(var) => {
+        anormal::Expr::Var(var) => {
             blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Var(var)));
             false
         }
 
-        knormal::Expr::Let {
+        anormal::Expr::Let {
             id,
             ty_id: _,
             rhs,
@@ -303,7 +303,7 @@ fn cc_block(
             }
         }
 
-        knormal::Expr::LetRec {
+        anormal::Expr::LetRec {
             name,
             ty_id,
             mut args,
@@ -379,7 +379,7 @@ fn cc_block(
             cc_block(ctx, blocks, label, stmts, sequel, *body)
         }
 
-        knormal::Expr::App(fun, mut args) => {
+        anormal::Expr::App(fun, mut args) => {
             // f(x) -> f.0(f, x)
             let fun_tmp = ctx.fresh_var(RepType::Word);
             stmts.push(Asgn {
@@ -402,7 +402,7 @@ fn cc_block(
             false
         }
 
-        knormal::Expr::Tuple(args) => {
+        anormal::Expr::Tuple(args) => {
             let ret_tmp = sequel.get_ret_var(ctx, RepType::Word);
             stmts.push(Asgn {
                 lhs: ret_tmp,
@@ -412,7 +412,7 @@ fn cc_block(
             false
         }
 
-        knormal::Expr::TupleGet(tuple, idx) => {
+        anormal::Expr::TupleGet(tuple, idx) => {
             let elem_ty = match &*ctx.ctx.var_type(tuple) {
                 Type::Tuple(args) => RepType::from(&args[idx]),
                 other => panic!(
@@ -429,7 +429,7 @@ fn cc_block(
             false
         }
 
-        knormal::Expr::ArrayAlloc { len, elem } => {
+        anormal::Expr::ArrayAlloc { len, elem } => {
             let ret_tmp = sequel.get_ret_var(ctx, RepType::Word);
             stmts.push(Asgn {
                 lhs: ret_tmp,
@@ -439,7 +439,7 @@ fn cc_block(
             false
         }
 
-        knormal::Expr::ArrayGet(array, idx) => {
+        anormal::Expr::ArrayGet(array, idx) => {
             let elem_ty = match &*ctx.ctx.var_type(array) {
                 Type::Array(elem_ty) => RepType::from(&**elem_ty),
                 other => panic!(
@@ -456,7 +456,7 @@ fn cc_block(
             false
         }
 
-        knormal::Expr::ArrayPut(array, idx, val) => {
+        anormal::Expr::ArrayPut(array, idx, val) => {
             let elem_ty = match &*ctx.ctx.var_type(array) {
                 Type::Array(elem_ty) => RepType::from(&**elem_ty),
                 other => panic!(
@@ -668,8 +668,8 @@ fn pp_id_ref(id: &VarId, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result {
     write!(w, "{}", ctx.get_var(*id))
 }
 
-fn fvs(ctx: &Ctx, e: &knormal::Expr, acc: &mut FxHashSet<VarId>) {
-    use knormal::Expr::*;
+fn fvs(ctx: &Ctx, e: &anormal::Expr, acc: &mut FxHashSet<VarId>) {
+    use anormal::Expr::*;
     match e {
         Unit | Int(_) | Float(_) => {}
         IBinOp(BinOp { arg1, arg2, op: _ }) => {

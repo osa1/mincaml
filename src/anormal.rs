@@ -78,7 +78,7 @@ fn mk_let(ctx: &mut Ctx, e: Expr, ty_id: TypeId) -> (TmpLet, VarId) {
     match e {
         Expr::Var(var) => (TmpLet::NoNeed, var),
         _ => {
-            let id = ctx.fresh_generated_var(CompilerPhase::KNormal);
+            let id = ctx.fresh_generated_var(CompilerPhase::ANormal);
             ctx.set_var_type(id, ty_id);
             (
                 TmpLet::TmpLet {
@@ -92,11 +92,11 @@ fn mk_let(ctx: &mut Ctx, e: Expr, ty_id: TypeId) -> (TmpLet, VarId) {
     }
 }
 
-pub fn knormal(ctx: &mut Ctx, expr: parser::Expr) -> Expr {
-    knormal_(ctx, expr).0
+pub fn anormal(ctx: &mut Ctx, expr: parser::Expr) -> Expr {
+    anormal_(ctx, expr).0
 }
 
-pub fn knormal_(ctx: &mut Ctx, expr: parser::Expr) -> (Expr, TypeId) {
+pub fn anormal_(ctx: &mut Ctx, expr: parser::Expr) -> (Expr, TypeId) {
     let int = ctx.int_type_id();
     let float = ctx.float_type_id();
     let unit = ctx.unit_type_id();
@@ -107,7 +107,7 @@ pub fn knormal_(ctx: &mut Ctx, expr: parser::Expr) -> (Expr, TypeId) {
         parser::Expr::Int(i) => (Expr::Int(i), int),
         parser::Expr::Float(f) => (Expr::Float(f), float),
 
-        parser::Expr::Not(e) => knormal_(
+        parser::Expr::Not(e) => anormal_(
             ctx,
             parser::Expr::If(
                 e,
@@ -117,39 +117,39 @@ pub fn knormal_(ctx: &mut Ctx, expr: parser::Expr) -> (Expr, TypeId) {
         ),
 
         parser::Expr::Neg(e) => {
-            let e = knormal(ctx, *e);
+            let e = anormal(ctx, *e);
             let (tmp, var) = mk_let(ctx, e, int);
             (tmp.finish(Expr::Neg(var)), int)
         }
 
         parser::Expr::FNeg(e) => {
-            let e = knormal(ctx, *e);
+            let e = anormal(ctx, *e);
             let (tmp, var) = mk_let(ctx, e, float);
             (tmp.finish(Expr::FNeg(var)), float)
         }
 
         parser::Expr::IntBinOp(e1, op, e2) => {
-            let e1 = knormal(ctx, *e1);
+            let e1 = anormal(ctx, *e1);
             let (tmp1, arg1) = mk_let(ctx, e1, int);
-            let e2 = knormal(ctx, *e2);
+            let e2 = anormal(ctx, *e2);
             let (tmp2, arg2) = mk_let(ctx, e2, int);
             let e = tmp1.finish(tmp2.finish(Expr::IBinOp(BinOp { op, arg1, arg2 })));
             (e, int)
         }
 
         parser::Expr::FloatBinOp(e1, op, e2) => {
-            let e1 = knormal(ctx, *e1);
+            let e1 = anormal(ctx, *e1);
             let (tmp1, arg1) = mk_let(ctx, e1, float);
-            let e2 = knormal(ctx, *e2);
+            let e2 = anormal(ctx, *e2);
             let (tmp2, arg2) = mk_let(ctx, e2, float);
             let e = tmp1.finish(tmp2.finish(Expr::FBinOp(BinOp { op, arg1, arg2 })));
             (e, float)
         }
 
         parser::Expr::Cmp(e1, cmp, e2) => {
-            let (e1, e1_ty) = knormal_(ctx, *e1);
+            let (e1, e1_ty) = anormal_(ctx, *e1);
             let (tmp1, var1) = mk_let(ctx, e1, e1_ty);
-            let (e2, e2_ty) = knormal_(ctx, *e2);
+            let (e2, e2_ty) = anormal_(ctx, *e2);
             // assert_eq!(e1_ty, e2_ty);
             let (tmp2, var2) = mk_let(ctx, e2, e2_ty);
             let e = tmp1.finish(tmp2.finish(Expr::If(
@@ -163,13 +163,13 @@ pub fn knormal_(ctx: &mut Ctx, expr: parser::Expr) -> (Expr, TypeId) {
         }
 
         parser::Expr::If(box parser::Expr::Cmp(e1, cmp, e2), then_, else_) => {
-            let (e1, e1_ty) = knormal_(ctx, *e1);
+            let (e1, e1_ty) = anormal_(ctx, *e1);
             let (tmp1, var1) = mk_let(ctx, e1, e1_ty);
-            let (e2, e2_ty) = knormal_(ctx, *e2);
+            let (e2, e2_ty) = anormal_(ctx, *e2);
             // assert_eq!(e1_ty, e2_ty);
             let (tmp2, var2) = mk_let(ctx, e2, e2_ty);
-            let (then_, ty) = knormal_(ctx, *then_);
-            let else_ = knormal(ctx, *else_);
+            let (then_, ty) = anormal_(ctx, *then_);
+            let else_ = anormal(ctx, *else_);
             let e = tmp1.finish(tmp2.finish(Expr::If(
                 var1,
                 var2,
@@ -181,12 +181,12 @@ pub fn knormal_(ctx: &mut Ctx, expr: parser::Expr) -> (Expr, TypeId) {
         }
 
         parser::Expr::If(cond, then_, else_) => {
-            let cond = knormal(ctx, *cond);
+            let cond = anormal(ctx, *cond);
             let (cond_tmp, cond_var) = mk_let(ctx, cond, int);
-            let true_ = knormal(ctx, parser::Expr::Bool(true));
+            let true_ = anormal(ctx, parser::Expr::Bool(true));
             let (true_tmp, true_var) = mk_let(ctx, true_, int);
-            let (then_, ty) = knormal_(ctx, *then_);
-            let else_ = knormal(ctx, *else_);
+            let (then_, ty) = anormal_(ctx, *then_);
+            let else_ = anormal(ctx, *else_);
             let e = cond_tmp.finish(true_tmp.finish(Expr::If(
                 cond_var,
                 true_var,
@@ -198,8 +198,8 @@ pub fn knormal_(ctx: &mut Ctx, expr: parser::Expr) -> (Expr, TypeId) {
         }
 
         parser::Expr::Let { bndr, rhs, body } => {
-            let (rhs, rhs_ty) = knormal_(ctx, *rhs);
-            let (body, body_ty) = knormal_(ctx, *body);
+            let (rhs, rhs_ty) = anormal_(ctx, *rhs);
+            let (body, body_ty) = anormal_(ctx, *body);
             let e = Expr::Let {
                 id: bndr,
                 ty_id: rhs_ty,
@@ -222,13 +222,13 @@ pub fn knormal_(ctx: &mut Ctx, expr: parser::Expr) -> (Expr, TypeId) {
                 arg_tys.push((&*ctx.var_type(*arg)).clone());
             }
 
-            let (rhs, rhs_ty_id) = knormal_(ctx, *rhs);
+            let (rhs, rhs_ty_id) = anormal_(ctx, *rhs);
             let rhs_ty = (&*ctx.get_type(rhs_ty_id)).clone();
             let fun_ty = Type::Fun {
                 args: arg_tys,
                 ret: Box::new(rhs_ty),
             };
-            let (body, body_ty) = knormal_(ctx, *body);
+            let (body, body_ty) = anormal_(ctx, *body);
 
             let e = Expr::LetRec {
                 name: bndr,
@@ -242,7 +242,7 @@ pub fn knormal_(ctx: &mut Ctx, expr: parser::Expr) -> (Expr, TypeId) {
         }
 
         parser::Expr::App { fun, args } => {
-            let (fun, fun_ty_id) = knormal_(ctx, *fun);
+            let (fun, fun_ty_id) = anormal_(ctx, *fun);
             let fun_ty = (&*ctx.get_type(fun_ty_id)).clone();
             let ret_ty: Type = match &fun_ty {
                 Type::Fun { args: _, ret } => (**ret).clone(),
@@ -255,7 +255,7 @@ pub fn knormal_(ctx: &mut Ctx, expr: parser::Expr) -> (Expr, TypeId) {
             let mut arg_ids: Vec<VarId> = Vec::with_capacity(args.len());
             let mut arg_tmps: Vec<TmpLet> = Vec::with_capacity(args.len());
             for arg in args {
-                let (arg, arg_ty) = knormal_(ctx, arg);
+                let (arg, arg_ty) = anormal_(ctx, arg);
                 let (arg_tmp, arg_id) = mk_let(ctx, arg, arg_ty);
                 arg_ids.push(arg_id);
                 arg_tmps.push(arg_tmp);
@@ -277,7 +277,7 @@ pub fn knormal_(ctx: &mut Ctx, expr: parser::Expr) -> (Expr, TypeId) {
             let mut arg_tys: Vec<Type> = Vec::with_capacity(args.len());
 
             for arg in args {
-                let (arg, arg_ty_id) = knormal_(ctx, arg);
+                let (arg, arg_ty_id) = anormal_(ctx, arg);
                 let arg_ty = (&*ctx.get_type(arg_ty_id)).clone();
                 let (arg_tmp, arg_id) = mk_let(ctx, arg, arg_ty_id);
                 arg_ids.push(arg_id);
@@ -296,9 +296,9 @@ pub fn knormal_(ctx: &mut Ctx, expr: parser::Expr) -> (Expr, TypeId) {
         }
 
         parser::Expr::LetTuple { bndrs, rhs, body } => {
-            let (body, body_ty) = knormal_(ctx, *body);
+            let (body, body_ty) = anormal_(ctx, *body);
 
-            let (rhs, rhs_ty) = knormal_(ctx, *rhs);
+            let (rhs, rhs_ty) = anormal_(ctx, *rhs);
             let (rhs_tmp, rhs_id) = mk_let(ctx, rhs, rhs_ty);
 
             let e = bndrs
@@ -319,9 +319,9 @@ pub fn knormal_(ctx: &mut Ctx, expr: parser::Expr) -> (Expr, TypeId) {
         }
 
         parser::Expr::Array { len, elem } => {
-            let (len, len_ty_id) = knormal_(ctx, *len);
+            let (len, len_ty_id) = anormal_(ctx, *len);
             assert_eq!(len_ty_id, int);
-            let (elem, elem_ty_id) = knormal_(ctx, *elem);
+            let (elem, elem_ty_id) = anormal_(ctx, *elem);
             let elem_ty = (&*ctx.get_type(elem_ty_id)).clone();
             let (len_tmp, len_id) = mk_let(ctx, len, len_ty_id);
             let (elem_tmp, elem_id) = mk_let(ctx, elem, elem_ty_id);
@@ -336,12 +336,12 @@ pub fn knormal_(ctx: &mut Ctx, expr: parser::Expr) -> (Expr, TypeId) {
         }
 
         parser::Expr::Get(e1, e2) => {
-            let (e1, e1_ty_id) = knormal_(ctx, *e1);
+            let (e1, e1_ty_id) = anormal_(ctx, *e1);
             let elem_ty = match &*ctx.get_type(e1_ty_id) {
                 Type::Array(elem) => (**elem).clone(),
                 other => panic!("Non-array type in Get: {:?}", other),
             };
-            let (e2, e2_ty_id) = knormal_(ctx, *e2);
+            let (e2, e2_ty_id) = anormal_(ctx, *e2);
             assert_eq!(e2_ty_id, int);
             let (e1_tmp, e1_id) = mk_let(ctx, e1, e1_ty_id);
             let (e2_tmp, e2_id) = mk_let(ctx, e2, e2_ty_id);
@@ -352,11 +352,11 @@ pub fn knormal_(ctx: &mut Ctx, expr: parser::Expr) -> (Expr, TypeId) {
         }
 
         parser::Expr::Put(e1, e2, e3) => {
-            let (e1, e1_ty_id) = knormal_(ctx, *e1);
+            let (e1, e1_ty_id) = anormal_(ctx, *e1);
             // assert!(e1_ty.is_array());
-            let (e2, e2_ty_id) = knormal_(ctx, *e2);
+            let (e2, e2_ty_id) = anormal_(ctx, *e2);
             assert_eq!(e2_ty_id, int);
-            let (e3, e3_ty_id) = knormal_(ctx, *e3);
+            let (e3, e3_ty_id) = anormal_(ctx, *e3);
 
             let (e1_tmp, e1_id) = mk_let(ctx, e1, e1_ty_id);
             let (e2_tmp, e2_id) = mk_let(ctx, e2, e2_ty_id);

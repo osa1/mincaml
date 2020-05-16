@@ -1,12 +1,12 @@
 #![feature(or_patterns, box_patterns)]
 
+mod anormal;
 mod cg_types;
 mod closure_convert;
 mod codegen;
 mod common;
 mod ctx;
 mod interner;
-mod knormal;
 mod lexer;
 mod locals;
 mod parser;
@@ -15,9 +15,9 @@ mod type_check;
 mod utils;
 mod var;
 
+use anormal::anormal;
 use closure_convert::closure_convert;
 use codegen::codegen;
-use knormal::knormal;
 use lexer::{tokenize, Token};
 use parser::parse;
 use type_check::type_check_pgm;
@@ -97,7 +97,7 @@ fn compile_expr(
 
     // println!("Type-checked expr: {:#?}", expr);
 
-    let expr = record_pass_stats(&mut pass_stats, "knormal", || knormal(&mut ctx, expr));
+    let expr = record_pass_stats(&mut pass_stats, "anormal", || anormal(&mut ctx, expr));
 
     // println!("K normalized:");
     // println!("{:?}", expr);

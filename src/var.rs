@@ -186,7 +186,7 @@ impl GeneratedVar {
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub enum CompilerPhase {
     Parser,
-    KNormal,
+    ANormal,
     ClosureConvert,
 }
 
@@ -195,7 +195,7 @@ impl CompilerPhase {
         use CompilerPhase::*;
         match self {
             Parser => "p",
-            KNormal => "kn",
+            ANormal => "an",
             ClosureConvert => "cc",
         }
     }

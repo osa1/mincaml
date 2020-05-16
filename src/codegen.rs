@@ -487,10 +487,10 @@ fn codegen_expr(
             // Allocate array, move elements to array locations in a loop. Why lower it this much
             // here? Reasons:
             //
-            // - I don't want to introduce mutable variables in cc or knormal.
+            // - I don't want to introduce mutable variables in cc or anormal.
             //
             // - I want to generate code as early as possible in compilation and will probably
-            //   merge knormal and cc at some point and do more work here.
+            //   merge anormal and cc at some point and do more work here.
             //
             // - I want to learn more about cranelift, especially how to deal with mutable
             //   variables and how to introduce loops.
