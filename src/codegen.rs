@@ -1,6 +1,6 @@
 use cranelift_codegen::binemit::NullTrapSink;
 use cranelift_codegen::entity::EntityRef;
-use cranelift_codegen::ir::condcodes::IntCC;
+use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::entities::{Block, FuncRef, SigRef, Value};
 use cranelift_codegen::ir::types::*;
 use cranelift_codegen::ir::MemFlags;
@@ -289,13 +289,25 @@ fn codegen_fun(
                 then_label,
                 else_label,
             } => {
-                let cond = cranelift_cond(*cond);
-                // TODO: float comparisons?
+                let comp_type = RepType::from(&*ctx.var_type(*v1));
                 let v1 = env.use_var(ctx, &module, &mut builder, *v1);
                 let v2 = env.use_var(ctx, &module, &mut builder, *v2);
+
                 let then_block = *label_to_block.get(then_label).unwrap();
-                builder.ins().br_icmp(cond, v1, v2, then_block, &[]);
                 let else_block = *label_to_block.get(else_label).unwrap();
+
+                match comp_type {
+                    RepType::Word => {
+                        let cond = word_cond(*cond);
+                        builder.ins().br_icmp(cond, v1, v2, then_block, &[]);
+                    }
+                    RepType::Float => {
+                        let cond = float_cond(*cond);
+                        let flags = builder.ins().ffcmp(v1, v2);
+                        builder.ins().brff(cond, flags, then_block, &[]);
+                    }
+                }
+
                 builder.ins().jump(else_block, &[]);
             }
             cc::Exit::Jump(label) => {
@@ -568,7 +580,7 @@ fn make_main(
 
     println!("{}", context.func.display(None));
     if let Err(errors) = res {
-        panic!("{}", errors);
+        println!("{}", errors);
     }
 
     module
@@ -584,7 +596,7 @@ fn rep_type_abi(ty: RepType) -> Type {
     }
 }
 
-fn cranelift_cond(cond: Cmp) -> IntCC {
+fn word_cond(cond: Cmp) -> IntCC {
     match cond {
         Cmp::Equal => IntCC::Equal,
         Cmp::NotEqual => IntCC::NotEqual,
@@ -592,5 +604,16 @@ fn cranelift_cond(cond: Cmp) -> IntCC {
         Cmp::LessThanOrEqual => IntCC::SignedLessThanOrEqual,
         Cmp::GreaterThan => IntCC::SignedGreaterThan,
         Cmp::GreaterThanOrEqual => IntCC::SignedLessThanOrEqual,
+    }
+}
+
+fn float_cond(cond: Cmp) -> FloatCC {
+    match cond {
+        Cmp::Equal => FloatCC::Equal,
+        Cmp::NotEqual => FloatCC::NotEqual,
+        Cmp::LessThan => FloatCC::LessThan,
+        Cmp::LessThanOrEqual => FloatCC::LessThanOrEqual,
+        Cmp::GreaterThan => FloatCC::GreaterThan,
+        Cmp::GreaterThanOrEqual => FloatCC::LessThanOrEqual,
     }
 }
