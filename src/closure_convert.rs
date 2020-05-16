@@ -15,12 +15,6 @@ use fxhash::FxHashSet;
 
 pub type Label = Uniq; // FIXME how to represent this best?
 
-#[derive(Debug)]
-pub struct Program {
-    pub main_label: Label,
-    pub funs: Vec<Fun>,
-}
-
 // Functions
 #[derive(Debug)]
 pub struct Fun {
