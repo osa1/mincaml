@@ -69,10 +69,8 @@ struct Env(FxHashMap<VarId, VarVal>);
 
 #[derive(Debug, Clone)]
 enum VarVal {
-    // A known value.
-    Known(Value),
-    // A known function.
-    KnownFun(FuncRef),
+    // A function argument.
+    Arg(Value),
     // Variable is a reference to a funcion. Get a reference to it using `declare_data_in_func` and
     // a value of it using `global_value`.
     Fun(FuncId),
@@ -87,7 +85,7 @@ impl Env {
     }
 
     fn add_arg(&mut self, var: VarId, val: Value) {
-        self.0.insert(var, VarVal::Known(val));
+        self.0.insert(var, VarVal::Arg(val));
     }
 
     fn add_fun(&mut self, var: VarId, val: FuncId) {
@@ -110,18 +108,29 @@ impl Env {
         var: VarId,
     ) -> Value {
         let val = self.0.get(&var).cloned();
+
+        // NB. caching fun and data refs below won't work, as the values may be defined in a block
+        // and used in another block which is not dominated by the defining block. Example:
+        //
+        // block 0 (entry) -> block 1 (defines v11)
+        //                 -> block 2 -> block 4
+        //                            -> block 3 (uses v11)
+        //
+        // Here we can't use v11 which is defined in v11, we have to re-define it in v11.
+        //
+        // Below we simply redefine it in all use sites.
+
         match val {
-            Some(VarVal::Known(val)) => val,
-            Some(VarVal::KnownFun(fun_ref)) => builder.ins().func_addr(I64, fun_ref),
+            Some(VarVal::Arg(arg)) => arg,
             Some(VarVal::Fun(fun_id)) => {
                 let fun_ref = module.declare_func_in_func(fun_id, builder.func);
-                self.0.insert(var, VarVal::KnownFun(fun_ref));
+                // self.0.insert(var, VarVal::KnownFun(fun_ref));
                 builder.ins().func_addr(I64, fun_ref)
             }
             Some(VarVal::Data(data_id)) => {
                 let data_ref = module.declare_data_in_func(data_id, builder.func);
                 let val = builder.ins().global_value(I64, data_ref);
-                self.0.insert(var, VarVal::Known(val));
+                // self.0.insert(var, VarVal::Known(val));
                 val
             }
             None => {
@@ -611,7 +620,7 @@ fn word_cond(cond: Cmp) -> IntCC {
         Cmp::LessThan => IntCC::SignedLessThan,
         Cmp::LessThanOrEqual => IntCC::SignedLessThanOrEqual,
         Cmp::GreaterThan => IntCC::SignedGreaterThan,
-        Cmp::GreaterThanOrEqual => IntCC::SignedLessThanOrEqual,
+        Cmp::GreaterThanOrEqual => IntCC::SignedGreaterThanOrEqual,
     }
 }
 
