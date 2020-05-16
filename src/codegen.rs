@@ -59,6 +59,9 @@ pub fn codegen(ctx: &mut Ctx, funs: &[cc::Fun], main_id: VarId) -> Vec<u8> {
     object.emit().unwrap()
 }
 
+// We only support such platforms.
+const WORD_SIZE: u8 = 8;
+
 // Used to map function arguments and globals (other functions and closures in the module,
 // built-ins) to their values.
 #[derive(Clone)]
@@ -393,16 +396,19 @@ fn codegen_expr(
         }
 
         cc::Expr::Tuple(args) => {
-            // TODO: hard-coded word size below
-            let malloc_arg = builder.ins().iconst(I64, args.len() as i64 * 8);
+            let malloc_arg = builder
+                .ins()
+                .iconst(I64, args.len() as i64 * i64::from(WORD_SIZE));
             let malloc_call = builder.ins().call(malloc, &[malloc_arg]);
             let tuple = builder.inst_results(malloc_call)[0];
             for (arg_idx, arg) in args.iter().enumerate() {
                 let arg = env.use_var(ctx, module, builder, *arg);
-                // TODO: hard-coded word size
-                builder
-                    .ins()
-                    .store(MemFlags::new(), arg, tuple, (arg_idx * 8) as i32);
+                builder.ins().store(
+                    MemFlags::new(),
+                    arg,
+                    tuple,
+                    (arg_idx * usize::from(WORD_SIZE)) as i32,
+                );
             }
             (block, tuple)
         }
@@ -429,10 +435,12 @@ fn codegen_expr(
 
             let tuple = env.use_var(ctx, module, builder, *tuple);
 
-            // TODO: hard-coded word size
-            let val = builder
-                .ins()
-                .load(elem_type, MemFlags::new(), tuple, (idx * 8) as i32);
+            let val = builder.ins().load(
+                elem_type,
+                MemFlags::new(),
+                tuple,
+                (idx * usize::from(WORD_SIZE)) as i32,
+            );
             (block, val)
         }
 
@@ -451,7 +459,7 @@ fn codegen_expr(
             // NB. update varibles with `def_var`
 
             let len_val = env.use_var(ctx, module, builder, *len);
-            let word_size = builder.ins().iconst(I64, 8); // TODO: hard-coded word size
+            let word_size = builder.ins().iconst(I64, i64::from(WORD_SIZE));
             let size_val = builder.ins().imul(len_val, word_size);
             let malloc_call = builder.ins().call(malloc, &[size_val]);
             let array = builder.inst_results(malloc_call)[0];
@@ -487,7 +495,7 @@ fn codegen_expr(
             builder.switch_to_block(loop_doit_block);
             // If not, then move 'elem' to the location, bump index, loop
             builder.ins().store(MemFlags::new(), elem_val, idx_val, 0);
-            let word_size = builder.ins().iconst(I64, 8);
+            let word_size = builder.ins().iconst(I64, i64::from(WORD_SIZE));
             let next_idx = builder.ins().iadd(idx_val, word_size);
             builder.def_var(idx_var, next_idx);
             builder.ins().jump(loop_block, &[]);
@@ -509,7 +517,7 @@ fn codegen_expr(
 
             let array = env.use_var(ctx, module, builder, *array);
             let idx = env.use_var(ctx, module, builder, *idx);
-            let word_size = builder.ins().iconst(I64, 8);
+            let word_size = builder.ins().iconst(I64, i64::from(WORD_SIZE));
             let offset = builder.ins().imul(idx, word_size);
             (
                 block,
