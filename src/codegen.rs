@@ -71,8 +71,8 @@ struct Env(FxHashMap<VarId, VarVal>);
 enum VarVal {
     // A function argument.
     Arg(Value),
-    // Variable is a reference to a funcion. Get a reference to it using `declare_data_in_func` and
-    // a value of it using `global_value`.
+    // Variable is a reference to a function. Get a reference to it using `declare_data_in_func`
+    // and a value of it using `global_value`.
     Fun(FuncId),
     // Variable is a reference to a data object (i.e. a closure). Get a reference to it using
     // `declare_data_in_func` and a value of it using `global_value`.
