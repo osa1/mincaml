@@ -3,7 +3,7 @@ use std::ffi::OsStr;
 use std::fs;
 use std::io::Write;
 use std::path::Path;
-use std::process::{Command, ExitStatus, Output, Stdio};
+use std::process::{exit, Command, ExitStatus, Output, Stdio};
 
 fn run_ocaml(file_path: &str) -> String {
     let ret: Output = Command::new("ocaml")
@@ -125,18 +125,24 @@ fn run_test(path: &Path) -> TestResult {
     }
 }
 
-fn report(result: TestResult) {
+// Returns whether the test failed
+fn report(result: TestResult) -> bool {
     match result {
-        TestResult::Pass => println!("OK"),
+        TestResult::Pass => {
+            println!("OK");
+            false
+        }
         TestResult::Fail(reason) => {
             println!("FAIL");
             println!("{}", reason);
+            true
         }
     }
 }
 
 // Run all .ml files in a directory as tests
-fn run_dir(dir: &Path) {
+fn run_dir(dir: &Path) -> bool {
+    let mut any_failed = false;
     for entry in fs::read_dir(dir).unwrap() {
         let entry = entry.unwrap();
         let path = entry.path();
@@ -144,27 +150,33 @@ fn run_dir(dir: &Path) {
             // println!("{:?}", path);
             print!("{} ... ", path.to_str().unwrap());
             let _ = ::std::io::stdout().lock().flush();
-            report(run_test(&path));
+            any_failed |= report(run_test(&path));
         } else if entry.file_type().unwrap().is_dir() {
-            run_dir(&path);
+            any_failed |= run_dir(&path);
         }
     }
+    any_failed
 }
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    match &args[1..] {
+    let fail = match &args[1..] {
         [] => run_dir(Path::new("programs")),
         [target] => {
             let target_path = Path::new(target);
             if target_path.is_file() {
-                report(run_test(target_path));
+                report(run_test(target_path))
             } else {
-                run_dir(target_path);
+                run_dir(target_path)
             }
         }
         _ => {
             println!("USAGE: test [target]");
+            true
         }
+    };
+
+    if fail {
+        exit(1);
     }
 }
