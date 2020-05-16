@@ -1,6 +1,7 @@
 use std::env;
 use std::ffi::OsStr;
 use std::fs;
+use std::io::Write;
 use std::path::Path;
 use std::process::{Command, ExitStatus, Output, Stdio};
 
@@ -139,6 +140,7 @@ fn run_dir(dir: &Path) {
         if path.extension() == Some(OsStr::new("ml")) {
             // println!("{:?}", path);
             print!("{} ... ", path.to_str().unwrap());
+            let _ = ::std::io::stdout().lock().flush();
             report(run_test(&path));
         } else if entry.file_type().unwrap().is_dir() {
             run_dir(&path);
