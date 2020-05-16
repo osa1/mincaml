@@ -4,13 +4,17 @@ version = "0.1.0"
 authors = ["Ömer Sinan Ağacan <omeragacan@gmail.com>"]
 edition = "2018"
 
+[lib]
+name = "libmc"
+path = "src/lib.rs"
+
 [[bin]]
 name = "mc"
-path = "src/main.rs"
+path = "bin/main.rs"
 
 [[bin]]
 name = "test"
-path = "test/main.rs"
+path = "bin/test.rs"
 
 [dependencies]
 cranelift-codegen = "0.63"

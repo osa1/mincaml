@@ -20,7 +20,7 @@ use crate::common::{Cmp, FloatBinOp, IntBinOp};
 use crate::ctx::{Ctx, VarId};
 use crate::type_check;
 
-pub fn codegen(ctx: &mut Ctx, funs: &[cc::Fun], main_id: VarId) -> Vec<u8> {
+pub fn codegen(ctx: &mut Ctx, funs: &[cc::Fun], main_id: VarId, dump: bool) -> Vec<u8> {
     // Module and FunctionBuilderContext are used for the whole compilation unit. Each function
     // gets its own FunctionBuilder.
     let codegen_flags: settings::Flags = settings::Flags::new(settings::builder());
@@ -47,11 +47,19 @@ pub fn codegen(ctx: &mut Ctx, funs: &[cc::Fun], main_id: VarId) -> Vec<u8> {
 
     // Generate code for functions
     for fun in funs {
-        codegen_fun(ctx, &mut module, &env, malloc_id, fun, &mut fn_builder_ctx);
+        codegen_fun(
+            ctx,
+            &mut module,
+            &env,
+            malloc_id,
+            fun,
+            &mut fn_builder_ctx,
+            dump,
+        );
     }
 
     // Generate main
-    make_main(&mut module, &mut fn_builder_ctx, main_fun_id);
+    make_main(&mut module, &mut fn_builder_ctx, main_fun_id, dump);
 
     module.finalize_definitions();
 
@@ -214,7 +222,7 @@ fn init_module_env(
 
 fn codegen_fun(
     ctx: &mut Ctx, module: &mut Module<ObjectBackend>, global_env: &Env, malloc_id: FuncId,
-    fun: &cc::Fun, fn_builder_ctx: &mut FunctionBuilderContext,
+    fun: &cc::Fun, fn_builder_ctx: &mut FunctionBuilderContext, dump: bool,
 ) {
     let cc::Fun {
         name,
@@ -340,7 +348,9 @@ fn codegen_fun(
     let flags = settings::Flags::new(settings::builder());
     let res = verify_function(&context.func, &flags);
 
-    println!("{}", context.func.display(None));
+    if dump {
+        println!("{}", context.func.display(None));
+    }
     if let Err(errors) = res {
         println!("{}", errors);
     }
@@ -573,6 +583,7 @@ fn codegen_expr(
 
 fn make_main(
     module: &mut Module<ObjectBackend>, fun_ctx: &mut FunctionBuilderContext, main_id: FuncId,
+    dump: bool,
 ) {
     let mut context = module.make_context();
     context.func.signature = Signature {
@@ -595,7 +606,9 @@ fn make_main(
     let flags = settings::Flags::new(settings::builder());
     let res = verify_function(&context.func, &flags);
 
-    println!("{}", context.func.display(None));
+    if dump {
+        println!("{}", context.func.display(None));
+    }
     if let Err(errors) = res {
         println!("{}", errors);
     }

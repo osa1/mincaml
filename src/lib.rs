@@ -25,26 +25,12 @@ use type_check::type_check_pgm;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
-use std::process::exit;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
 #[cfg(debug_assertions)]
 #[global_allocator]
 static A: perf::AllocCounter = perf::AllocCounter;
-
-fn main() {
-    let args: Vec<String> = std::env::args().collect();
-    match args.as_slice() {
-        [_, ref file] => {
-            exit(do_file(file));
-        }
-        _ => {
-            println!("What do you mean?");
-            exit(1);
-        }
-    }
-}
 
 #[derive(Debug)]
 struct PassStats {
@@ -71,7 +57,9 @@ fn record_pass_stats<A, F: FnOnce() -> A>(
 
 type ObjectCode = Vec<u8>;
 
-fn do_expr(expr_str: &str) -> Option<ObjectCode> {
+fn compile_expr(
+    expr_str: &str, dump_cc: bool, dump_cg: bool, show_pass_stats: bool,
+) -> Option<ObjectCode> {
     let mut pass_stats: Vec<PassStats> = Vec::with_capacity(10);
 
     let tokens: Vec<Token> =
@@ -118,22 +106,28 @@ fn do_expr(expr_str: &str) -> Option<ObjectCode> {
         closure_convert(&mut ctx, expr)
     });
 
-    println!("### Closure conversion:\n");
+    if dump_cc {
+        println!("### Closure conversion:\n");
 
-    let mut s = String::new();
-    for fun in &funs {
-        fun.pp(&ctx, &mut s).unwrap();
+        let mut s = String::new();
+        for fun in &funs {
+            fun.pp(&ctx, &mut s).unwrap();
+        }
+
+        println!("{}", s);
     }
 
-    println!("{}", s);
-
-    println!("### Code generation:\n");
+    if dump_cg {
+        println!("### Code generation:\n");
+    }
 
     let object_code = record_pass_stats(&mut pass_stats, "codegen", || {
-        codegen(&mut ctx, &funs, main)
+        codegen(&mut ctx, &funs, main, dump_cg)
     });
 
-    report_pass_stats(&pass_stats);
+    if show_pass_stats {
+        report_pass_stats(&pass_stats);
+    }
 
     Some(object_code)
 }
@@ -164,17 +158,15 @@ fn report_pass_stats(pass_stats: &[PassStats]) {
     println!("--------------------------------------------------------");
 }
 
-fn do_file(path: &str) -> i32 {
+pub fn compile_file(path: &str, dump_cc: bool, dump_cg: bool, show_pass_stats: bool) -> i32 {
     let contents = std::fs::read_to_string(path).unwrap();
-    match do_expr(&contents) {
+    match compile_expr(&contents, dump_cc, dump_cg, show_pass_stats) {
         None => 1,
         Some(object_code) => link(path, object_code),
     }
 }
 
 fn link(path: &str, object_code: ObjectCode) -> i32 {
-    println!("Linking ...");
-
     let path = Path::new(path);
 
     let file_name = path.file_stem().unwrap().to_owned();

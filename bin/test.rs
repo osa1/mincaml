@@ -5,6 +5,8 @@ use std::io::Write;
 use std::path::Path;
 use std::process::{exit, Command, ExitStatus, Output, Stdio};
 
+use libmc;
+
 fn run_ocaml(file_path: &str) -> String {
     let ret: Output = Command::new("ocaml")
         .arg(file_path)
@@ -19,11 +21,7 @@ fn run_ocaml(file_path: &str) -> String {
 }
 
 enum McError {
-    CompileError {
-        exit_code: ExitStatus,
-        stderr: String,
-        stdout: String,
-    },
+    CompileError,
     RunError {
         exit_code: ExitStatus,
         stderr: String,
@@ -36,29 +34,10 @@ fn run_mc(file_path_str: &str) -> Result<String, McError> {
     let file_stem = file_path.file_stem().unwrap();
     let file_stem_str = file_stem.to_str().unwrap();
 
-    {
-        let Output {
-            status,
-            stderr,
-            stdout,
-        } = Command::new("target/debug/mc")
-            .arg(file_path_str)
-            .stderr(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn()
-            .unwrap()
-            .wait_with_output()
-            .unwrap();
+    let ret = libmc::compile_file(file_path_str, false, false, false);
 
-        if !status.success() || !stderr.is_empty() {
-            let stderr = String::from_utf8(stderr).unwrap();
-            let stdout = String::from_utf8(stdout).unwrap();
-            return Err(McError::CompileError {
-                exit_code: status,
-                stderr,
-                stdout,
-            });
-        }
+    if ret != 0 {
+        return Err(McError::CompileError);
     }
 
     let Output {
@@ -106,14 +85,7 @@ fn run_test(path: &Path) -> TestResult {
                 TestResult::Fail(s)
             }
         }
-        Err(McError::CompileError {
-            exit_code,
-            stderr,
-            stdout,
-        }) => TestResult::Fail(format!(
-            "mc returned {}\nstderr:\n{}stdout:\n{}",
-            exit_code, stderr, stdout
-        )),
+        Err(McError::CompileError) => TestResult::Fail("Compile error".to_string()),
         Err(McError::RunError {
             exit_code,
             stderr,
