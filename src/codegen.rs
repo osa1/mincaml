@@ -303,8 +303,12 @@ fn codegen_fun(
                     }
                     RepType::Float => {
                         let cond = float_cond(*cond);
-                        let flags = builder.ins().ffcmp(v1, v2);
-                        builder.ins().brff(cond, flags, then_block, &[]);
+                        let cmp = builder.ins().fcmp(cond, v1, v2);
+                        builder.ins().brnz(cmp, then_block, &[]);
+                        // NB: For some reason the code below doesn't work. Would be good to know
+                        // why.
+                        // let flags = builder.ins().ffcmp(v1, v2);
+                        // builder.ins().brff(cond, flags, then_block, &[]);
                     }
                 }
 
@@ -390,6 +394,10 @@ fn codegen_expr(
                 .collect();
 
             let returns: Vec<AbiParam> = vec![AbiParam::new(rep_type_abi(*ret_type))];
+
+            // TODO: Apparently cranelift doesn't intern these signatures so if we add `int -> int`
+            // many times we get many `int -> int` signatures in the module. Would be good to cache
+            // and reuse SigRefs.
             let fun_sig = Signature {
                 params,
                 returns,
@@ -614,6 +622,6 @@ fn float_cond(cond: Cmp) -> FloatCC {
         Cmp::LessThan => FloatCC::LessThan,
         Cmp::LessThanOrEqual => FloatCC::LessThanOrEqual,
         Cmp::GreaterThan => FloatCC::GreaterThan,
-        Cmp::GreaterThanOrEqual => FloatCC::LessThanOrEqual,
+        Cmp::GreaterThanOrEqual => FloatCC::GreaterThanOrEqual,
     }
 }
