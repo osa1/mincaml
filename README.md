@@ -10,12 +10,12 @@ code generation, which was also something I wanted to learn.
 
 ## MinCaml in a few words
 
-- A subset of OCaml
-- 64-bit integers, 64-bit floats, arrays and tuples
+- A subset of OCaml (but see integer size below)
+- 64-bit integers (different from OCaml integers which are 63-bit), 64-bit
+  floats, arrays and tuples
 - No user defined types
 - No polymorphism, all types inferred
-- Tail-call elimination (currently unimplemented, as I couldn't figure out how
-  to do indirect jump in cranelift)
+- Tail-call elimination (currently unimplemented, see [cranelift issue][6])
 - No garbage collection (not possible to implement with cranelift anyway, as
   object code backend currently doesn't support stack maps)
 
@@ -46,8 +46,7 @@ To run the tests simply run the `test` executable. Note that the test runner
 uses `ocamlc` as the reference compiler so make sure it is installed.
 
 Currently the test `programs/bench/harmonic.ml` fails with stack overflow as we
-don't do tail-call elimination. (I couldn't figure out how to generate indirect
-jumps in cranelift)
+don't do tail-call elimination, see [cranelift issue][6].
 
 ## Reading
 
@@ -71,9 +70,9 @@ notes for readers:
 
   One interesting thing type checker does is it replaces uses of variables with
   their binders. So for example when we parse `let x = 1 in x` the parser
-  generates fresh unique numbers for every variable and generates something like
-  `let x{0} = 1 in x{1}`. Here two uses of `x` look the same but they're different
-  to the compiler. Type checker, when seeing `x{1}`, looks at the scope for its
+  generates unique numbers for every variable and generates something like `let
+  x{0} = 1 in x{1}`. Here two uses of `x` look the same but they're different to
+  the compiler. Type checker, when seeing `x{1}`, looks at the scope for its
   binder, and replaces it with `x{0}`. So after type checking we get `let x{0} =
   1 in x{0}`.
 
@@ -93,6 +92,12 @@ notes for readers:
 
 - After that we link the generated object code using `gcc`.
 
+## Future work
+
+This project was for learning purposes and it's mostly done. Maybe one day I may
+want to implement instruction selection and register allocation with a calling
+convention that supports tail-call optimization and garbage collection.
+
 ## Want more?
 
 If you're looking for small compilers to study, you might be interested in
@@ -106,3 +111,4 @@ and has a garbage collector.
 [3]: https://osa1.net/posts/2015-01-29-top-down-expr-parsing-easy.html
 [4]: https://journal.stuffwithstuff.com/2011/03/19/pratt-parsers-expression-parsing-made-easy/
 [5]: https://github.com/osa1/racket.rkt
+[6]: https://github.com/bytecodealliance/wasmtime/issues/1065
