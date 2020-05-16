@@ -20,6 +20,45 @@ use crate::common::{Cmp, FloatBinOp, IntBinOp};
 use crate::ctx::{Ctx, VarId};
 use crate::type_check;
 
+pub fn codegen(ctx: &mut Ctx, funs: &[cc::Fun], main_id: VarId) -> Vec<u8> {
+    // Module and FunctionBuilderContext are used for the whole compilation unit. Each function
+    // gets its own FunctionBuilder.
+    let codegen_flags: settings::Flags = settings::Flags::new(settings::builder());
+    let mut module: Module<ObjectBackend> = Module::new(ObjectBuilder::new(
+        // How does this know I'm building for x86_64 Linux?
+        cranelift_native::builder().unwrap().finish(codegen_flags),
+        [1, 2, 3, 4, 5, 6, 7, 8], // TODO: what is this?
+        default_libcall_names(),
+    ));
+
+    let mut fn_builder_ctx: FunctionBuilderContext = FunctionBuilderContext::new();
+
+    // Declare malloc at module-level and pass the id to code gen to be able to generate malloc
+    // calls.
+    let malloc_id = declare_malloc(&mut module);
+
+    // Global env is not mutable as we never add anything to it. Declarations in basic blocks are
+    // done directly using the FunctionBuilder. When a variable isn't bound in 'env' it assumes
+    // that the variable has already been declared directly using the FunctionBuilder.
+    //
+    // For function arguments we clone it in every function, add the arguments, and then keep using
+    // it in an immutable way.
+    let (env, main_fun_id) = init_module_env(ctx, &mut module, funs, main_id);
+
+    // Generate code for functions
+    for fun in funs {
+        codegen_fun(ctx, &mut module, &env, malloc_id, fun, &mut fn_builder_ctx);
+    }
+
+    // Generate main
+    make_main(&mut module, &mut fn_builder_ctx, main_fun_id);
+
+    module.finalize_definitions();
+
+    let object: ObjectProduct = module.finish();
+    object.emit().unwrap()
+}
+
 // Used to map function arguments and globals (other functions and closures in the module,
 // built-ins) to their values.
 #[derive(Clone)]
@@ -225,15 +264,8 @@ fn codegen_fun(
 
             let cc::Asgn { lhs, rhs } = asgn;
 
-            let (block, val) = rhs_value(
-                ctx,
-                &module,
-                cl_block,
-                &mut builder,
-                &mut env,
-                malloc,
-                rhs,
-            );
+            let (block, val) =
+                codegen_expr(ctx, &module, cl_block, &mut builder, &mut env, malloc, rhs);
             cl_block = block;
 
             let lhs_cl_var = Variable::new(ctx.get_var(*lhs).get_uniq().0.get() as usize);
@@ -291,46 +323,7 @@ fn codegen_fun(
     module.clear_context(&mut context);
 }
 
-pub fn codegen(ctx: &mut Ctx, funs: &[cc::Fun], main_id: VarId) -> Vec<u8> {
-    // Module and FunctionBuilderContext are used for the whole compilation unit. Each function
-    // gets its own FunctionBuilder.
-    let codegen_flags: settings::Flags = settings::Flags::new(settings::builder());
-    let mut module: Module<ObjectBackend> = Module::new(ObjectBuilder::new(
-        // How does this know I'm building for x86_64 Linux?
-        cranelift_native::builder().unwrap().finish(codegen_flags),
-        [1, 2, 3, 4, 5, 6, 7, 8], // TODO: what is this?
-        default_libcall_names(),
-    ));
-
-    let mut fn_builder_ctx: FunctionBuilderContext = FunctionBuilderContext::new();
-
-    // Declare malloc at module-level and pass the id to code gen to be able to generate malloc
-    // calls.
-    let malloc_id = declare_malloc(&mut module);
-
-    // Global env is not mutable as we never add anything to it. Declarations in basic blocks are
-    // done directly using the FunctionBuilder. When a variable isn't bound in 'env' it assumes
-    // that the variable has already been declared directly using the FunctionBuilder.
-    //
-    // For function arguments we clone it in every function, add the arguments, and then keep using
-    // it in an immutable way.
-    let (env, main_fun_id) = init_module_env(ctx, &mut module, funs, main_id);
-
-    // Generate code for functions
-    for fun in funs {
-        codegen_fun(ctx, &mut module, &env, malloc_id, fun, &mut fn_builder_ctx);
-    }
-
-    // Generate main
-    make_main(&mut module, &mut fn_builder_ctx, main_fun_id);
-
-    module.finalize_definitions();
-
-    let object: ObjectProduct = module.finish();
-    object.emit().unwrap()
-}
-
-fn rhs_value(
+fn codegen_expr(
     ctx: &mut Ctx, module: &Module<ObjectBackend>, block: Block, builder: &mut FunctionBuilder,
     env: &mut Env, malloc: FuncRef, rhs: &cc::Expr,
 ) -> (Block, Value) {
@@ -541,24 +534,6 @@ fn rhs_value(
     }
 }
 
-fn rep_type_abi(ty: RepType) -> Type {
-    match ty {
-        RepType::Word => I64,
-        RepType::Float => F64,
-    }
-}
-
-fn cranelift_cond(cond: Cmp) -> IntCC {
-    match cond {
-        Cmp::Equal => IntCC::Equal,
-        Cmp::NotEqual => IntCC::NotEqual,
-        Cmp::LessThan => IntCC::SignedLessThan,
-        Cmp::LessThanOrEqual => IntCC::SignedLessThanOrEqual,
-        Cmp::GreaterThan => IntCC::SignedGreaterThan,
-        Cmp::GreaterThanOrEqual => IntCC::SignedLessThanOrEqual,
-    }
-}
-
 fn make_main(
     module: &mut Module<ObjectBackend>, fun_ctx: &mut FunctionBuilderContext, main_id: FuncId,
 ) {
@@ -592,4 +567,22 @@ fn make_main(
         .define_function(main_func_id, &mut context, &mut NullTrapSink {})
         .unwrap();
     module.clear_context(&mut context);
+}
+
+fn rep_type_abi(ty: RepType) -> Type {
+    match ty {
+        RepType::Word => I64,
+        RepType::Float => F64,
+    }
+}
+
+fn cranelift_cond(cond: Cmp) -> IntCC {
+    match cond {
+        Cmp::Equal => IntCC::Equal,
+        Cmp::NotEqual => IntCC::NotEqual,
+        Cmp::LessThan => IntCC::SignedLessThan,
+        Cmp::LessThanOrEqual => IntCC::SignedLessThanOrEqual,
+        Cmp::GreaterThan => IntCC::SignedGreaterThan,
+        Cmp::GreaterThanOrEqual => IntCC::SignedLessThanOrEqual,
+    }
 }
