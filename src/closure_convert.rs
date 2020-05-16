@@ -484,7 +484,7 @@ fn print_comma_sep<A>(
     let mut add_comma = false;
     for stuff in stuffs {
         if add_comma {
-            write!(w, ", ")?;
+            w.write_str(", ")?;
         } else {
             add_comma = true;
         }
@@ -502,9 +502,9 @@ impl Fun {
             return_type,
         } = self;
 
-        write!(w, "function ")?;
+        w.write_str("function ")?;
         pp_id(ctx, *name, w)?;
-        write!(w, "(")?;
+        w.write_str("(")?;
         print_comma_sep(ctx, &mut args.iter(), pp_id_ref, w)?;
         writeln!(w, ") -> {}", return_type)?;
 
@@ -520,11 +520,11 @@ impl Block {
         let Block { label, stmts, exit } = self;
         writeln!(w, "{}:", label)?;
         for asgn in stmts {
-            write!(w, "    ")?;
+            w.write_str("    ")?;
             asgn.pp(ctx, w)?;
             writeln!(w)?;
         }
-        write!(w, "    ")?;
+        w.write_str("    ")?;
         exit.pp(ctx, w)?;
         writeln!(w)
     }
@@ -535,7 +535,7 @@ impl Exit {
         use Exit::*;
         match self {
             Return(var) => {
-                write!(w, "return ")?;
+                w.write_str("return ")?;
                 pp_id(ctx, *var, w)
             }
             Branch {
@@ -545,7 +545,7 @@ impl Exit {
                 then_label,
                 else_label,
             } => {
-                write!(w, "if ")?;
+                w.write_str("if ")?;
                 pp_id(ctx, *v1, w)?;
                 write!(w, " {} ", cond)?;
                 pp_id(ctx, *v2, w)?;
@@ -560,7 +560,7 @@ impl Asgn {
     pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result {
         let Asgn { lhs, rhs } = self;
         pp_id(ctx, *lhs, w)?;
-        write!(w, ": ")?;
+        w.write_str(": ")?;
         match ctx.var_type_(*lhs) {
             Some(var_type) => {
                 var_type.pp(w)?;
@@ -569,7 +569,7 @@ impl Asgn {
                 w.write_str("???")?;
             }
         }
-        write!(w, " = ")?;
+        w.write_str(" = ")?;
         rhs.pp(ctx, w)
     }
 }
@@ -600,23 +600,23 @@ impl Expr {
                 pp_id(ctx, *arg2, w)
             }
             Neg(var) => {
-                write!(w, "-")?;
+                w.write_str("-")?;
                 pp_id(ctx, *var, w)
             }
             FNeg(var) => {
-                write!(w, "-.")?;
+                w.write_str("-.")?;
                 pp_id(ctx, *var, w)
             }
             App(fun, args, _) => {
                 pp_id(ctx, *fun, w)?;
-                write!(w, "(")?;
+                w.write_str("(")?;
                 print_comma_sep(ctx, &mut args.iter(), pp_id_ref, w)?;
-                write!(w, ")")
+                w.write_str(")")
             }
             Tuple(args) => {
-                write!(w, "(")?;
+                w.write_str("(")?;
                 print_comma_sep(ctx, &mut args.iter(), pp_id_ref, w)?;
-                write!(w, ")")
+                w.write_str(")")
             }
             TupleGet(tuple, idx) => {
                 pp_id(ctx, *tuple, w)?;
@@ -632,15 +632,15 @@ impl Expr {
             }
             ArrayGet(array, idx) => {
                 pp_id(ctx, *array, w)?;
-                write!(w, ".(")?;
+                w.write_str(".(")?;
                 pp_id(ctx, *idx, w)?;
-                write!(w, ")")
+                w.write_str(")")
             }
             ArrayPut(array, idx, val) => {
                 pp_id(ctx, *array, w)?;
-                write!(w, ".(")?;
+                w.write_str(".(")?;
                 pp_id(ctx, *idx, w)?;
-                write!(w, ") <- ")?;
+                w.write_str(") <- ")?;
                 pp_id(ctx, *val, w)
             }
         }
@@ -651,7 +651,7 @@ impl Atom {
     pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result {
         use Atom::*;
         match self {
-            Unit => write!(w, "()"),
+            Unit => w.write_str("()"),
             Int(i) => write!(w, "{}", i),
             // Use debug format in floats, otherwise "1.0" is printed as "1"
             Float(f) => write!(w, "{:?}", f),
