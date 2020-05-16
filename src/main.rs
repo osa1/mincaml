@@ -34,11 +34,6 @@ use std::time::{Duration, Instant};
 static A: perf::AllocCounter = perf::AllocCounter;
 
 fn main() {
-    // println!("size_of::<u32>() == {}", std::mem::size_of::<u32>());
-    // println!("size_of::<Rc<str>>() == {}", std::mem::size_of::<std::rc::Rc<str>>());
-    // println!("size_of::<Rc<String>>() == {}", std::mem::size_of::<std::rc::Rc<str>>());
-    // println!("size_of::<Var>() == {}", std::mem::size_of::<var::Var>());
-
     let args: Vec<String> = std::env::args().collect();
     match args.as_slice() {
         [_, ref file] => {
