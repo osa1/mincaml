@@ -26,4 +26,4 @@ jobs:
         run: sudo apt-get install ocaml
 
       - name: Run test programs
-        run: ./target/debug/test
+        run: RUST_BACKTRACE=1 ./target/debug/test
