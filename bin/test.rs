@@ -130,12 +130,23 @@ fn run_dir(dir: &Path) -> bool {
     any_failed
 }
 
+fn create_dir(path: &str) {
+    match fs::create_dir(path) {
+        Ok(()) => (),
+        Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => (),
+        Err(err) => panic!(err),
+    }
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
     let fail = match &args[1..] {
-        [] => run_dir(Path::new("programs")),
+        [] => {
+            create_dir("_test");
+            run_dir(Path::new("programs"))
+        }
         [target] => {
-            let _ = fs::create_dir("_test");
+            create_dir("_test");
             let target_path = Path::new(target);
             if target_path.is_file() {
                 report(run_test(target_path))
