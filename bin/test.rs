@@ -34,7 +34,7 @@ fn run_mc(file_path_str: &str) -> Result<String, McError> {
     let file_stem = file_path.file_stem().unwrap();
     let file_stem_str = file_stem.to_str().unwrap();
 
-    let ret = libmc::compile_file(file_path_str, false, false, false);
+    let ret = libmc::compile_file(file_path_str, Some("_test"), false, false, false);
 
     if ret != 0 {
         return Err(McError::CompileError);
@@ -44,7 +44,7 @@ fn run_mc(file_path_str: &str) -> Result<String, McError> {
         status,
         stdout,
         stderr,
-    } = Command::new(&format!("./{}", file_stem_str))
+    } = Command::new(&format!("_test/{}", file_stem_str))
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -135,6 +135,7 @@ fn main() {
     let fail = match &args[1..] {
         [] => run_dir(Path::new("programs")),
         [target] => {
+            let _ = fs::create_dir("_test");
             let target_path = Path::new(target);
             if target_path.is_file() {
                 report(run_test(target_path))

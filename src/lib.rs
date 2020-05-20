@@ -158,30 +158,31 @@ fn report_pass_stats(pass_stats: &[PassStats]) {
     println!("--------------------------------------------------------");
 }
 
-pub fn compile_file(path: &str, dump_cc: bool, dump_cg: bool, show_pass_stats: bool) -> i32 {
+pub fn compile_file(
+    path: &str, out_dir: Option<&str>, dump_cc: bool, dump_cg: bool, show_pass_stats: bool,
+) -> i32 {
     let contents = std::fs::read_to_string(path).unwrap();
     match compile_expr(&contents, dump_cc, dump_cg, show_pass_stats) {
         None => 1,
-        Some(object_code) => link(path, object_code),
+        Some(object_code) => link(path, out_dir, object_code),
     }
 }
 
-fn link(path: &str, object_code: ObjectCode) -> i32 {
+fn link(path: &str, out_dir: Option<&str>, object_code: ObjectCode) -> i32 {
+    let out_dir = out_dir.unwrap_or(".");
     let path = Path::new(path);
+    let file_stem = path.file_stem().unwrap().to_str().unwrap();
+    let o_file_name = format!("{}.o", file_stem);
 
-    let file_name = path.file_stem().unwrap().to_owned();
-
-    let mut o_file_name = file_name.clone();
-    o_file_name.push(".o");
-
-    File::create(&o_file_name)
+    File::create(&format!("{}/{}", out_dir, o_file_name))
         .unwrap()
         .write_all(&object_code)
         .unwrap();
 
     // Build RTS
     let output = Command::new("gcc")
-        .args(&["rts.c", "-c"])
+        .args(&["../rts.c", "-c"])
+        .current_dir(out_dir)
         .spawn()
         .unwrap()
         .wait_with_output()
@@ -192,12 +193,13 @@ fn link(path: &str, object_code: ObjectCode) -> i32 {
     // Link
     let output = Command::new("gcc")
         .args(&[
-            o_file_name.to_str().unwrap(),
+            &o_file_name,
             "rts.o",
             "-o",
-            file_name.to_str().unwrap(),
+            file_stem,
             "-lm", // link math library
         ])
+        .current_dir(out_dir)
         .spawn()
         .unwrap()
         .wait_with_output()

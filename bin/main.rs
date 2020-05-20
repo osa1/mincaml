@@ -6,7 +6,7 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     match args.as_slice() {
         [_, ref file] => {
-            exit(libmc::compile_file(file, true, true, true));
+            exit(libmc::compile_file(file, None, true, true, true));
         }
         _ => {
             println!("What do you mean?");
