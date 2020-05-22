@@ -9,6 +9,7 @@ mod ctx;
 mod interner;
 mod lexer;
 mod locals;
+mod lower;
 mod parser;
 mod perf;
 mod type_check;
