@@ -1,4 +1,4 @@
-#![allow(dead_code, unused_imports, unreachable_code)]
+#![allow(dead_code, unused_imports, unreachable_code, unused_variables)]
 
 mod instr;
 mod liveness;
@@ -79,11 +79,69 @@ use fxhash::{FxHashMap, FxHashSet};
 
 use crate::anormal::BinOp;
 use crate::closure_convert as cc;
-use crate::closure_convert::{Asgn, Atom, Exit, Expr, Fun, Label};
 use crate::common::*;
 use crate::ctx::{Ctx, VarId};
 
+use instr::*;
 use types::*;
+
+pub(crate) fn cg_fun(cc_fun: &cc::Fun) -> Fun {
+    let cc::Fun {
+        name,
+        args,
+        blocks,
+        return_type,
+    } = cc_fun;
+
+    let (mut fun, entry_block) = Fun::new();
+
+    // Map cc blocks to codegen blocks (TODO: would be good to eliminate this step)
+    let mut label_to_block: FxHashMap<cc::Label, BlockIdx> = Default::default();
+
+    for block in blocks {
+        let cg_block = fun.create_block();
+        label_to_block.insert(block.label, cg_block);
+    }
+
+    let mut env: FxHashMap<VarId, Arg> = Default::default();
+
+    // TODO: Define function arguments in entry block
+    for cc::Block { label, stmts, exit } in blocks {
+        let mut cg_block = *label_to_block.get(label).unwrap();
+        fun.switch_to_block(cg_block);
+
+        for asgn in stmts {
+            // let mut s = String::new();
+            // asgn.pp(&ctx, &mut s);
+            // println!("stmt: {}", s);
+
+            let cc::Asgn { lhs, rhs } = asgn;
+
+            let (block, val) = cg_expr(&mut fun, cg_block, rhs);
+            cg_block = block;
+
+            /*
+                        let lhs_cl_var = Variable::new(ctx.get_var(*lhs).get_uniq().0.get() as usize);
+                        let lhs_abi_type = rep_type_abi(ctx.var_rep_type(*lhs));
+                        builder.declare_var(lhs_cl_var, lhs_abi_type);
+                        builder.def_var(lhs_cl_var, val);
+            */
+        }
+    }
+
+    todo!()
+}
+
+fn cg_expr(fun: &mut Fun, block: BlockIdx, expr: &cc::Expr) -> (BlockIdx, Arg) {
+    match expr {
+        cc::Expr::Atom(cc::Atom::Unit) => (block, Arg::Imm(0)),
+        cc::Expr::Atom(cc::Atom::Int(i)) => (block, Arg::Imm(*i)),
+        cc::Expr::Atom(cc::Atom::Float(f)) => {
+            todo!()
+        }
+        _ => todo!()
+    }
+}
 
 /*
 #[derive(Debug, Default)]

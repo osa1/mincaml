@@ -16,14 +16,15 @@ pub(crate) struct CFG {
     preds: Vec<Vec<BlockIdx>>,
 }
 
-pub(crate) struct FunctionBuilder {
+pub(crate) struct Fun {
     cfg: CFG,
     entry_block: BlockIdx,
-    exit_block: BlockIdx,
+    exit_blocks: Vec<BlockIdx>,
     // Index with `BlockIdx`
     blocks: Vec<Block>,
     // Index with `InstrIdx`
     instrs: Vec<Instr>,
+    current_block: BlockIdx,
     num_vars: u32,
 }
 
@@ -32,9 +33,43 @@ pub(crate) struct Block {
     instrs: Vec<InstrIdx>,
 }
 
-impl FunctionBuilder {
-    pub(crate) fn exit_block(&self) -> BlockIdx {
-        self.exit_block
+impl Fun {
+    pub(crate) fn new() -> (Self, BlockIdx) {
+        let entry_block_idx = BlockIdx(0);
+        let entry_block = Block {
+            idx: entry_block_idx,
+            instrs: vec![],
+        };
+        let fun = Fun {
+            cfg: CFG {
+                succs: vec![vec![]],
+                preds: vec![vec![]],
+            },
+            entry_block: entry_block_idx,
+            exit_blocks: vec![],
+            blocks: vec![entry_block],
+            instrs: vec![],
+            current_block: entry_block_idx,
+            num_vars: 0,
+        };
+        (fun, entry_block_idx)
+    }
+
+    pub(crate) fn create_block(&mut self) -> BlockIdx {
+        let block_idx = BlockIdx(self.blocks.len() as u32);
+        self.blocks.push(Block {
+            idx: block_idx,
+            instrs: vec![],
+        });
+        block_idx
+    }
+
+    pub(crate) fn switch_to_block(&mut self, block: BlockIdx) {
+        self.current_block = block;
+    }
+
+    pub(crate) fn exit_blocks(&self) -> &[BlockIdx] {
+        &self.exit_blocks
     }
 
     pub(crate) fn blocks<'a>(&'a self) -> impl Iterator<Item = BlockIdx> + 'a {

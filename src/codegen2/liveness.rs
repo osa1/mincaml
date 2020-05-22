@@ -1,28 +1,43 @@
 #![allow(dead_code, unused_imports, unreachable_code)]
 
 use fxhash::{FxHashMap, FxHashSet};
+use std::cmp::{max, min};
 
 use super::instr::*;
 use super::types::*;
 
-// Maps variables to instructions where they're used (aka. they're a live-in).
+#[derive(Debug, Default)]
 pub(crate) struct LiveRangeMap(FxHashMap<VarIdx, LiveRange>);
 
-// TODO: Not sure how to represent this best. Example:
-//
-// block1 (def x)
-//   -> block2         -> block4
-//   -> block3 (use x) -> block4
-//
-// Here we don't want to keep x alive in block2. If we use (begin, end) the range will be (1, 3),
-// but that means in block 2 we won't be using register for x.
-// 
-// A more precise implementation would be a set of BlockIdxs: {1, 3}. We'll need min and max
-// methods on this set for linear scan register allocation.
-//
+#[derive(Debug, Default)]
 pub(crate) struct LiveRange {
-    begin: InstrIdx,
-    end: InstrIdx,
+    begin: Option<InstrIdx>,
+    end: Option<InstrIdx>,
+}
+
+impl LiveRange {
+    fn extend_to_use(&mut self, use_site: InstrIdx) {
+        self.end = Some(max(self.end.take().unwrap_or(use_site), use_site));
+    }
+
+    fn extend_to_def(&mut self, def_site: InstrIdx) {
+        assert!(self.begin.is_none() || self.begin == Some(def_site));
+        self.begin = Some(def_site);
+    }
+}
+
+impl LiveRangeMap {
+    fn get(&mut self, var: VarIdx) -> &mut LiveRange {
+        self.0.entry(var).or_insert(Default::default())
+    }
+
+    fn extend_to_use(&mut self, var: VarIdx, use_site: InstrIdx) {
+        self.get(var).extend_to_use(use_site)
+    }
+
+    fn extend_to_def(&mut self, var: VarIdx, def_site: InstrIdx) {
+        self.get(var).extend_to_def(def_site)
+    }
 }
 
 // Live variables at an instruction =
@@ -53,41 +68,45 @@ impl InstrLiveIns {
     }
 }
 
-pub(crate) fn generate_live_ranges(fun: &FunctionBuilder) -> LiveRangeMap {
+pub(crate) fn generate_live_ranges(fun: &Fun) -> LiveRangeMap {
     // TODO: update this map as the range is extended in `add_instr_lives` below
     let mut range_map = Default::default();
     let mut instr_live_ins: InstrLiveIns = Default::default();
-
-    let exit_block = fun.exit_block();
 
     let mut changed = true;
     while changed {
         changed = false;
 
-        let mut work_list = vec![exit_block];
-        let mut visited: FxHashSet<BlockIdx> = Default::default();
-        visited.insert(exit_block);
+        let mut work_list: Vec<BlockIdx> = fun.exit_blocks().iter().cloned().collect();
+        let mut visited: FxHashSet<BlockIdx> = work_list.iter().cloned().collect();
 
         while let Some(block) = work_list.pop() {
             for instr in fun.block_instrs(block).rev() {
                 let mut live_ins = instr_live_ins.remove(instr);
-                changed |= add_instr_lives(&mut live_ins, fun, instr, &mut instr_live_ins);
+                changed |= add_instr_lives(
+                    &mut range_map,
+                    &mut live_ins,
+                    fun,
+                    instr,
+                    &mut instr_live_ins,
+                );
                 instr_live_ins.insert(instr, live_ins);
             }
 
             for pred in fun.block_preds(block) {
                 if !visited.contains(pred) {
                     work_list.push(*pred);
+                    visited.insert(*pred);
                 }
             }
         }
     }
 
-    LiveRangeMap(range_map)
+    range_map
 }
 
 fn add_instr_lives(
-    live_ins: &mut LiveInSet, fun: &FunctionBuilder, instr_idx: InstrIdx,
+    range_map: &mut LiveRangeMap, live_ins: &mut LiveInSet, fun: &Fun, instr_idx: InstrIdx,
     instr_live_ins: &mut InstrLiveIns,
 ) -> bool {
     let instr = fun.instr(instr_idx);
@@ -106,11 +125,13 @@ fn add_instr_lives(
 
     // Remove defs
     for def in instr.defs() {
+        range_map.extend_to_def(*def, instr_idx);
         live_ins.remove(def);
     }
 
     // Add uses
     for use_ in instr.uses() {
+        range_map.extend_to_use(*use_, instr_idx);
         live_ins.insert(*use_);
     }
 
