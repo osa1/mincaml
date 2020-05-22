@@ -4,6 +4,7 @@ mod anormal;
 mod cg_types;
 mod closure_convert;
 mod codegen;
+mod codegen2;
 mod common;
 mod ctx;
 mod interner;
