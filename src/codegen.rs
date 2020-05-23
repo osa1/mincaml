@@ -386,6 +386,8 @@ fn codegen_expr(
             let val = match op {
                 IntBinOp::Add => builder.ins().iadd(arg1, arg2),
                 IntBinOp::Sub => builder.ins().isub(arg1, arg2),
+                IntBinOp::Mul => builder.ins().imul(arg1, arg2),
+                IntBinOp::Div => builder.ins().sdiv(arg1, arg2),
             };
             (block, Some(val))
         }

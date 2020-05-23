@@ -121,6 +121,8 @@ impl Expr {
                 let op_str = match op {
                     IntBinOp::Add => " + ",
                     IntBinOp::Sub => " - ",
+                    IntBinOp::Mul => " * ",
+                    IntBinOp::Div => " / ",
                 };
                 write!(w, "{}", op_str)?;
                 pp_id(ctx, *arg2, w)
