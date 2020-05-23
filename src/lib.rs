@@ -181,8 +181,7 @@ fn link(path: &str, out_dir: Option<&str>, object_code: ObjectCode) -> i32 {
 
     // Build RTS
     let output = Command::new("gcc")
-        .args(&["../rts.c", "-c"])
-        .current_dir(out_dir)
+        .args(&["rts.c", "-c", "-o", &format!("{}/rts.o", out_dir)])
         .spawn()
         .unwrap()
         .wait_with_output()
