@@ -84,6 +84,15 @@ impl Exit {
     }
 }
 
+impl Stmt {
+    pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result {
+        match self {
+            Stmt::Asgn(asgn) => asgn.pp(ctx, w),
+            Stmt::Expr(expr) => expr.pp(ctx, w),
+        }
+    }
+}
+
 impl Asgn {
     pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result {
         let Asgn { lhs, rhs } = self;

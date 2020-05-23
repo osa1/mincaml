@@ -277,21 +277,28 @@ fn codegen_fun(
         let mut cl_block = *label_to_block.get(label).unwrap();
         builder.switch_to_block(cl_block);
 
-        for asgn in stmts {
+        for stmt in stmts {
             // let mut s = String::new();
             // asgn.pp(&ctx, &mut s);
             // println!("stmt: {}", s);
 
-            let lower::Asgn { lhs, rhs } = asgn;
+            match stmt {
+                lower::Stmt::Asgn(lower::Asgn { lhs, rhs }) => {
+                    let (block, val) =
+                        codegen_expr(ctx, &module, cl_block, &mut builder, &mut env, malloc, rhs);
+                    cl_block = block;
 
-            let (block, val) =
-                codegen_expr(ctx, &module, cl_block, &mut builder, &mut env, malloc, rhs);
-            cl_block = block;
-
-            let lhs_cl_var = Variable::new(ctx.get_var(*lhs).get_uniq().0.get() as usize);
-            let lhs_abi_type = rep_type_abi(ctx.var_rep_type(*lhs));
-            builder.declare_var(lhs_cl_var, lhs_abi_type);
-            builder.def_var(lhs_cl_var, val);
+                    let lhs_cl_var = Variable::new(ctx.get_var(*lhs).get_uniq().0.get() as usize);
+                    let lhs_abi_type = rep_type_abi(ctx.var_rep_type(*lhs));
+                    builder.declare_var(lhs_cl_var, lhs_abi_type);
+                    builder.def_var(lhs_cl_var, val.unwrap());
+                }
+                lower::Stmt::Expr(expr) => {
+                    let (block, _) =
+                        codegen_expr(ctx, &module, cl_block, &mut builder, &mut env, malloc, expr);
+                    cl_block = block;
+                }
+            }
         }
 
         match exit {
@@ -364,13 +371,13 @@ fn codegen_fun(
 fn codegen_expr(
     ctx: &mut Ctx, module: &Module<ObjectBackend>, block: Block, builder: &mut FunctionBuilder,
     env: &mut Env, malloc: FuncRef, rhs: &lower::Expr,
-) -> (Block, Value) {
+) -> (Block, Option<Value>) {
     match rhs {
-        lower::Expr::Atom(lower::Atom::Unit) => (block, builder.ins().iconst(I64, 0)),
-        lower::Expr::Atom(lower::Atom::Int(i)) => (block, builder.ins().iconst(I64, *i)),
-        lower::Expr::Atom(lower::Atom::Float(f)) => (block, builder.ins().f64const(*f)),
+        lower::Expr::Atom(lower::Atom::Unit) => (block, Some(builder.ins().iconst(I64, 0))),
+        lower::Expr::Atom(lower::Atom::Int(i)) => (block, Some(builder.ins().iconst(I64, *i))),
+        lower::Expr::Atom(lower::Atom::Float(f)) => (block, Some(builder.ins().f64const(*f))),
         lower::Expr::Atom(lower::Atom::Var(var)) => {
-            (block, env.use_var(ctx, module, builder, *var))
+            (block, Some(env.use_var(ctx, module, builder, *var)))
         }
 
         lower::Expr::IBinOp(BinOp { op, arg1, arg2 }) => {
@@ -380,7 +387,7 @@ fn codegen_expr(
                 IntBinOp::Add => builder.ins().iadd(arg1, arg2),
                 IntBinOp::Sub => builder.ins().isub(arg1, arg2),
             };
-            (block, val)
+            (block, Some(val))
         }
 
         lower::Expr::FBinOp(BinOp { op, arg1, arg2 }) => {
@@ -392,17 +399,17 @@ fn codegen_expr(
                 FloatBinOp::Mul => builder.ins().fmul(arg1, arg2),
                 FloatBinOp::Div => builder.ins().fdiv(arg1, arg2),
             };
-            (block, val)
+            (block, Some(val))
         }
 
         lower::Expr::Neg(var) => {
             let arg = env.use_var(ctx, module, builder, *var);
-            (block, builder.ins().ineg(arg))
+            (block, Some(builder.ins().ineg(arg)))
         }
 
         lower::Expr::FNeg(var) => {
             let arg = env.use_var(ctx, module, builder, *var);
-            (block, builder.ins().fneg(arg))
+            (block, Some(builder.ins().fneg(arg)))
         }
 
         lower::Expr::App(fun, args, ret_type) => {
@@ -433,7 +440,7 @@ fn codegen_expr(
                 .map(|arg| env.use_var(ctx, module, builder, *arg))
                 .collect();
             let call = builder.ins().call_indirect(fun_sig_ref, callee, &arg_vals);
-            (block, builder.inst_results(call)[0])
+            (block, Some(builder.inst_results(call)[0]))
         }
 
         lower::Expr::Tuple { len } => {
@@ -442,7 +449,7 @@ fn codegen_expr(
                 .iconst(I64, *len as i64 * i64::from(WORD_SIZE));
             let malloc_call = builder.ins().call(malloc, &[malloc_arg]);
             let tuple = builder.inst_results(malloc_call)[0];
-            (block, tuple)
+            (block, Some(tuple))
         }
 
         lower::Expr::TuplePut(tuple, idx, val) => {
@@ -454,8 +461,7 @@ fn codegen_expr(
                 tuple,
                 (idx * usize::from(WORD_SIZE)) as i32,
             );
-            let val = builder.ins().iconst(I64, 0); // FIXME
-            (block, val)
+            (block, None)
         }
 
         lower::Expr::TupleGet(tuple, idx) => {
@@ -486,7 +492,7 @@ fn codegen_expr(
                 tuple,
                 (idx * usize::from(WORD_SIZE)) as i32,
             );
-            (block, val)
+            (block, Some(val))
         }
 
         lower::Expr::ArrayAlloc { len, elem } => {
@@ -550,7 +556,7 @@ fn codegen_expr(
 
             builder.switch_to_block(cont_block);
 
-            (cont_block, array)
+            (cont_block, Some(array))
         }
 
         lower::Expr::ArrayGet(array, idx) => {
@@ -566,9 +572,11 @@ fn codegen_expr(
             let offset = builder.ins().imul(idx, word_size);
             (
                 block,
-                builder
-                    .ins()
-                    .load_complex(elem_type, MemFlags::new(), &[array, offset], 0),
+                Some(
+                    builder
+                        .ins()
+                        .load_complex(elem_type, MemFlags::new(), &[array, offset], 0),
+                ),
             )
         }
 
@@ -582,7 +590,7 @@ fn codegen_expr(
                 .ins()
                 .store_complex(MemFlags::new(), val, &[array, offset], 0);
             let ret = builder.ins().iconst(I64, 0);
-            (block, ret)
+            (block, Some(ret))
         }
     }
 }

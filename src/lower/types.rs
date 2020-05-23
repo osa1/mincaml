@@ -18,8 +18,14 @@ pub struct Fun {
 #[derive(Debug)]
 pub struct Block {
     pub label: Label,
-    pub stmts: Vec<Asgn>,
+    pub stmts: Vec<Stmt>,
     pub exit: Exit,
+}
+
+#[derive(Debug)]
+pub enum Stmt {
+    Asgn(Asgn),
+    Expr(Expr),
 }
 
 // Assignments

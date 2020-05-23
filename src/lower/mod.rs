@@ -35,32 +35,32 @@ impl BlockSequel {
 }
 
 fn finish_block(
-    ctx: &mut CcCtx, label: Label, mut stmts: Vec<Asgn>, sequel: BlockSequel, value: Atom,
+    ctx: &mut CcCtx, label: Label, mut stmts: Vec<Stmt>, sequel: BlockSequel, value: Atom,
 ) -> Block {
     let exit = match sequel {
         BlockSequel::Return => match value {
             Atom::Unit => {
                 let tmp = ctx.fresh_var(RepType::Word);
-                stmts.push(Asgn {
+                stmts.push(Stmt::Asgn(Asgn {
                     lhs: tmp,
                     rhs: Expr::Atom(Atom::Unit),
-                });
+                }));
                 Exit::Return(tmp)
             }
             Atom::Int(i) => {
                 let tmp = ctx.fresh_var(RepType::Word);
-                stmts.push(Asgn {
+                stmts.push(Stmt::Asgn(Asgn {
                     lhs: tmp,
                     rhs: Expr::Atom(Atom::Int(i)),
-                });
+                }));
                 Exit::Return(tmp)
             }
             Atom::Float(f) => {
                 let tmp = ctx.fresh_var(RepType::Float);
-                stmts.push(Asgn {
+                stmts.push(Stmt::Asgn(Asgn {
                     lhs: tmp,
                     rhs: Expr::Atom(Atom::Float(f)),
-                });
+                }));
                 Exit::Return(tmp)
             }
             Atom::Var(var) => Exit::Return(var),
@@ -71,10 +71,10 @@ fn finish_block(
                 // happen somehow?
                 Atom::Var(rhs) if lhs == rhs => {}
                 _ => {
-                    stmts.push(Asgn {
+                    stmts.push(Stmt::Asgn(Asgn {
                         lhs,
                         rhs: Expr::Atom(value),
-                    });
+                    }));
                 }
             }
             Exit::Jump(label)
@@ -128,7 +128,7 @@ pub fn lower_pgm(ctx: &mut Ctx, expr: anormal::Expr) -> (Vec<Fun>, VarId) {
 
 // Returns whether the added block was a fork (i.e. then or else branch of an if)
 fn cc_block(
-    ctx: &mut CcCtx, blocks: &mut Vec<Block>, label: Label, mut stmts: Vec<Asgn>,
+    ctx: &mut CcCtx, blocks: &mut Vec<Block>, label: Label, mut stmts: Vec<Stmt>,
     sequel: BlockSequel, expr: anormal::Expr,
 ) -> bool {
     match expr {
@@ -149,40 +149,40 @@ fn cc_block(
 
         anormal::Expr::Neg(var) => {
             let tmp = ctx.fresh_var(RepType::Word);
-            stmts.push(Asgn {
+            stmts.push(Stmt::Asgn(Asgn {
                 lhs: tmp,
                 rhs: Expr::Neg(var),
-            });
+            }));
             blocks.push(finish_block(ctx, label, stmts, sequel, Atom::Var(tmp)));
             false
         }
 
         anormal::Expr::FNeg(var) => {
             let tmp = ctx.fresh_var(RepType::Float);
-            stmts.push(Asgn {
+            stmts.push(Stmt::Asgn(Asgn {
                 lhs: tmp,
                 rhs: Expr::FNeg(var),
-            });
+            }));
             blocks.push(finish_block(ctx, label, stmts, sequel, Atom::Var(tmp)));
             false
         }
 
         anormal::Expr::IBinOp(BinOp { op, arg1, arg2 }) => {
             let tmp = sequel.get_ret_var(ctx, RepType::Word);
-            stmts.push(Asgn {
+            stmts.push(Stmt::Asgn(Asgn {
                 lhs: tmp,
                 rhs: Expr::IBinOp(BinOp { op, arg1, arg2 }),
-            });
+            }));
             blocks.push(finish_block(ctx, label, stmts, sequel, Atom::Var(tmp)));
             false
         }
 
         anormal::Expr::FBinOp(BinOp { op, arg1, arg2 }) => {
             let tmp = sequel.get_ret_var(ctx, RepType::Float);
-            stmts.push(Asgn {
+            stmts.push(Stmt::Asgn(Asgn {
                 lhs: tmp,
                 rhs: Expr::FBinOp(BinOp { op, arg1, arg2 }),
-            });
+            }));
             blocks.push(finish_block(ctx, label, stmts, sequel, Atom::Var(tmp)));
             false
         }
@@ -271,10 +271,10 @@ fn cc_block(
             let mut entry_block_stmts = vec![];
             // Bind captured variables in function body
             for (fv_idx, fv) in closure_fvs.iter().enumerate() {
-                entry_block_stmts.push(Asgn {
+                entry_block_stmts.push(Stmt::Asgn(Asgn {
                     lhs: *fv,
                     rhs: Expr::TupleGet(name, fv_idx + 1),
-                });
+                }));
             }
             cc_block(
                 ctx,
@@ -301,18 +301,14 @@ fn cc_block(
             // Body
             let mut closure_tuple_args = closure_fvs;
             closure_tuple_args.insert(0, fun_var);
-            stmts.push(Asgn {
+            stmts.push(Stmt::Asgn(Asgn {
                 lhs: name,
                 rhs: Expr::Tuple {
                     len: closure_tuple_args.len(),
                 },
-            });
+            }));
             for (arg_idx, arg) in closure_tuple_args.iter().enumerate() {
-                let tmp = ctx.fresh_var(RepType::Word);
-                stmts.push(Asgn {
-                    lhs: tmp,
-                    rhs: Expr::TuplePut(name, arg_idx, *arg),
-                });
+                stmts.push(Stmt::Expr(Expr::TuplePut(name, arg_idx, *arg)));
             }
             cc_block(ctx, blocks, label, stmts, sequel, *body)
         }
@@ -320,10 +316,10 @@ fn cc_block(
         anormal::Expr::App(fun, mut args) => {
             // f(x) -> f.0(f, x)
             let fun_tmp = ctx.fresh_var(RepType::Word);
-            stmts.push(Asgn {
+            stmts.push(Stmt::Asgn(Asgn {
                 lhs: fun_tmp,
                 rhs: Expr::TupleGet(fun, 0),
-            });
+            }));
             args.insert(0, fun);
 
             let fun_ret_ty = match &*ctx.ctx.var_type(fun) {
@@ -332,26 +328,22 @@ fn cc_block(
             };
             let ret_tmp = sequel.get_ret_var(ctx, fun_ret_ty);
 
-            stmts.push(Asgn {
+            stmts.push(Stmt::Asgn(Asgn {
                 lhs: ret_tmp,
                 rhs: Expr::App(fun_tmp, args, fun_ret_ty),
-            });
+            }));
             blocks.push(finish_block(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
             false
         }
 
         anormal::Expr::Tuple(args) => {
             let ret_tmp = sequel.get_ret_var(ctx, RepType::Word);
-            stmts.push(Asgn {
+            stmts.push(Stmt::Asgn(Asgn {
                 lhs: ret_tmp,
                 rhs: Expr::Tuple { len: args.len() },
-            });
+            }));
             for (arg_idx, arg) in args.iter().enumerate() {
-                let tmp = ctx.fresh_var(RepType::Word);
-                stmts.push(Asgn {
-                    lhs: tmp,
-                    rhs: Expr::TuplePut(ret_tmp, arg_idx, *arg),
-                });
+                stmts.push(Stmt::Expr(Expr::TuplePut(ret_tmp, arg_idx, *arg)));
             }
             blocks.push(finish_block(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
             false
@@ -366,20 +358,20 @@ fn cc_block(
                 ),
             };
             let ret_tmp = sequel.get_ret_var(ctx, elem_ty);
-            stmts.push(Asgn {
+            stmts.push(Stmt::Asgn(Asgn {
                 lhs: ret_tmp,
                 rhs: Expr::TupleGet(tuple, idx),
-            });
+            }));
             blocks.push(finish_block(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
             false
         }
 
         anormal::Expr::ArrayAlloc { len, elem } => {
             let ret_tmp = sequel.get_ret_var(ctx, RepType::Word);
-            stmts.push(Asgn {
+            stmts.push(Stmt::Asgn(Asgn {
                 lhs: ret_tmp,
                 rhs: Expr::ArrayAlloc { len, elem },
-            });
+            }));
             blocks.push(finish_block(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
             false
         }
@@ -393,10 +385,10 @@ fn cc_block(
                 ),
             };
             let ret_tmp = sequel.get_ret_var(ctx, elem_ty);
-            stmts.push(Asgn {
+            stmts.push(Stmt::Asgn(Asgn {
                 lhs: ret_tmp,
                 rhs: Expr::ArrayGet(array, idx),
-            });
+            }));
             blocks.push(finish_block(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
             false
         }
@@ -410,10 +402,10 @@ fn cc_block(
                 ),
             };
             let ret_tmp = sequel.get_ret_var(ctx, elem_ty);
-            stmts.push(Asgn {
+            stmts.push(Stmt::Asgn(Asgn {
                 lhs: ret_tmp,
                 rhs: Expr::ArrayPut(array, idx, val),
-            });
+            }));
             blocks.push(finish_block(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
             false
         }
