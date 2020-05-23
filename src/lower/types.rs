@@ -39,11 +39,13 @@ pub enum Expr {
     FNeg(VarId),
     App(VarId, Vec<VarId>, RepType),
     // Tuple allocation
-    Tuple(Vec<VarId>), // TODO: Lower this more?
+    Tuple { len: usize },
     // Tuple field read
     TupleGet(VarId, usize),
+    // Tuple field write
+    TuplePut(VarId, usize, VarId),
     // Array allocation
-    ArrayAlloc { len: VarId, elem: VarId },
+    ArrayAlloc { len: VarId, elem: VarId }, // TODO: Lower this more
     // Array field read
     ArrayGet(VarId, VarId),
     // Array field write

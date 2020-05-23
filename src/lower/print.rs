@@ -141,10 +141,11 @@ impl Expr {
                 print_comma_sep(ctx, &mut args.iter(), pp_id_ref, w)?;
                 w.write_str(")")
             }
-            Tuple(args) => {
-                w.write_str("(")?;
-                print_comma_sep(ctx, &mut args.iter(), pp_id_ref, w)?;
-                w.write_str(")")
+            Tuple { len } => write!(w, "alloc_tuple(len={}", len),
+            TuplePut(tuple, idx, val) => {
+                pp_id(ctx, *tuple, w)?;
+                write!(w, ".{{{}}} <- ", idx)?;
+                pp_id(ctx, *val, w)
             }
             TupleGet(tuple, idx) => {
                 pp_id(ctx, *tuple, w)?;

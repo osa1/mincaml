@@ -436,22 +436,26 @@ fn codegen_expr(
             (block, builder.inst_results(call)[0])
         }
 
-        lower::Expr::Tuple(args) => {
+        lower::Expr::Tuple { len } => {
             let malloc_arg = builder
                 .ins()
-                .iconst(I64, args.len() as i64 * i64::from(WORD_SIZE));
+                .iconst(I64, *len as i64 * i64::from(WORD_SIZE));
             let malloc_call = builder.ins().call(malloc, &[malloc_arg]);
             let tuple = builder.inst_results(malloc_call)[0];
-            for (arg_idx, arg) in args.iter().enumerate() {
-                let arg = env.use_var(ctx, module, builder, *arg);
-                builder.ins().store(
-                    MemFlags::new(),
-                    arg,
-                    tuple,
-                    (arg_idx * usize::from(WORD_SIZE)) as i32,
-                );
-            }
             (block, tuple)
+        }
+
+        lower::Expr::TuplePut(tuple, idx, val) => {
+            let tuple = env.use_var(ctx, module, builder, *tuple);
+            let arg = env.use_var(ctx, module, builder, *val);
+            builder.ins().store(
+                MemFlags::new(),
+                arg,
+                tuple,
+                (idx * usize::from(WORD_SIZE)) as i32,
+            );
+            let val = builder.ins().iconst(I64, 0); // FIXME
+            (block, val)
         }
 
         lower::Expr::TupleGet(tuple, idx) => {

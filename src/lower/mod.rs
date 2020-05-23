@@ -301,11 +301,19 @@ fn cc_block(
             // Body
             let mut closure_tuple_args = closure_fvs;
             closure_tuple_args.insert(0, fun_var);
-            let tuple_expr = Expr::Tuple(closure_tuple_args);
             stmts.push(Asgn {
                 lhs: name,
-                rhs: tuple_expr,
+                rhs: Expr::Tuple {
+                    len: closure_tuple_args.len(),
+                },
             });
+            for (arg_idx, arg) in closure_tuple_args.iter().enumerate() {
+                let tmp = ctx.fresh_var(RepType::Word);
+                stmts.push(Asgn {
+                    lhs: tmp,
+                    rhs: Expr::TuplePut(name, arg_idx, *arg),
+                });
+            }
             cc_block(ctx, blocks, label, stmts, sequel, *body)
         }
 
@@ -336,8 +344,15 @@ fn cc_block(
             let ret_tmp = sequel.get_ret_var(ctx, RepType::Word);
             stmts.push(Asgn {
                 lhs: ret_tmp,
-                rhs: Expr::Tuple(args),
+                rhs: Expr::Tuple { len: args.len() },
             });
+            for (arg_idx, arg) in args.iter().enumerate() {
+                let tmp = ctx.fresh_var(RepType::Word);
+                stmts.push(Asgn {
+                    lhs: tmp,
+                    rhs: Expr::TuplePut(ret_tmp, arg_idx, *arg),
+                });
+            }
             blocks.push(finish_block(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
             false
         }
