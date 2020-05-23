@@ -1,3 +1,5 @@
+use crate::ctx::VarId;
+
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Cmp {
     Equal,
@@ -6,6 +8,13 @@ pub enum Cmp {
     LessThanOrEqual,
     GreaterThan,
     GreaterThanOrEqual,
+}
+
+#[derive(Debug, Clone)]
+pub struct BinOp<A> {
+    pub op: A,
+    pub arg1: VarId,
+    pub arg2: VarId,
 }
 
 #[derive(Debug, Clone, Copy)]

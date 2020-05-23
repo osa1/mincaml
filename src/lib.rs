@@ -2,13 +2,13 @@
 
 mod anormal;
 mod cg_types;
-mod closure_convert;
 mod codegen;
 mod common;
 mod ctx;
 mod interner;
 mod lexer;
 mod locals;
+mod lower;
 mod parser;
 mod perf;
 mod type_check;
@@ -16,9 +16,9 @@ mod utils;
 mod var;
 
 use anormal::anormal;
-use closure_convert::closure_convert;
 use codegen::codegen;
 use lexer::{tokenize, Token};
+use lower::lower_pgm;
 use parser::parse;
 use type_check::type_check_pgm;
 
@@ -103,7 +103,7 @@ fn compile_expr(
     // println!("{:?}", expr);
 
     let (funs, main) = record_pass_stats(&mut pass_stats, "closure convert", || {
-        closure_convert(&mut ctx, expr)
+        lower_pgm(&mut ctx, expr)
     });
 
     if dump_cc {

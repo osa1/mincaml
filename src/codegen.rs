@@ -15,12 +15,12 @@ use cranelift_object::{ObjectBackend, ObjectBuilder, ObjectProduct};
 use fxhash::FxHashMap;
 
 use crate::cg_types::RepType;
-use crate::closure_convert as cc;
-use crate::common::{Cmp, FloatBinOp, IntBinOp};
+use crate::common::{BinOp, Cmp, FloatBinOp, IntBinOp};
 use crate::ctx::{Ctx, VarId};
+use crate::lower;
 use crate::type_check;
 
-pub fn codegen(ctx: &mut Ctx, funs: &[cc::Fun], main_id: VarId, dump: bool) -> Vec<u8> {
+pub fn codegen(ctx: &mut Ctx, funs: &[lower::Fun], main_id: VarId, dump: bool) -> Vec<u8> {
     // Module and FunctionBuilderContext are used for the whole compilation unit. Each function
     // gets its own FunctionBuilder.
     let codegen_flags: settings::Flags = settings::Flags::new(settings::builder());
@@ -165,7 +165,7 @@ fn declare_malloc(module: &mut Module<ObjectBackend>) -> FuncId {
 }
 
 fn init_module_env(
-    ctx: &mut Ctx, module: &mut Module<ObjectBackend>, funs: &[cc::Fun], main_id: VarId,
+    ctx: &mut Ctx, module: &mut Module<ObjectBackend>, funs: &[lower::Fun], main_id: VarId,
 ) -> (Env, FuncId) {
     let mut main_fun_id: Option<FuncId> = None;
     let mut env = Env::new();
@@ -182,7 +182,7 @@ fn init_module_env(
     }
 
     // Declare functions
-    for cc::Fun {
+    for lower::Fun {
         name,
         args,
         return_type,
@@ -222,9 +222,9 @@ fn init_module_env(
 
 fn codegen_fun(
     ctx: &mut Ctx, module: &mut Module<ObjectBackend>, global_env: &Env, malloc_id: FuncId,
-    fun: &cc::Fun, fn_builder_ctx: &mut FunctionBuilderContext, dump: bool,
+    fun: &lower::Fun, fn_builder_ctx: &mut FunctionBuilderContext, dump: bool,
 ) {
-    let cc::Fun {
+    let lower::Fun {
         name,
         args,
         blocks,
@@ -255,7 +255,7 @@ fn codegen_fun(
 
     let mut builder: FunctionBuilder = FunctionBuilder::new(&mut context.func, fn_builder_ctx);
 
-    let mut label_to_block: FxHashMap<cc::Label, Block> = Default::default();
+    let mut label_to_block: FxHashMap<lower::Label, Block> = Default::default();
 
     for block in blocks {
         let cl_block = builder.create_block();
@@ -273,7 +273,7 @@ fn codegen_fun(
         env.add_arg(*arg, val);
     }
 
-    for cc::Block { label, stmts, exit } in blocks {
+    for lower::Block { label, stmts, exit } in blocks {
         let mut cl_block = *label_to_block.get(label).unwrap();
         builder.switch_to_block(cl_block);
 
@@ -282,7 +282,7 @@ fn codegen_fun(
             // asgn.pp(&ctx, &mut s);
             // println!("stmt: {}", s);
 
-            let cc::Asgn { lhs, rhs } = asgn;
+            let lower::Asgn { lhs, rhs } = asgn;
 
             let (block, val) =
                 codegen_expr(ctx, &module, cl_block, &mut builder, &mut env, malloc, rhs);
@@ -295,11 +295,11 @@ fn codegen_fun(
         }
 
         match exit {
-            cc::Exit::Return(var) => {
+            lower::Exit::Return(var) => {
                 let var = env.use_var(ctx, &module, &mut builder, *var);
                 builder.ins().return_(&[var]);
             }
-            cc::Exit::Branch {
+            lower::Exit::Branch {
                 v1,
                 v2,
                 cond,
@@ -331,7 +331,7 @@ fn codegen_fun(
 
                 builder.ins().jump(else_block, &[]);
             }
-            cc::Exit::Jump(label) => {
+            lower::Exit::Jump(label) => {
                 let cl_block = *label_to_block.get(label).unwrap();
                 // Not sure about the arguments here...
                 builder.ins().jump(cl_block, &[]);
@@ -363,15 +363,17 @@ fn codegen_fun(
 
 fn codegen_expr(
     ctx: &mut Ctx, module: &Module<ObjectBackend>, block: Block, builder: &mut FunctionBuilder,
-    env: &mut Env, malloc: FuncRef, rhs: &cc::Expr,
+    env: &mut Env, malloc: FuncRef, rhs: &lower::Expr,
 ) -> (Block, Value) {
     match rhs {
-        cc::Expr::Atom(cc::Atom::Unit) => (block, builder.ins().iconst(I64, 0)),
-        cc::Expr::Atom(cc::Atom::Int(i)) => (block, builder.ins().iconst(I64, *i)),
-        cc::Expr::Atom(cc::Atom::Float(f)) => (block, builder.ins().f64const(*f)),
-        cc::Expr::Atom(cc::Atom::Var(var)) => (block, env.use_var(ctx, module, builder, *var)),
+        lower::Expr::Atom(lower::Atom::Unit) => (block, builder.ins().iconst(I64, 0)),
+        lower::Expr::Atom(lower::Atom::Int(i)) => (block, builder.ins().iconst(I64, *i)),
+        lower::Expr::Atom(lower::Atom::Float(f)) => (block, builder.ins().f64const(*f)),
+        lower::Expr::Atom(lower::Atom::Var(var)) => {
+            (block, env.use_var(ctx, module, builder, *var))
+        }
 
-        cc::Expr::IBinOp(cc::BinOp { op, arg1, arg2 }) => {
+        lower::Expr::IBinOp(BinOp { op, arg1, arg2 }) => {
             let arg1 = env.use_var(ctx, module, builder, *arg1);
             let arg2 = env.use_var(ctx, module, builder, *arg2);
             let val = match op {
@@ -381,7 +383,7 @@ fn codegen_expr(
             (block, val)
         }
 
-        cc::Expr::FBinOp(cc::BinOp { op, arg1, arg2 }) => {
+        lower::Expr::FBinOp(BinOp { op, arg1, arg2 }) => {
             let arg1 = env.use_var(ctx, module, builder, *arg1);
             let arg2 = env.use_var(ctx, module, builder, *arg2);
             let val = match op {
@@ -393,17 +395,17 @@ fn codegen_expr(
             (block, val)
         }
 
-        cc::Expr::Neg(var) => {
+        lower::Expr::Neg(var) => {
             let arg = env.use_var(ctx, module, builder, *var);
             (block, builder.ins().ineg(arg))
         }
 
-        cc::Expr::FNeg(var) => {
+        lower::Expr::FNeg(var) => {
             let arg = env.use_var(ctx, module, builder, *var);
             (block, builder.ins().fneg(arg))
         }
 
-        cc::Expr::App(fun, args, ret_type) => {
+        lower::Expr::App(fun, args, ret_type) => {
             let params: Vec<AbiParam> = args
                 .iter()
                 .map(|arg| {
@@ -434,7 +436,7 @@ fn codegen_expr(
             (block, builder.inst_results(call)[0])
         }
 
-        cc::Expr::Tuple(args) => {
+        lower::Expr::Tuple(args) => {
             let malloc_arg = builder
                 .ins()
                 .iconst(I64, args.len() as i64 * i64::from(WORD_SIZE));
@@ -452,7 +454,7 @@ fn codegen_expr(
             (block, tuple)
         }
 
-        cc::Expr::TupleGet(tuple, idx) => {
+        lower::Expr::TupleGet(tuple, idx) => {
             let tuple_type = ctx.var_type(*tuple);
             let elem_type = match &*tuple_type {
                 type_check::Type::Tuple(args) => rep_type_abi(RepType::from(&args[*idx])),
@@ -483,14 +485,14 @@ fn codegen_expr(
             (block, val)
         }
 
-        cc::Expr::ArrayAlloc { len, elem } => {
+        lower::Expr::ArrayAlloc { len, elem } => {
             // Allocate array, move elements to array locations in a loop. Why lower it this much
             // here? Reasons:
             //
-            // - I don't want to introduce mutable variables in cc or anormal.
+            // - I don't want to introduce mutable variables in lower or anormal.
             //
             // - I want to generate code as early as possible in compilation and will probably
-            //   merge anormal and cc at some point and do more work here.
+            //   merge anormal and lower at some point and do more work here.
             //
             // - I want to learn more about cranelift, especially how to deal with mutable
             //   variables and how to introduce loops.
@@ -547,7 +549,7 @@ fn codegen_expr(
             (cont_block, array)
         }
 
-        cc::Expr::ArrayGet(array, idx) => {
+        lower::Expr::ArrayGet(array, idx) => {
             let var_type = ctx.var_type(*array);
             let elem_type = match &*var_type {
                 type_check::Type::Array(elem_type) => rep_type_abi(RepType::from(&**elem_type)),
@@ -566,7 +568,7 @@ fn codegen_expr(
             )
         }
 
-        cc::Expr::ArrayPut(array, idx, val) => {
+        lower::Expr::ArrayPut(array, idx, val) => {
             let array = env.use_var(ctx, module, builder, *array);
             let idx = env.use_var(ctx, module, builder, *idx);
             let val = env.use_var(ctx, module, builder, *val);

@@ -1,6 +1,6 @@
 use crate::cg_types::RepType;
-use crate::closure_convert::Label;
 use crate::interner::{InternId, InternTable};
+use crate::lower::Label;
 use crate::type_check::{TyVar, Type};
 use crate::var::{CompilerPhase, Uniq, Var};
 

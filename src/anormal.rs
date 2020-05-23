@@ -44,13 +44,6 @@ pub enum Expr {
     ArrayPut(VarId, VarId, VarId),
 }
 
-#[derive(Debug, Clone)]
-pub struct BinOp<A> {
-    pub op: A,
-    pub arg1: VarId,
-    pub arg2: VarId,
-}
-
 enum TmpLet {
     TmpLet {
         id: VarId,

@@ -83,9 +83,9 @@ notes for readers:
 - Next pass is `anormal` (`src/anormal.rs`), which implement A-normalization.
   Nothing interesting here.
 
-- Next pass is closure conversion (`src/closure_convert.rs`). In addition to
-  lowering closures to tuples this pass turns the program into a CFG with
-  functions, basic blocks, assignment statements, and branching.
+- Next pass is lowering (`src/lower/mod.rs`). In addition to lowering closures
+  to tuples this pass turns the program into a CFG with functions, basic blocks,
+  assignment statements, and branching.
 
 - Final pass is code generator, which generates native code using cranelift.
   Only tested on x86\_64 Linux.

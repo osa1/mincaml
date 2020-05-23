@@ -1,11 +1,15 @@
+mod print;
+mod types;
+
 use crate::anormal;
-pub use crate::anormal::BinOp;
 use crate::cg_types::RepType;
-use crate::common::*;
+use crate::common::BinOp;
 use crate::ctx::{Ctx, VarId};
 use crate::type_check::Type;
 use crate::var::CompilerPhase::ClosureConvert;
-use crate::var::Uniq;
+
+pub use print::*;
+pub use types::*;
 
 // Used when debugging
 #[allow(unused_imports)]
@@ -13,34 +17,8 @@ use crate::utils;
 
 use fxhash::FxHashSet;
 
-pub type Label = Uniq; // FIXME how to represent this best?
-
-// Functions
-#[derive(Debug)]
-pub struct Fun {
-    pub name: VarId,
-    pub args: Vec<VarId>,
-    pub blocks: Vec<Block>,
-    pub return_type: RepType,
-}
-
-// Basic blocks
-#[derive(Debug)]
-pub struct Block {
-    pub label: Label,
-    pub stmts: Vec<Asgn>,
-    pub exit: Exit,
-}
-
-// Assignments
-#[derive(Debug)]
-pub struct Asgn {
-    pub lhs: VarId,
-    pub rhs: Expr,
-}
-
 #[derive(Debug, Clone)]
-pub enum BlockSequel {
+enum BlockSequel {
     Return,
     // Assign return value to this variable and jump to the label. Used when lowering let bindings.
     Asgn(VarId, Label),
@@ -56,102 +34,54 @@ impl BlockSequel {
     }
 }
 
-impl Block {
-    fn new(
-        ctx: &mut CcCtx, label: Label, mut stmts: Vec<Asgn>, sequel: BlockSequel, value: Atom,
-    ) -> Block {
-        let exit = match sequel {
-            BlockSequel::Return => match value {
-                Atom::Unit => {
-                    let tmp = ctx.fresh_var(RepType::Word);
-                    stmts.push(Asgn {
-                        lhs: tmp,
-                        rhs: Expr::Atom(Atom::Unit),
-                    });
-                    Exit::Return(tmp)
-                }
-                Atom::Int(i) => {
-                    let tmp = ctx.fresh_var(RepType::Word);
-                    stmts.push(Asgn {
-                        lhs: tmp,
-                        rhs: Expr::Atom(Atom::Int(i)),
-                    });
-                    Exit::Return(tmp)
-                }
-                Atom::Float(f) => {
-                    let tmp = ctx.fresh_var(RepType::Float);
-                    stmts.push(Asgn {
-                        lhs: tmp,
-                        rhs: Expr::Atom(Atom::Float(f)),
-                    });
-                    Exit::Return(tmp)
-                }
-                Atom::Var(var) => Exit::Return(var),
-            },
-            BlockSequel::Asgn(lhs, label) => {
-                match value {
-                    // TODO: Should we handle this case in the call site? Or make it impossible to
-                    // happen somehow?
-                    Atom::Var(rhs) if lhs == rhs => {}
-                    _ => {
-                        stmts.push(Asgn {
-                            lhs,
-                            rhs: Expr::Atom(value),
-                        });
-                    }
-                }
-                Exit::Jump(label)
+fn finish_block(
+    ctx: &mut CcCtx, label: Label, mut stmts: Vec<Asgn>, sequel: BlockSequel, value: Atom,
+) -> Block {
+    let exit = match sequel {
+        BlockSequel::Return => match value {
+            Atom::Unit => {
+                let tmp = ctx.fresh_var(RepType::Word);
+                stmts.push(Asgn {
+                    lhs: tmp,
+                    rhs: Expr::Atom(Atom::Unit),
+                });
+                Exit::Return(tmp)
             }
-        };
+            Atom::Int(i) => {
+                let tmp = ctx.fresh_var(RepType::Word);
+                stmts.push(Asgn {
+                    lhs: tmp,
+                    rhs: Expr::Atom(Atom::Int(i)),
+                });
+                Exit::Return(tmp)
+            }
+            Atom::Float(f) => {
+                let tmp = ctx.fresh_var(RepType::Float);
+                stmts.push(Asgn {
+                    lhs: tmp,
+                    rhs: Expr::Atom(Atom::Float(f)),
+                });
+                Exit::Return(tmp)
+            }
+            Atom::Var(var) => Exit::Return(var),
+        },
+        BlockSequel::Asgn(lhs, label) => {
+            match value {
+                // TODO: Should we handle this case in the call site? Or make it impossible to
+                // happen somehow?
+                Atom::Var(rhs) if lhs == rhs => {}
+                _ => {
+                    stmts.push(Asgn {
+                        lhs,
+                        rhs: Expr::Atom(value),
+                    });
+                }
+            }
+            Exit::Jump(label)
+        }
+    };
 
-        Block { label, stmts, exit }
-    }
-}
-
-// Exit nodes of basic blocks
-#[derive(Debug, PartialEq)]
-pub enum Exit {
-    // We always return a variable to keep things simpler in instruction selection: the 'ret'
-    // instruction doesn't take any arguments, so we need a temporary for the return value in all
-    // cases. 'None' is for returning unit.
-    Return(VarId),
-    Branch {
-        v1: VarId,
-        v2: VarId,
-        cond: Cmp,
-        then_label: Label,
-        else_label: Label,
-    },
-    Jump(Label),
-}
-
-// Assignment right-hand sides
-#[derive(Debug)]
-pub enum Expr {
-    Atom(Atom),
-    IBinOp(BinOp<IntBinOp>),
-    FBinOp(BinOp<FloatBinOp>),
-    Neg(VarId),
-    FNeg(VarId),
-    App(VarId, Vec<VarId>, RepType),
-    // Tuple allocation
-    Tuple(Vec<VarId>), // TODO: Lower this more?
-    // Tuple field read
-    TupleGet(VarId, usize),
-    // Array allocation
-    ArrayAlloc { len: VarId, elem: VarId },
-    // Array field read
-    ArrayGet(VarId, VarId),
-    // Array field write
-    ArrayPut(VarId, VarId, VarId),
-}
-
-#[derive(Debug, PartialEq)]
-pub enum Atom {
-    Unit,
-    Int(i64),
-    Float(f64),
-    Var(VarId),
+    Block { label, stmts, exit }
 }
 
 // Closure conversion state
@@ -171,7 +101,7 @@ impl<'ctx> CcCtx<'ctx> {
     }
 }
 
-pub fn closure_convert(ctx: &mut Ctx, expr: anormal::Expr) -> (Vec<Fun>, VarId) {
+pub fn lower_pgm(ctx: &mut Ctx, expr: anormal::Expr) -> (Vec<Fun>, VarId) {
     let mut cc_ctx = CcCtx { ctx, funs: vec![] };
 
     let main_name = cc_ctx.fresh_var(RepType::Word);
@@ -203,17 +133,17 @@ fn cc_block(
 ) -> bool {
     match expr {
         anormal::Expr::Unit => {
-            blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Unit));
+            blocks.push(finish_block(ctx, label, stmts, sequel, Atom::Unit));
             false
         }
 
         anormal::Expr::Int(i) => {
-            blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Int(i)));
+            blocks.push(finish_block(ctx, label, stmts, sequel, Atom::Int(i)));
             false
         }
 
         anormal::Expr::Float(f) => {
-            blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Float(f)));
+            blocks.push(finish_block(ctx, label, stmts, sequel, Atom::Float(f)));
             false
         }
 
@@ -223,7 +153,7 @@ fn cc_block(
                 lhs: tmp,
                 rhs: Expr::Neg(var),
             });
-            blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Var(tmp)));
+            blocks.push(finish_block(ctx, label, stmts, sequel, Atom::Var(tmp)));
             false
         }
 
@@ -233,7 +163,7 @@ fn cc_block(
                 lhs: tmp,
                 rhs: Expr::FNeg(var),
             });
-            blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Var(tmp)));
+            blocks.push(finish_block(ctx, label, stmts, sequel, Atom::Var(tmp)));
             false
         }
 
@@ -243,7 +173,7 @@ fn cc_block(
                 lhs: tmp,
                 rhs: Expr::IBinOp(BinOp { op, arg1, arg2 }),
             });
-            blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Var(tmp)));
+            blocks.push(finish_block(ctx, label, stmts, sequel, Atom::Var(tmp)));
             false
         }
 
@@ -253,7 +183,7 @@ fn cc_block(
                 lhs: tmp,
                 rhs: Expr::FBinOp(BinOp { op, arg1, arg2 }),
             });
-            blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Var(tmp)));
+            blocks.push(finish_block(ctx, label, stmts, sequel, Atom::Var(tmp)));
             false
         }
 
@@ -277,7 +207,7 @@ fn cc_block(
         }
 
         anormal::Expr::Var(var) => {
-            blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Var(var)));
+            blocks.push(finish_block(ctx, label, stmts, sequel, Atom::Var(var)));
             false
         }
 
@@ -398,7 +328,7 @@ fn cc_block(
                 lhs: ret_tmp,
                 rhs: Expr::App(fun_tmp, args, fun_ret_ty),
             });
-            blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
+            blocks.push(finish_block(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
             false
         }
 
@@ -408,7 +338,7 @@ fn cc_block(
                 lhs: ret_tmp,
                 rhs: Expr::Tuple(args),
             });
-            blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
+            blocks.push(finish_block(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
             false
         }
 
@@ -425,7 +355,7 @@ fn cc_block(
                 lhs: ret_tmp,
                 rhs: Expr::TupleGet(tuple, idx),
             });
-            blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
+            blocks.push(finish_block(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
             false
         }
 
@@ -435,7 +365,7 @@ fn cc_block(
                 lhs: ret_tmp,
                 rhs: Expr::ArrayAlloc { len, elem },
             });
-            blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
+            blocks.push(finish_block(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
             false
         }
 
@@ -452,7 +382,7 @@ fn cc_block(
                 lhs: ret_tmp,
                 rhs: Expr::ArrayGet(array, idx),
             });
-            blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
+            blocks.push(finish_block(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
             false
         }
 
@@ -469,203 +399,10 @@ fn cc_block(
                 lhs: ret_tmp,
                 rhs: Expr::ArrayPut(array, idx, val),
             });
-            blocks.push(Block::new(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
+            blocks.push(finish_block(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
             false
         }
     }
-}
-
-use std::fmt;
-
-fn print_comma_sep<A>(
-    ctx: &Ctx, stuffs: &mut dyn Iterator<Item = &A>,
-    show_stuff: fn(&A, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result, w: &mut dyn fmt::Write,
-) -> Result<(), fmt::Error> {
-    let mut add_comma = false;
-    for stuff in stuffs {
-        if add_comma {
-            w.write_str(", ")?;
-        } else {
-            add_comma = true;
-        }
-        show_stuff(stuff, ctx, w)?;
-    }
-    Ok(())
-}
-
-impl Fun {
-    pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result {
-        let Fun {
-            name,
-            args,
-            blocks,
-            return_type,
-        } = self;
-
-        w.write_str("function ")?;
-        pp_id(ctx, *name, w)?;
-        w.write_str("(")?;
-        print_comma_sep(ctx, &mut args.iter(), pp_id_ref, w)?;
-        writeln!(w, ") -> {}", return_type)?;
-
-        for block in blocks {
-            block.pp(ctx, w)?;
-        }
-        writeln!(w)
-    }
-}
-
-impl Block {
-    pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> Result<(), fmt::Error> {
-        let Block { label, stmts, exit } = self;
-        writeln!(w, "{}:", label)?;
-        for asgn in stmts {
-            w.write_str("    ")?;
-            asgn.pp(ctx, w)?;
-            writeln!(w)?;
-        }
-        w.write_str("    ")?;
-        exit.pp(ctx, w)?;
-        writeln!(w)
-    }
-}
-
-impl Exit {
-    pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result {
-        use Exit::*;
-        match self {
-            Return(var) => {
-                w.write_str("return ")?;
-                pp_id(ctx, *var, w)
-            }
-            Branch {
-                v1,
-                v2,
-                cond,
-                then_label,
-                else_label,
-            } => {
-                w.write_str("if ")?;
-                pp_id(ctx, *v1, w)?;
-                write!(w, " {} ", cond)?;
-                pp_id(ctx, *v2, w)?;
-                write!(w, " then {} else {}", then_label, else_label)
-            }
-            Jump(lbl) => write!(w, "jump {}", lbl),
-        }
-    }
-}
-
-impl Asgn {
-    pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result {
-        let Asgn { lhs, rhs } = self;
-        pp_id(ctx, *lhs, w)?;
-        w.write_str(": ")?;
-        match ctx.var_type_(*lhs) {
-            Some(var_type) => {
-                var_type.pp(w)?;
-            }
-            None => {
-                w.write_str("???")?;
-            }
-        }
-        w.write_str(" = ")?;
-        rhs.pp(ctx, w)
-    }
-}
-
-impl Expr {
-    pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result {
-        use Expr::*;
-        match self {
-            Atom(atom) => atom.pp(ctx, w),
-            IBinOp(BinOp { op, arg1, arg2 }) => {
-                pp_id(ctx, *arg1, w)?;
-                let op_str = match op {
-                    IntBinOp::Add => " + ",
-                    IntBinOp::Sub => " - ",
-                };
-                write!(w, "{}", op_str)?;
-                pp_id(ctx, *arg2, w)
-            }
-            FBinOp(BinOp { op, arg1, arg2 }) => {
-                pp_id(ctx, *arg1, w)?;
-                let op_str = match op {
-                    FloatBinOp::Add => " +. ",
-                    FloatBinOp::Sub => " -. ",
-                    FloatBinOp::Mul => " *. ",
-                    FloatBinOp::Div => " /. ",
-                };
-                write!(w, "{}", op_str)?;
-                pp_id(ctx, *arg2, w)
-            }
-            Neg(var) => {
-                w.write_str("-")?;
-                pp_id(ctx, *var, w)
-            }
-            FNeg(var) => {
-                w.write_str("-.")?;
-                pp_id(ctx, *var, w)
-            }
-            App(fun, args, _) => {
-                pp_id(ctx, *fun, w)?;
-                w.write_str("(")?;
-                print_comma_sep(ctx, &mut args.iter(), pp_id_ref, w)?;
-                w.write_str(")")
-            }
-            Tuple(args) => {
-                w.write_str("(")?;
-                print_comma_sep(ctx, &mut args.iter(), pp_id_ref, w)?;
-                w.write_str(")")
-            }
-            TupleGet(tuple, idx) => {
-                pp_id(ctx, *tuple, w)?;
-                write!(w, ".{}", idx)
-            }
-            ArrayAlloc { len, elem } => {
-                // Printing in Rust syntax here?
-                w.write_str("[")?;
-                pp_id(ctx, *elem, w)?;
-                w.write_str("; ")?;
-                pp_id(ctx, *len, w)?;
-                w.write_str("]")
-            }
-            ArrayGet(array, idx) => {
-                pp_id(ctx, *array, w)?;
-                w.write_str(".(")?;
-                pp_id(ctx, *idx, w)?;
-                w.write_str(")")
-            }
-            ArrayPut(array, idx, val) => {
-                pp_id(ctx, *array, w)?;
-                w.write_str(".(")?;
-                pp_id(ctx, *idx, w)?;
-                w.write_str(") <- ")?;
-                pp_id(ctx, *val, w)
-            }
-        }
-    }
-}
-
-impl Atom {
-    pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result {
-        use Atom::*;
-        match self {
-            Unit => w.write_str("()"),
-            Int(i) => write!(w, "{}", i),
-            // Use debug format in floats, otherwise "1.0" is printed as "1"
-            Float(f) => write!(w, "{:?}", f),
-            Var(var) => pp_id(ctx, *var, w),
-        }
-    }
-}
-
-fn pp_id(ctx: &Ctx, id: VarId, w: &mut dyn fmt::Write) -> fmt::Result {
-    write!(w, "{}", ctx.get_var(id))
-}
-
-fn pp_id_ref(id: &VarId, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result {
-    write!(w, "{}", ctx.get_var(*id))
 }
 
 fn fvs(ctx: &Ctx, e: &anormal::Expr, acc: &mut FxHashSet<VarId>) {
