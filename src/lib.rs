@@ -5,6 +5,7 @@ mod cg_types;
 mod codegen;
 mod common;
 mod ctx;
+mod entity;
 mod interner;
 mod lexer;
 mod locals;
