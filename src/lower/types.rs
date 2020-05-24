@@ -1,23 +1,49 @@
 use crate::cg_types::RepType;
 use crate::common::{BinOp, Cmp, FloatBinOp, IntBinOp};
 use crate::ctx::VarId;
-use crate::var::Uniq;
 
-pub type Label = Uniq; // FIXME how to represent this best?
+use cranelift_entity::{entity_impl, PrimaryMap};
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct BlockIdx(u32);
+entity_impl!(BlockIdx, "b");
 
 // Functions
 #[derive(Debug)]
 pub struct Fun {
     pub name: VarId,
     pub args: Vec<VarId>,
-    pub blocks: Vec<Block>,
+    pub blocks: PrimaryMap<BlockIdx, BlockData>,
     pub return_type: RepType,
+}
+
+#[derive(Debug)]
+pub enum BlockData {
+    NA,
+    Block(Block),
+}
+
+impl BlockData {
+    #[allow(non_snake_case)]
+    pub fn is_NA(&self) -> bool {
+        match self {
+            BlockData::NA => true,
+            BlockData::Block(_) => false,
+        }
+    }
+
+    pub fn get_block(&self) -> Option<&Block> {
+        match self {
+            BlockData::NA => None,
+            BlockData::Block(block) => Some(block),
+        }
+    }
 }
 
 // Basic blocks
 #[derive(Debug)]
 pub struct Block {
-    pub label: Label,
+    pub idx: BlockIdx,
     pub comment: Option<String>,
     pub stmts: Vec<Stmt>,
     pub exit: Exit,
@@ -75,8 +101,8 @@ pub enum Exit {
         v1: VarId,
         v2: VarId,
         cond: Cmp,
-        then_label: Label,
-        else_label: Label,
+        then_block: BlockIdx,
+        else_block: BlockIdx,
     },
-    Jump(Label),
+    Jump(BlockIdx),
 }
