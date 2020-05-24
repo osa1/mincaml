@@ -511,7 +511,7 @@ fn cc_block(
                 sequel,
                 Atom::Var(array_tmp),
             ));
-            true
+            false
         }
 
         anormal::Expr::ArrayGet(array, idx) => {
