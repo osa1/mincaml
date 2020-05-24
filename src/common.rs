@@ -29,6 +29,6 @@ pub enum FloatBinOp {
 pub enum IntBinOp {
     Add,
     Sub,
-    Mul,
-    Div,
+    // Mul,
+    // Div,
 }

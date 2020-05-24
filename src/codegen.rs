@@ -273,7 +273,13 @@ fn codegen_fun(
         env.add_arg(*arg, val);
     }
 
-    for lower::Block { label, stmts, exit } in blocks {
+    for lower::Block {
+        label,
+        comment: _,
+        stmts,
+        exit,
+    } in blocks
+    {
         let mut cl_block = *label_to_block.get(label).unwrap();
         builder.switch_to_block(cl_block);
 
@@ -313,7 +319,7 @@ fn codegen_fun(
                 then_label,
                 else_label,
             } => {
-                let comp_type = RepType::from(&*ctx.var_type(*v1));
+                let comp_type = ctx.var_rep_type(*v1);
                 let v1 = env.use_var(ctx, &module, &mut builder, *v1);
                 let v2 = env.use_var(ctx, &module, &mut builder, *v2);
 
@@ -344,7 +350,10 @@ fn codegen_fun(
                 builder.ins().jump(cl_block, &[]);
             }
         }
+    }
 
+    for lower::Block { label, .. } in blocks {
+        let cl_block = *label_to_block.get(label).unwrap();
         builder.seal_block(cl_block);
     }
 
@@ -386,8 +395,8 @@ fn codegen_expr(
             let val = match op {
                 IntBinOp::Add => builder.ins().iadd(arg1, arg2),
                 IntBinOp::Sub => builder.ins().isub(arg1, arg2),
-                IntBinOp::Mul => builder.ins().imul(arg1, arg2),
-                IntBinOp::Div => builder.ins().sdiv(arg1, arg2),
+                // IntBinOp::Mul => builder.ins().imul(arg1, arg2),
+                // IntBinOp::Div => builder.ins().sdiv(arg1, arg2),
             };
             (block, Some(val))
         }
@@ -497,68 +506,12 @@ fn codegen_expr(
             (block, Some(val))
         }
 
-        lower::Expr::ArrayAlloc { len, elem } => {
-            // Allocate array, move elements to array locations in a loop. Why lower it this much
-            // here? Reasons:
-            //
-            // - I don't want to introduce mutable variables in lower or anormal.
-            //
-            // - I want to generate code as early as possible in compilation and will probably
-            //   merge anormal and lower at some point and do more work here.
-            //
-            // - I want to learn more about cranelift, especially how to deal with mutable
-            //   variables and how to introduce loops.
-            //
-            // NB. update varibles with `def_var`
-
+        lower::Expr::ArrayAlloc { len } => {
             let len_val = env.use_var(ctx, module, builder, *len);
             let word_size = builder.ins().iconst(I64, i64::from(WORD_SIZE));
             let size_val = builder.ins().imul(len_val, word_size);
             let malloc_call = builder.ins().call(malloc, &[size_val]);
-            let array = builder.inst_results(malloc_call)[0];
-
-            let elem_val = env.use_var(ctx, module, builder, *elem);
-
-            let array_bound_uniq = ctx.fresh_uniq();
-            let array_bound_var = Variable::new(array_bound_uniq.0.get() as usize);
-            builder.declare_var(array_bound_var, I64);
-            let array_bound_val = builder.ins().iadd(array, size_val);
-            builder.def_var(array_bound_var, array_bound_val);
-
-            let loop_block = builder.create_block();
-            let loop_doit_block = builder.create_block(); // block after loop condition (loop body)
-            let cont_block = builder.create_block();
-
-            // Introduce a variable for current index
-            let idx_uniq = ctx.fresh_uniq();
-            let idx_var = Variable::new(idx_uniq.0.get() as usize);
-            builder.declare_var(idx_var, I64);
-            builder.def_var(idx_var, array);
-            builder.ins().jump(loop_block, &[]);
-            builder.seal_block(block);
-
-            builder.switch_to_block(loop_block);
-            // if loc == array_bound { jmp cont; }
-            let idx_val = builder.use_var(idx_var);
-            builder
-                .ins()
-                .br_icmp(IntCC::Equal, idx_val, array_bound_val, cont_block, &[]);
-            builder.ins().fallthrough(loop_doit_block, &[]);
-
-            builder.switch_to_block(loop_doit_block);
-            // If not, then move 'elem' to the location, bump index, loop
-            builder.ins().store(MemFlags::new(), elem_val, idx_val, 0);
-            let word_size = builder.ins().iconst(I64, i64::from(WORD_SIZE));
-            let next_idx = builder.ins().iadd(idx_val, word_size);
-            builder.def_var(idx_var, next_idx);
-            builder.ins().jump(loop_block, &[]);
-
-            builder.seal_block(loop_block);
-            builder.seal_block(loop_doit_block);
-
-            builder.switch_to_block(cont_block);
-
-            (cont_block, Some(array))
+            (block, Some(builder.inst_results(malloc_call)[0]))
         }
 
         lower::Expr::ArrayGet(array, idx) => {

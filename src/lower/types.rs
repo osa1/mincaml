@@ -18,6 +18,7 @@ pub struct Fun {
 #[derive(Debug)]
 pub struct Block {
     pub label: Label,
+    pub comment: Option<String>,
     pub stmts: Vec<Stmt>,
     pub exit: Exit,
 }
@@ -51,7 +52,7 @@ pub enum Expr {
     // Tuple field write
     TuplePut(VarId, usize, VarId),
     // Array allocation
-    ArrayAlloc { len: VarId, elem: VarId }, // TODO: Lower this more
+    ArrayAlloc { len: VarId }, // TODO: Lower this more
     // Array field read
     ArrayGet(VarId, VarId),
     // Array field write

@@ -45,8 +45,21 @@ impl Fun {
 
 impl Block {
     pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> Result<(), fmt::Error> {
-        let Block { label, stmts, exit } = self;
-        writeln!(w, "{}:", label)?;
+        let Block {
+            label,
+            comment,
+            stmts,
+            exit,
+        } = self;
+        write!(w, "{}:", label)?;
+        match comment {
+            None => {
+                writeln!(w)?;
+            }
+            Some(comment) => {
+                writeln!(w, " // {}", comment)?;
+            }
+        }
         for asgn in stmts {
             w.write_str("    ")?;
             asgn.pp(ctx, w)?;
@@ -121,8 +134,8 @@ impl Expr {
                 let op_str = match op {
                     IntBinOp::Add => " + ",
                     IntBinOp::Sub => " - ",
-                    IntBinOp::Mul => " * ",
-                    IntBinOp::Div => " / ",
+                    // IntBinOp::Mul => " * ",
+                    // IntBinOp::Div => " / ",
                 };
                 write!(w, "{}", op_str)?;
                 pp_id(ctx, *arg2, w)
@@ -152,7 +165,7 @@ impl Expr {
                 print_comma_sep(ctx, &mut args.iter(), pp_id_ref, w)?;
                 w.write_str(")")
             }
-            Tuple { len } => write!(w, "alloc_tuple(len={}", len),
+            Tuple { len } => write!(w, "alloc_tuple(len={})", len),
             TuplePut(tuple, idx, val) => {
                 pp_id(ctx, *tuple, w)?;
                 write!(w, ".{{{}}} <- ", idx)?;
@@ -162,13 +175,10 @@ impl Expr {
                 pp_id(ctx, *tuple, w)?;
                 write!(w, ".{}", idx)
             }
-            ArrayAlloc { len, elem } => {
-                // Printing in Rust syntax here?
-                w.write_str("[")?;
-                pp_id(ctx, *elem, w)?;
-                w.write_str("; ")?;
+            ArrayAlloc { len } => {
+                w.write_str("alloc_array(len=")?;
                 pp_id(ctx, *len, w)?;
-                w.write_str("]")
+                w.write_str(")")
             }
             ArrayGet(array, idx) => {
                 pp_id(ctx, *array, w)?;

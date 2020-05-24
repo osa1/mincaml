@@ -3,7 +3,7 @@ mod types;
 
 use crate::anormal;
 use crate::cg_types::RepType;
-use crate::common::BinOp;
+use crate::common::{BinOp, Cmp, IntBinOp};
 use crate::ctx::{Ctx, VarId};
 use crate::type_check::Type;
 use crate::var::CompilerPhase::ClosureConvert;
@@ -35,7 +35,8 @@ impl BlockSequel {
 }
 
 fn finish_block(
-    ctx: &mut CcCtx, label: Label, mut stmts: Vec<Stmt>, sequel: BlockSequel, value: Atom,
+    ctx: &mut CcCtx, label: Label, comment: Option<String>, mut stmts: Vec<Stmt>,
+    sequel: BlockSequel, value: Atom,
 ) -> Block {
     let exit = match sequel {
         BlockSequel::Return => match value {
@@ -81,7 +82,12 @@ fn finish_block(
         }
     };
 
-    Block { label, stmts, exit }
+    Block {
+        label,
+        comment,
+        stmts,
+        exit,
+    }
 }
 
 // Closure conversion state
@@ -133,17 +139,24 @@ fn cc_block(
 ) -> bool {
     match expr {
         anormal::Expr::Unit => {
-            blocks.push(finish_block(ctx, label, stmts, sequel, Atom::Unit));
+            blocks.push(finish_block(ctx, label, None, stmts, sequel, Atom::Unit));
             false
         }
 
         anormal::Expr::Int(i) => {
-            blocks.push(finish_block(ctx, label, stmts, sequel, Atom::Int(i)));
+            blocks.push(finish_block(ctx, label, None, stmts, sequel, Atom::Int(i)));
             false
         }
 
         anormal::Expr::Float(f) => {
-            blocks.push(finish_block(ctx, label, stmts, sequel, Atom::Float(f)));
+            blocks.push(finish_block(
+                ctx,
+                label,
+                None,
+                stmts,
+                sequel,
+                Atom::Float(f),
+            ));
             false
         }
 
@@ -153,7 +166,14 @@ fn cc_block(
                 lhs: tmp,
                 rhs: Expr::Neg(var),
             }));
-            blocks.push(finish_block(ctx, label, stmts, sequel, Atom::Var(tmp)));
+            blocks.push(finish_block(
+                ctx,
+                label,
+                None,
+                stmts,
+                sequel,
+                Atom::Var(tmp),
+            ));
             false
         }
 
@@ -163,7 +183,14 @@ fn cc_block(
                 lhs: tmp,
                 rhs: Expr::FNeg(var),
             }));
-            blocks.push(finish_block(ctx, label, stmts, sequel, Atom::Var(tmp)));
+            blocks.push(finish_block(
+                ctx,
+                label,
+                None,
+                stmts,
+                sequel,
+                Atom::Var(tmp),
+            ));
             false
         }
 
@@ -173,7 +200,14 @@ fn cc_block(
                 lhs: tmp,
                 rhs: Expr::IBinOp(BinOp { op, arg1, arg2 }),
             }));
-            blocks.push(finish_block(ctx, label, stmts, sequel, Atom::Var(tmp)));
+            blocks.push(finish_block(
+                ctx,
+                label,
+                None,
+                stmts,
+                sequel,
+                Atom::Var(tmp),
+            ));
             false
         }
 
@@ -183,7 +217,14 @@ fn cc_block(
                 lhs: tmp,
                 rhs: Expr::FBinOp(BinOp { op, arg1, arg2 }),
             }));
-            blocks.push(finish_block(ctx, label, stmts, sequel, Atom::Var(tmp)));
+            blocks.push(finish_block(
+                ctx,
+                label,
+                None,
+                stmts,
+                sequel,
+                Atom::Var(tmp),
+            ));
             false
         }
 
@@ -192,6 +233,7 @@ fn cc_block(
             let else_label = ctx.fresh_label();
             blocks.push(Block {
                 label,
+                comment: None,
                 stmts,
                 exit: Exit::Branch {
                     v1,
@@ -207,7 +249,14 @@ fn cc_block(
         }
 
         anormal::Expr::Var(var) => {
-            blocks.push(finish_block(ctx, label, stmts, sequel, Atom::Var(var)));
+            blocks.push(finish_block(
+                ctx,
+                label,
+                None,
+                stmts,
+                sequel,
+                Atom::Var(var),
+            ));
             false
         }
 
@@ -225,7 +274,12 @@ fn cc_block(
             // then we can continue extend that block. If not we'll have to use the continuation
             // block.
             if !forked {
-                let Block { label, stmts, exit } = blocks.pop().unwrap();
+                let Block {
+                    label,
+                    comment: _,
+                    stmts,
+                    exit,
+                } = blocks.pop().unwrap();
                 assert_eq!(exit, Exit::Jump(cont_label));
                 cc_block(ctx, blocks, label, stmts, sequel, *body)
             } else {
@@ -332,7 +386,14 @@ fn cc_block(
                 lhs: ret_tmp,
                 rhs: Expr::App(fun_tmp, args, fun_ret_ty),
             }));
-            blocks.push(finish_block(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
+            blocks.push(finish_block(
+                ctx,
+                label,
+                None,
+                stmts,
+                sequel,
+                Atom::Var(ret_tmp),
+            ));
             false
         }
 
@@ -345,7 +406,14 @@ fn cc_block(
             for (arg_idx, arg) in args.iter().enumerate() {
                 stmts.push(Stmt::Expr(Expr::TuplePut(ret_tmp, arg_idx, *arg)));
             }
-            blocks.push(finish_block(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
+            blocks.push(finish_block(
+                ctx,
+                label,
+                None,
+                stmts,
+                sequel,
+                Atom::Var(ret_tmp),
+            ));
             false
         }
 
@@ -362,18 +430,88 @@ fn cc_block(
                 lhs: ret_tmp,
                 rhs: Expr::TupleGet(tuple, idx),
             }));
-            blocks.push(finish_block(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
+            blocks.push(finish_block(
+                ctx,
+                label,
+                None,
+                stmts,
+                sequel,
+                Atom::Var(ret_tmp),
+            ));
             false
         }
 
         anormal::Expr::ArrayAlloc { len, elem } => {
-            let ret_tmp = sequel.get_ret_var(ctx, RepType::Word);
+            let array_tmp = sequel.get_ret_var(ctx, RepType::Word);
             stmts.push(Stmt::Asgn(Asgn {
-                lhs: ret_tmp,
-                rhs: Expr::ArrayAlloc { len, elem },
+                lhs: array_tmp,
+                rhs: Expr::ArrayAlloc { len },
             }));
-            blocks.push(finish_block(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
-            false
+
+            let idx_var = ctx.fresh_var(RepType::Word);
+            stmts.push(Stmt::Asgn(Asgn {
+                lhs: idx_var,
+                rhs: Expr::Atom(Atom::Int(0)),
+            }));
+
+            let loop_cond_label = ctx.fresh_label();
+            let loop_body_label = ctx.fresh_label();
+            let cont_label = ctx.fresh_label();
+
+            blocks.push(Block {
+                label,
+                comment: None,
+                stmts,
+                exit: Exit::Jump(loop_cond_label),
+            });
+
+            // loop_cond
+            blocks.push(Block {
+                label: loop_cond_label,
+                comment: Some("array loop cond".to_string()),
+                stmts: vec![],
+                exit: Exit::Branch {
+                    v1: idx_var,
+                    v2: len,
+                    cond: Cmp::Equal,
+                    then_label: cont_label,
+                    else_label: loop_body_label,
+                },
+            });
+
+            // loop_body
+            let idx_inc_var = ctx.fresh_var(RepType::Word);
+            let loop_body_stmts = vec![
+                Stmt::Expr(Expr::ArrayPut(array_tmp, idx_var, elem)),
+                Stmt::Asgn(Asgn {
+                    lhs: idx_inc_var,
+                    rhs: Expr::Atom(Atom::Int(1)),
+                }),
+                Stmt::Asgn(Asgn {
+                    lhs: idx_var,
+                    rhs: Expr::IBinOp(BinOp {
+                        op: IntBinOp::Add,
+                        arg1: idx_var,
+                        arg2: idx_inc_var,
+                    }),
+                }),
+            ];
+            blocks.push(Block {
+                label: loop_body_label,
+                comment: Some("array body".to_string()),
+                stmts: loop_body_stmts,
+                exit: Exit::Jump(loop_cond_label),
+            });
+
+            blocks.push(finish_block(
+                ctx,
+                cont_label,
+                Some("array cont".to_string()),
+                vec![],
+                sequel,
+                Atom::Var(array_tmp),
+            ));
+            true
         }
 
         anormal::Expr::ArrayGet(array, idx) => {
@@ -389,7 +527,14 @@ fn cc_block(
                 lhs: ret_tmp,
                 rhs: Expr::ArrayGet(array, idx),
             }));
-            blocks.push(finish_block(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
+            blocks.push(finish_block(
+                ctx,
+                label,
+                None,
+                stmts,
+                sequel,
+                Atom::Var(ret_tmp),
+            ));
             false
         }
 
@@ -406,7 +551,14 @@ fn cc_block(
                 lhs: ret_tmp,
                 rhs: Expr::ArrayPut(array, idx, val),
             }));
-            blocks.push(finish_block(ctx, label, stmts, sequel, Atom::Var(ret_tmp)));
+            blocks.push(finish_block(
+                ctx,
+                label,
+                None,
+                stmts,
+                sequel,
+                Atom::Var(ret_tmp),
+            ));
             false
         }
     }
