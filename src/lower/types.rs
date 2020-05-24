@@ -52,7 +52,7 @@ pub enum Expr {
     // Tuple field write
     TuplePut(VarId, usize, VarId),
     // Array allocation
-    ArrayAlloc { len: VarId }, // TODO: Lower this more
+    ArrayAlloc { len: VarId },
     // Array field read
     ArrayGet(VarId, VarId),
     // Array field write
