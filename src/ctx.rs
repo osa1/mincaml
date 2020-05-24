@@ -1,6 +1,5 @@
 use crate::cg_types::RepType;
 use crate::interner::{InternId, InternTable};
-use crate::lower::Label;
 use crate::type_check::{TyVar, Type};
 use crate::var::{CompilerPhase, Uniq, Var};
 
@@ -109,10 +108,6 @@ impl Ctx {
     fn fresh_builtin_var(&mut self, user_name: &str, symbol_name: &str) -> VarId {
         let uniq = self.fresh_uniq();
         self.intern_var(Var::new_builtin(user_name, symbol_name, uniq))
-    }
-
-    pub fn fresh_label(&mut self) -> Label {
-        self.fresh_uniq()
     }
 
     pub fn get_var(&self, id: VarId) -> Rc<Var> {

@@ -36,8 +36,13 @@ impl Fun {
         print_comma_sep(ctx, &mut args.iter(), pp_id_ref, w)?;
         writeln!(w, ") -> {}", return_type)?;
 
-        for block in blocks {
-            block.pp(ctx, w)?;
+        for block in blocks.values() {
+            match block {
+                BlockData::NA => {}
+                BlockData::Block(block) => {
+                    block.pp(ctx, w)?;
+                }
+            }
         }
         writeln!(w)
     }
@@ -46,12 +51,12 @@ impl Fun {
 impl Block {
     pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> Result<(), fmt::Error> {
         let Block {
-            label,
+            idx,
             comment,
             stmts,
             exit,
         } = self;
-        write!(w, "{}:", label)?;
+        write!(w, "{}:", idx)?;
         match comment {
             None => {
                 writeln!(w)?;
@@ -83,14 +88,14 @@ impl Exit {
                 v1,
                 v2,
                 cond,
-                then_label,
-                else_label,
+                then_block,
+                else_block,
             } => {
                 w.write_str("if ")?;
                 pp_id(ctx, *v1, w)?;
                 write!(w, " {} ", cond)?;
                 pp_id(ctx, *v2, w)?;
-                write!(w, " then {} else {}", then_label, else_label)
+                write!(w, " then {} else {}", then_block, else_block)
             }
             Jump(lbl) => write!(w, "jump {}", lbl),
         }

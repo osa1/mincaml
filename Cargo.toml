@@ -18,6 +18,7 @@ path = "bin/test.rs"
 
 [dependencies]
 cranelift-codegen = "0.63"
+cranelift-entity = "0.63"
 cranelift-frontend = "0.63"
 cranelift-module = "0.63"
 cranelift-native = "0.63"

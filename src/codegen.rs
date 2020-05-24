@@ -255,14 +255,14 @@ fn codegen_fun(
 
     let mut builder: FunctionBuilder = FunctionBuilder::new(&mut context.func, fn_builder_ctx);
 
-    let mut label_to_block: FxHashMap<lower::Label, Block> = Default::default();
+    let mut label_to_block: FxHashMap<lower::BlockIdx, Block> = Default::default();
 
-    for block in blocks {
+    for block in blocks.values().filter_map(lower::BlockData::get_block) {
         let cl_block = builder.create_block();
-        label_to_block.insert(block.label, cl_block);
+        label_to_block.insert(block.idx, cl_block);
     }
 
-    let entry_block = *label_to_block.get(&blocks[0].label).unwrap();
+    let entry_block = *label_to_block.get(&lower::BlockIdx::new(0)).unwrap();
     builder.switch_to_block(entry_block);
     builder.append_block_params_for_function_params(entry_block);
 
@@ -273,14 +273,33 @@ fn codegen_fun(
         env.add_arg(*arg, val);
     }
 
-    for lower::Block {
-        label,
-        comment: _,
-        stmts,
-        exit,
-    } in blocks
-    {
-        let mut cl_block = *label_to_block.get(label).unwrap();
+    // Declare locals (TODO: we should probably have these readily available in lower::Fun)
+    for lower::Block { stmts, .. } in blocks.values().filter_map(lower::BlockData::get_block) {
+        for stmt in stmts {
+            // let mut s = String::new();
+            // asgn.pp(&ctx, &mut s);
+            // println!("stmt: {}", s);
+
+            match stmt {
+                lower::Stmt::Asgn(lower::Asgn { lhs, rhs: _ }) => {
+                    let lhs_cl_var = Variable::new(ctx.get_var(*lhs).get_uniq().0.get() as usize);
+                    let lhs_abi_type = rep_type_abi(ctx.var_rep_type(*lhs));
+                    builder.declare_var(lhs_cl_var, lhs_abi_type);
+                }
+                lower::Stmt::Expr(_) => {}
+            }
+        }
+    }
+
+    for block in blocks.values().filter_map(lower::BlockData::get_block) {
+        let lower::Block {
+            idx,
+            comment: _,
+            stmts,
+            exit,
+        } = block;
+
+        let mut cl_block = *label_to_block.get(&idx).unwrap();
         builder.switch_to_block(cl_block);
 
         for stmt in stmts {
@@ -295,8 +314,6 @@ fn codegen_fun(
                     cl_block = block;
 
                     let lhs_cl_var = Variable::new(ctx.get_var(*lhs).get_uniq().0.get() as usize);
-                    let lhs_abi_type = rep_type_abi(ctx.var_rep_type(*lhs));
-                    builder.declare_var(lhs_cl_var, lhs_abi_type);
                     builder.def_var(lhs_cl_var, val.unwrap());
                 }
                 lower::Stmt::Expr(expr) => {
@@ -316,15 +333,15 @@ fn codegen_fun(
                 v1,
                 v2,
                 cond,
-                then_label,
-                else_label,
+                then_block,
+                else_block,
             } => {
                 let comp_type = ctx.var_rep_type(*v1);
                 let v1 = env.use_var(ctx, &module, &mut builder, *v1);
                 let v2 = env.use_var(ctx, &module, &mut builder, *v2);
 
-                let then_block = *label_to_block.get(then_label).unwrap();
-                let else_block = *label_to_block.get(else_label).unwrap();
+                let then_block = *label_to_block.get(then_block).unwrap();
+                let else_block = *label_to_block.get(else_block).unwrap();
 
                 match comp_type {
                     RepType::Word => {
@@ -352,13 +369,21 @@ fn codegen_fun(
         }
     }
 
-    for lower::Block { label, .. } in blocks {
-        let cl_block = *label_to_block.get(label).unwrap();
+    // println!("Function before finalizing:");
+    // println!("{}", builder.display(None));
+
+    for block in blocks.values() {
+        let lower::Block { idx, .. } = match block {
+            lower::BlockData::NA => {
+                continue;
+            }
+            lower::BlockData::Block(block) => block,
+        };
+
+        let cl_block = *label_to_block.get(idx).unwrap();
         builder.seal_block(cl_block);
     }
 
-    // println!("Function before finalizing:");
-    // println!("{}", builder.display(None));
     builder.finalize();
 
     let flags = settings::Flags::new(settings::builder());
@@ -442,6 +467,7 @@ fn codegen_expr(
                 returns,
                 call_conv: CallConv::SystemV,
             };
+
             let fun_sig_ref: SigRef = builder.import_signature(fun_sig);
 
             let callee = env.use_var(ctx, module, builder, *fun);

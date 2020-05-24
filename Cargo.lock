@@ -185,6 +185,7 @@ name = "mincaml"
 version = "0.1.0"
 dependencies = [
  "cranelift-codegen",
+ "cranelift-entity",
  "cranelift-frontend",
  "cranelift-module",
  "cranelift-native",
