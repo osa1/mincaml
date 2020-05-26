@@ -77,6 +77,14 @@ struct CcCtx<'ctx> {
 }
 
 impl<'ctx> CcCtx<'ctx> {
+    fn new(ctx: &'ctx mut Ctx) -> Self {
+        Self {
+            ctx,
+            funs: vec![],
+            blocks: PrimaryMap::new(),
+        }
+    }
+
     fn fresh_var(&mut self, rep_type: RepType) -> VarId {
         self.ctx.fresh_codegen_var(ClosureConvert, rep_type)
     }
@@ -171,11 +179,7 @@ impl<'ctx> CcCtx<'ctx> {
 }
 
 pub fn lower_pgm(ctx: &mut Ctx, expr: anormal::Expr) -> (Vec<Fun>, VarId) {
-    let mut ctx = CcCtx {
-        ctx,
-        funs: vec![],
-        blocks: PrimaryMap::new(),
-    };
+    let mut ctx = CcCtx::new(ctx);
 
     let main_name = ctx.fresh_var(RepType::Word);
     let main_block = ctx.create_block();
