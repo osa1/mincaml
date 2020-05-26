@@ -13,10 +13,10 @@ entity_impl!(InstrIdx, "b");
 // A linked list of instructions. For first node `prev == idx`, for last `next == idx`.
 #[derive(Debug)]
 pub struct InstrNode {
-    idx: InstrIdx,
-    next: InstrIdx,
-    prev: InstrIdx,
-    kind: InstrKind,
+    pub idx: InstrIdx,
+    pub next: InstrIdx,
+    pub prev: InstrIdx,
+    pub kind: InstrKind,
 }
 
 #[derive(Debug)]
