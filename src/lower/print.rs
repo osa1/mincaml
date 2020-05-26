@@ -27,6 +27,7 @@ impl Fun {
             name,
             args,
             blocks,
+            cfg,
             return_type,
         } = self;
 
@@ -35,6 +36,8 @@ impl Fun {
         w.write_str("(")?;
         print_comma_sep(ctx, &mut args.iter(), pp_id_ref, w)?;
         writeln!(w, ") -> {}", return_type)?;
+
+        writeln!(w, "CFG: {:?}", cfg)?;
 
         for block in blocks.values() {
             match block {

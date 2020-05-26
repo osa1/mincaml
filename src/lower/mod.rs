@@ -1,3 +1,6 @@
+mod cfg;
+mod instr;
+mod liveness;
 mod print;
 mod types;
 
@@ -8,10 +11,13 @@ use crate::ctx::{Ctx, VarId};
 use crate::type_check::Type;
 use crate::var::CompilerPhase::ClosureConvert;
 
+use cfg::CFG;
+use instr::*;
 pub use print::*;
 pub use types::*;
 
 use cranelift_entity::PrimaryMap;
+use std::mem::replace;
 
 // Used when debugging
 #[allow(unused_imports)]
@@ -74,6 +80,10 @@ struct CcCtx<'ctx> {
     funs: Vec<Fun>,
     // Blocks generated so far for the current function
     blocks: PrimaryMap<BlockIdx, BlockData>,
+    // Control-flow graph of the current function
+    cfg: CFG,
+    // Instructions of the current function
+    instrs: InstrMap,
 }
 
 impl<'ctx> CcCtx<'ctx> {
@@ -82,6 +92,8 @@ impl<'ctx> CcCtx<'ctx> {
             ctx,
             funs: vec![],
             blocks: PrimaryMap::new(),
+            cfg: CFG::new(),
+            instrs: PrimaryMap::new(),
         }
     }
 
@@ -95,22 +107,25 @@ impl<'ctx> CcCtx<'ctx> {
     }
 
     fn fork_fun<F: FnOnce(&mut CcCtx) -> FunSig>(&mut self, fork: F) {
-        let blocks = ::std::mem::replace(&mut self.blocks, PrimaryMap::new());
+        let blocks = replace(&mut self.blocks, PrimaryMap::new());
+        let cfg = replace(&mut self.cfg, CFG::new());
         let FunSig {
             name,
             args,
             return_type,
         } = fork(self);
-        let fun_blocks = ::std::mem::replace(&mut self.blocks, blocks);
+        let fun_blocks = replace(&mut self.blocks, blocks);
+        let cfg = replace(&mut self.cfg, cfg);
         self.funs.push(Fun {
             name,
             args,
             blocks: fun_blocks,
+            cfg,
             return_type,
         });
     }
 
-    fn finish_block(&mut self, block: BlockBuilder, sequel: Sequel, value: Atom) {
+    fn finish_block(&mut self, block: BlockBuilder, sequel: Sequel, value: VarId) {
         let BlockBuilder {
             idx,
             mut stmts,
@@ -118,46 +133,18 @@ impl<'ctx> CcCtx<'ctx> {
         } = block;
 
         let exit = match sequel {
-            Sequel::Return => match value {
-                Atom::Unit => {
-                    let tmp = self.fresh_var(RepType::Word);
+            Sequel::Return => Exit::Return(value),
+            Sequel::Asgn(lhs, target) => {
+                // TODO: Should we handle this case in the call site? Or make it impossible to
+                // happen somehow?
+                if lhs != value {
                     stmts.push(Stmt::Asgn(Asgn {
-                        lhs: tmp,
-                        rhs: Expr::Atom(Atom::Unit),
+                        lhs,
+                        rhs: Expr::Atom(Atom::Var(value)),
                     }));
-                    Exit::Return(tmp)
                 }
-                Atom::Int(i) => {
-                    let tmp = self.fresh_var(RepType::Word);
-                    stmts.push(Stmt::Asgn(Asgn {
-                        lhs: tmp,
-                        rhs: Expr::Atom(Atom::Int(i)),
-                    }));
-                    Exit::Return(tmp)
-                }
-                Atom::Float(f) => {
-                    let tmp = self.fresh_var(RepType::Float);
-                    stmts.push(Stmt::Asgn(Asgn {
-                        lhs: tmp,
-                        rhs: Expr::Atom(Atom::Float(f)),
-                    }));
-                    Exit::Return(tmp)
-                }
-                Atom::Var(var) => Exit::Return(var),
-            },
-            Sequel::Asgn(lhs, label) => {
-                match value {
-                    // TODO: Should we handle this case in the call site? Or make it impossible to
-                    // happen somehow?
-                    Atom::Var(rhs) if lhs == rhs => {}
-                    _ => {
-                        stmts.push(Stmt::Asgn(Asgn {
-                            lhs,
-                            rhs: Expr::Atom(value),
-                        }));
-                    }
-                }
-                Exit::Jump(label)
+                self.cfg.add_successor(idx, target);
+                Exit::Jump(target)
             }
         };
 
@@ -189,43 +176,74 @@ pub fn lower_pgm(ctx: &mut Ctx, expr: anormal::Expr) -> (Vec<Fun>, VarId) {
         name: main_name,
         args: vec![],
         blocks: ctx.blocks,
+        cfg: ctx.cfg,
         return_type: RepType::Word,
     });
 
     (ctx.funs, main_name)
 }
 
+fn bind_atom(ctx: &mut CcCtx, block: &mut BlockBuilder, atom: Atom) -> VarId {
+    match atom {
+        Atom::Unit => {
+            let tmp = ctx.fresh_var(RepType::Word);
+            block.asgn(tmp, Expr::Atom(Atom::Unit));
+            tmp
+        }
+        Atom::Int(i) => {
+            let tmp = ctx.fresh_var(RepType::Word);
+            block.asgn(tmp, Expr::Atom(Atom::Int(i)));
+            tmp
+        }
+        Atom::Float(f) => {
+            let tmp = ctx.fresh_var(RepType::Float);
+            block.asgn(tmp, Expr::Atom(Atom::Float(f)));
+            tmp
+        }
+        Atom::Var(var) => var,
+    }
+}
+
 // Returns whether the added block was a fork (i.e. then or else branch of an if)
 fn cc_block(ctx: &mut CcCtx, mut block: BlockBuilder, sequel: Sequel, expr: anormal::Expr) {
     match expr {
-        anormal::Expr::Unit => ctx.finish_block(block, sequel, Atom::Unit),
+        anormal::Expr::Unit => {
+            let tmp = bind_atom(ctx, &mut block, Atom::Unit);
+            ctx.finish_block(block, sequel, tmp)
+        }
 
-        anormal::Expr::Int(i) => ctx.finish_block(block, sequel, Atom::Int(i)),
+        anormal::Expr::Int(i) => {
+            let tmp = bind_atom(ctx, &mut block, Atom::Int(i));
+            ctx.finish_block(block, sequel, tmp)
+        }
 
-        anormal::Expr::Float(f) => ctx.finish_block(block, sequel, Atom::Float(f)),
+        anormal::Expr::Float(f) => {
+            let tmp = bind_atom(ctx, &mut block, Atom::Float(f));
+            ctx.finish_block(block, sequel, tmp)
+        }
 
         anormal::Expr::Neg(var) => {
             let tmp = ctx.fresh_var(RepType::Word);
             block.asgn(tmp, Expr::Neg(var));
-            ctx.finish_block(block, sequel, Atom::Var(tmp));
+            ctx.finish_block(block, sequel, tmp);
         }
 
         anormal::Expr::FNeg(var) => {
             let tmp = ctx.fresh_var(RepType::Float);
             block.asgn(tmp, Expr::FNeg(var));
-            ctx.finish_block(block, sequel, Atom::Var(tmp));
+            ctx.finish_block(block, sequel, tmp);
         }
 
         anormal::Expr::IBinOp(BinOp { op, arg1, arg2 }) => {
             let tmp = sequel.get_ret_var(ctx, RepType::Word);
             block.asgn(tmp, Expr::IBinOp(BinOp { op, arg1, arg2 }));
-            ctx.finish_block(block, sequel, Atom::Var(tmp));
+            ctx.finish_block(block, sequel, tmp);
         }
 
         anormal::Expr::FBinOp(BinOp { op, arg1, arg2 }) => {
             let tmp = sequel.get_ret_var(ctx, RepType::Float);
             block.asgn(tmp, Expr::FBinOp(BinOp { op, arg1, arg2 }));
-            ctx.finish_block(block, sequel, Atom::Var(tmp));
+            ctx.finish_block(block, sequel, tmp);
         }
 
         anormal::Expr::If(v1, v2, cmp, e1, e2) => {
@@ -248,7 +266,7 @@ fn cc_block(ctx: &mut CcCtx, mut block: BlockBuilder, sequel: Sequel, expr: anor
         }
 
         anormal::Expr::Var(var) => {
-            ctx.finish_block(block, sequel, Atom::Var(var));
+            ctx.finish_block(block, sequel, var);
         }
 
         anormal::Expr::Let {
@@ -347,7 +365,7 @@ fn cc_block(ctx: &mut CcCtx, mut block: BlockBuilder, sequel: Sequel, expr: anor
             let ret_tmp = sequel.get_ret_var(ctx, fun_ret_ty);
 
             block.asgn(ret_tmp, Expr::App(fun_tmp, args, fun_ret_ty));
-            ctx.finish_block(block, sequel, Atom::Var(ret_tmp));
+            ctx.finish_block(block, sequel, ret_tmp);
         }
 
         anormal::Expr::Tuple(args) => {
@@ -356,7 +374,7 @@ fn cc_block(ctx: &mut CcCtx, mut block: BlockBuilder, sequel: Sequel, expr: anor
             for (arg_idx, arg) in args.iter().enumerate() {
                 block.expr(Expr::TuplePut(ret_tmp, arg_idx, *arg));
             }
-            ctx.finish_block(block, sequel, Atom::Var(ret_tmp));
+            ctx.finish_block(block, sequel, ret_tmp);
         }
 
         anormal::Expr::TupleGet(tuple, idx) => {
@@ -369,7 +387,7 @@ fn cc_block(ctx: &mut CcCtx, mut block: BlockBuilder, sequel: Sequel, expr: anor
             };
             let ret_tmp = sequel.get_ret_var(ctx, elem_ty);
             block.asgn(ret_tmp, Expr::TupleGet(tuple, idx));
-            ctx.finish_block(block, sequel, Atom::Var(ret_tmp));
+            ctx.finish_block(block, sequel, ret_tmp);
         }
 
         anormal::Expr::ArrayAlloc { len, elem } => {
@@ -423,7 +441,7 @@ fn cc_block(ctx: &mut CcCtx, mut block: BlockBuilder, sequel: Sequel, expr: anor
                 exit: Exit::Jump(loop_cond_block.idx),
             });
 
-            ctx.finish_block(cont_block, sequel, Atom::Var(array_tmp));
+            ctx.finish_block(cont_block, sequel, array_tmp);
         }
 
         anormal::Expr::ArrayGet(array, idx) => {
@@ -436,7 +454,7 @@ fn cc_block(ctx: &mut CcCtx, mut block: BlockBuilder, sequel: Sequel, expr: anor
             };
             let ret_tmp = sequel.get_ret_var(ctx, elem_ty);
             block.asgn(ret_tmp, Expr::ArrayGet(array, idx));
-            ctx.finish_block(block, sequel, Atom::Var(ret_tmp));
+            ctx.finish_block(block, sequel, ret_tmp);
         }
 
         anormal::Expr::ArrayPut(array, idx, val) => {
@@ -449,7 +467,7 @@ fn cc_block(ctx: &mut CcCtx, mut block: BlockBuilder, sequel: Sequel, expr: anor
             };
             let ret_tmp = sequel.get_ret_var(ctx, elem_ty);
             block.asgn(ret_tmp, Expr::ArrayPut(array, idx, val));
-            ctx.finish_block(block, sequel, Atom::Var(ret_tmp));
+            ctx.finish_block(block, sequel, ret_tmp);
         }
     }
 }

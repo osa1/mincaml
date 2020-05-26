@@ -228,6 +228,7 @@ fn codegen_fun(
         name,
         args,
         blocks,
+        cfg: _,
         return_type,
     } = fun;
 

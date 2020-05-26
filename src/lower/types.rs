@@ -2,6 +2,8 @@ use crate::cg_types::RepType;
 use crate::common::{BinOp, Cmp, FloatBinOp, IntBinOp};
 use crate::ctx::VarId;
 
+use super::cfg::CFG;
+
 use cranelift_entity::{entity_impl, PrimaryMap};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -14,6 +16,7 @@ pub struct Fun {
     pub name: VarId,
     pub args: Vec<VarId>,
     pub blocks: PrimaryMap<BlockIdx, BlockData>,
+    pub cfg: CFG,
     pub return_type: RepType,
 }
 
