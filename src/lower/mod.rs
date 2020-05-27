@@ -8,9 +8,9 @@ mod instr;
 mod liveness;
 mod print;
 
+use block::BlockIdx;
 use ctx::Ctx;
 use fun::Fun;
-use block::BlockIdx;
 
 use crate::anormal;
 use crate::cg_types::RepType;
@@ -42,23 +42,7 @@ pub fn lower_pgm(ctx: &mut ctx_::Ctx, expr: anormal::Expr) -> (Vec<Fun>, VarId) 
     let main_block = ctx.create_block();
     lower_block(&mut ctx, main_block, Sequel::Return, expr);
 
-    todo!()
-
-    /*
-        let main_name = ctx.fresh_var(RepType::Word);
-        let main_block = ctx.create_block();
-        cc_block(&mut ctx, main_block, Sequel::Return, expr);
-
-        ctx.funs.push(Fun {
-            name: main_name,
-            args: vec![],
-            blocks: ctx.blocks,
-            cfg: ctx.cfg,
-            return_type: RepType::Word,
-        });
-
-        (ctx.funs, main_name)
-    */
+    (ctx.finish(main_name), main_name)
 }
 
 #[derive(Debug, Clone)]
