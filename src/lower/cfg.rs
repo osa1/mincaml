@@ -1,6 +1,6 @@
 use cranelift_entity::SecondaryMap;
 
-use super::types::BlockIdx;
+use super::block::BlockIdx;
 
 #[derive(Debug)]
 pub struct CFG {

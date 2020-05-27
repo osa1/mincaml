@@ -21,6 +21,13 @@ pub struct Fun {
 }
 
 #[derive(Debug)]
+pub struct FunSig {
+    pub name: VarId,
+    pub args: Vec<VarId>,
+    pub return_type: RepType,
+}
+
+#[derive(Debug)]
 pub enum BlockData {
     NA,
     Block(Block),

@@ -1,10 +1,10 @@
 #![allow(dead_code)]
 
-use super::types::BlockIdx;
+use super::block::BlockIdx;
 use crate::cg_types::RepType;
 use crate::common::Cmp;
 
-use cranelift_entity::{entity_impl, PrimaryMap};
+use cranelift_entity::entity_impl;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct InstrIdx(u32);
@@ -12,7 +12,7 @@ entity_impl!(InstrIdx, "b");
 
 // A linked list of instructions. For first node `prev == idx`, for last `next == idx`.
 #[derive(Debug)]
-pub struct InstrNode {
+pub struct Instr {
     pub idx: InstrIdx,
     pub next: InstrIdx,
     pub prev: InstrIdx,
@@ -26,8 +26,6 @@ pub enum Value {
     // Result of instruction
     Instr(InstrIdx),
 }
-
-pub type InstrMap = PrimaryMap<InstrIdx, InstrNode>;
 
 #[derive(Debug)]
 pub enum InstrKind {
@@ -81,4 +79,27 @@ pub enum InstrKind {
     },
     // Function return
     Return,
+}
+
+impl InstrKind {
+    /// Is this instruction a jump or ret?
+    pub fn is_control_instr(&self) -> bool {
+        match self {
+            InstrKind::Jump(_) | InstrKind::CondJmp { .. } | InstrKind::Return => true,
+            _ => false,
+        }
+    }
+
+    // TODO: Replace the Vec with an iterator
+    pub fn targets(&self) -> Vec<BlockIdx> {
+        match self {
+            InstrKind::Jump(target) => vec![*target],
+            InstrKind::CondJmp {
+                then_target,
+                else_target,
+                ..
+            } => vec![*then_target, *else_target],
+            _ => vec![],
+        }
+    }
 }

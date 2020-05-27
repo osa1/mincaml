@@ -1,4 +1,7 @@
+mod block;
 mod cfg;
+mod ctx;
+mod fun;
 mod instr;
 mod liveness;
 mod print;
@@ -92,12 +95,6 @@ impl BlockBuilder {
         self.stmts.push(Stmt::Expr(expr));
         ctx.last_instr // TODO
     }
-}
-
-struct FunSig {
-    name: VarId,
-    args: Vec<VarId>,
-    return_type: RepType,
 }
 
 // Closure conversion state
