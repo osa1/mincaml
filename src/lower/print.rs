@@ -1,10 +1,9 @@
 use crate::common::*;
 use crate::ctx::{Ctx, VarId};
 
-use super::types::*;
-
 use std::fmt;
 
+/*
 fn print_comma_sep<A>(
     ctx: &Ctx, stuffs: &mut dyn Iterator<Item = &A>,
     show_stuff: fn(&A, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result, w: &mut dyn fmt::Write,
@@ -225,3 +224,4 @@ fn pp_id(ctx: &Ctx, id: VarId, w: &mut dyn fmt::Write) -> fmt::Result {
 fn pp_id_ref(id: &VarId, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result {
     write!(w, "{}", ctx.get_var(*id))
 }
+*/

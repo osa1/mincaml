@@ -2,7 +2,7 @@
 
 mod anormal;
 mod cg_types;
-mod codegen;
+// mod codegen;
 mod common;
 mod ctx;
 mod interner;
@@ -16,7 +16,7 @@ mod utils;
 mod var;
 
 use anormal::anormal;
-use codegen::codegen;
+// use codegen::codegen;
 use lexer::{tokenize, Token};
 use lower::lower_pgm;
 use parser::parse;
@@ -110,9 +110,11 @@ fn compile_expr(
         println!("### Closure conversion:\n");
 
         let mut s = String::new();
+        /*
         for fun in &funs {
             fun.pp(&ctx, &mut s).unwrap();
         }
+        */
 
         println!("{}", s);
     }
@@ -121,15 +123,19 @@ fn compile_expr(
         println!("### Code generation:\n");
     }
 
+
+    /*
     let object_code = record_pass_stats(&mut pass_stats, "codegen", || {
         codegen(&mut ctx, &funs, main, dump_cg)
     });
+    */
 
     if show_pass_stats {
         report_pass_stats(&pass_stats);
     }
 
-    Some(object_code)
+    // Some(object_code)
+    None
 }
 
 fn report_pass_stats(pass_stats: &[PassStats]) {

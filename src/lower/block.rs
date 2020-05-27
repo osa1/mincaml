@@ -16,14 +16,18 @@ pub struct Block {
     pub terminated: bool,
 }
 
-pub const INSTR_PLACEHOLDER: InstrIdx = InstrIdx::from_u32(u32::MAX);
+pub const PLACEHOLDER_INSTR_IDX: u32 = u32::MAX;
 
 impl Default for Block {
     fn default() -> Self {
         Block {
-            first_instr: INSTR_PLACEHOLDER,
-            last_instr: INSTR_PLACEHOLDER,
+            first_instr: InstrIdx::from_u32(PLACEHOLDER_INSTR_IDX),
+            last_instr: InstrIdx::from_u32(PLACEHOLDER_INSTR_IDX),
             terminated: false,
         }
     }
+}
+
+pub fn is_placeholder_instr(instr_idx: InstrIdx) -> bool {
+    instr_idx.as_u32() == PLACEHOLDER_INSTR_IDX
 }

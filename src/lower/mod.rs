@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+
 mod block;
 mod cfg;
 mod ctx;
@@ -5,19 +7,22 @@ mod fun;
 mod instr;
 mod liveness;
 mod print;
-mod types;
+
+use ctx::Ctx;
+use fun::Fun;
+use block::BlockIdx;
 
 use crate::anormal;
 use crate::cg_types::RepType;
 use crate::common::{BinOp, Cmp, IntBinOp};
-use crate::ctx::{Ctx, VarId};
+use crate::ctx as ctx_;
+use crate::ctx::VarId;
 use crate::type_check::Type;
 use crate::var::CompilerPhase::ClosureConvert;
 
 use cfg::CFG;
 use instr::*;
 pub use print::*;
-pub use types::*;
 
 use cranelift_entity::PrimaryMap;
 use std::mem::replace;
@@ -28,6 +33,34 @@ use crate::utils;
 
 use fxhash::FxHashSet;
 
+/// Entry point for code generation. Returns generated functions and variable of the main function.
+// (TODO: Generate main at call site and pass it here)
+pub fn lower_pgm(ctx: &mut ctx_::Ctx, expr: anormal::Expr) -> (Vec<Fun>, VarId) {
+    let mut ctx = Ctx::new(ctx);
+
+    let main_name = ctx.fresh_var(RepType::Word);
+    let main_block = ctx.create_block();
+    lower_block(&mut ctx, main_block, Sequel::Return, expr);
+
+    todo!()
+
+    /*
+        let main_name = ctx.fresh_var(RepType::Word);
+        let main_block = ctx.create_block();
+        cc_block(&mut ctx, main_block, Sequel::Return, expr);
+
+        ctx.funs.push(Fun {
+            name: main_name,
+            args: vec![],
+            blocks: ctx.blocks,
+            cfg: ctx.cfg,
+            return_type: RepType::Word,
+        });
+
+        (ctx.funs, main_name)
+    */
+}
+
 #[derive(Debug, Clone)]
 enum Sequel {
     Return,
@@ -35,16 +68,18 @@ enum Sequel {
     Asgn(VarId, BlockIdx),
 }
 
-impl Sequel {
-    fn get_ret_var(&self, ctx: &mut CcCtx, ret_ty: RepType) -> VarId {
-        use Sequel::*;
-        match self {
-            Asgn(var, _) => *var,
-            Return => ctx.fresh_var(ret_ty),
-        }
+fn get_sequel_ret_var(ctx: &mut Ctx, sequel: &Sequel, ret_ty: RepType) -> VarId {
+    match sequel {
+        Sequel::Asgn(var, _) => *var,
+        Sequel::Return => ctx.fresh_var(ret_ty),
     }
 }
 
+fn lower_block(ctx: &mut Ctx, block: BlockIdx, sequel: Sequel, expr: anormal::Expr) {
+    todo!()
+}
+
+/*
 // A block currently being built
 struct BlockBuilder {
     idx: BlockIdx,
@@ -583,3 +618,4 @@ fn fv(ctx: &Ctx, var: VarId, acc: &mut FxHashSet<VarId>) {
         acc.insert(var);
     }
 }
+*/

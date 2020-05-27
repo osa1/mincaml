@@ -19,7 +19,7 @@ pub struct Instr {
     pub kind: InstrKind,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Value {
     // Nth block argument
     Arg(usize),
