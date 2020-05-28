@@ -4,12 +4,15 @@ use super::fun::{Fun, FunSig};
 use super::instr::{Instr, InstrIdx, InstrKind, Value};
 
 use crate::cg_types::RepType;
+use crate::common::Cmp;
 use crate::ctx;
-use crate::ctx::VarId;
+use crate::ctx::{TypeId, VarId};
+use crate::type_check::Type;
 use crate::var::CompilerPhase::ClosureConvert;
 
 use cranelift_entity::PrimaryMap;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 pub struct Ctx<'a> {
     /// Used to generate fresh variables
@@ -165,10 +168,121 @@ impl<'a> Ctx<'a> {
     pub fn use_var(&self, var: VarId) -> Value {
         (*self.var_values.get(&var).expect("Unbound variable")).clone()
     }
+
+    /// Is the variable built-in? Used in free variable generation. Built-in variables are not
+    /// free.
+    pub fn is_builtin_var(&self, var: VarId) -> bool {
+        self.ctx.is_builtin_var(var)
+    }
+
+    pub fn get_type(&self, ty_id: TypeId) -> Rc<Type> {
+        self.ctx.get_type(ty_id)
+    }
+
+    pub fn var_type(&self, var: VarId) -> Rc<Type> {
+        self.ctx.var_type(var)
+    }
 }
 
 //
 // Helpers for generating instructions
 //
 
-impl<'a> Ctx<'a> {}
+impl<'a> Ctx<'a> {
+    pub fn mov(&mut self, block: BlockIdx, lhs: Value, rhs: Value) -> Value {
+        self.instr(block, InstrKind::Mov(lhs, rhs)).into()
+    }
+
+    pub fn iimm(&mut self, block: BlockIdx, i: i64) -> Value {
+        self.instr(block, InstrKind::IImm(i)).into()
+    }
+
+    pub fn fimm(&mut self, block: BlockIdx, f: f64) -> Value {
+        self.instr(block, InstrKind::FImm(f)).into()
+    }
+
+    pub fn iadd(&mut self, block: BlockIdx, v1: Value, v2: Value) -> Value {
+        self.instr(block, InstrKind::IAdd(v1, v2)).into()
+    }
+
+    pub fn isub(&mut self, block: BlockIdx, v1: Value, v2: Value) -> Value {
+        self.instr(block, InstrKind::ISub(v1, v2)).into()
+    }
+
+    pub fn fadd(&mut self, block: BlockIdx, v1: Value, v2: Value) -> Value {
+        self.instr(block, InstrKind::FAdd(v1, v2)).into()
+    }
+
+    pub fn fsub(&mut self, block: BlockIdx, v1: Value, v2: Value) -> Value {
+        self.instr(block, InstrKind::FSub(v1, v2)).into()
+    }
+
+    pub fn fmul(&mut self, block: BlockIdx, v1: Value, v2: Value) -> Value {
+        self.instr(block, InstrKind::FMul(v1, v2)).into()
+    }
+
+    pub fn fdiv(&mut self, block: BlockIdx, v1: Value, v2: Value) -> Value {
+        self.instr(block, InstrKind::FDiv(v1, v2)).into()
+    }
+
+    pub fn neg(&mut self, block: BlockIdx, v: Value) -> Value {
+        self.instr(block, InstrKind::Neg(v)).into()
+    }
+
+    pub fn fneg(&mut self, block: BlockIdx, v: Value) -> Value {
+        self.instr(block, InstrKind::FNeg(v)).into()
+    }
+
+    pub fn tuple(&mut self, block: BlockIdx, len: usize) -> Value {
+        self.instr(block, InstrKind::Tuple { len }).into()
+    }
+
+    pub fn tuple_put(&mut self, block: BlockIdx, tuple: Value, idx: usize, val: Value) -> Value {
+        self.instr(block, InstrKind::TuplePut(tuple, idx, val))
+            .into()
+    }
+
+    pub fn tuple_get(&mut self, block: BlockIdx, tuple: Value, idx: usize) -> Value {
+        self.instr(block, InstrKind::TupleGet(tuple, idx)).into()
+    }
+
+    pub fn array_alloc(&mut self, block: BlockIdx, len: Value) -> Value {
+        self.instr(block, InstrKind::ArrayAlloc { len }).into()
+    }
+
+    pub fn array_get(&mut self, block: BlockIdx, array: Value, idx: Value) -> Value {
+        self.instr(block, InstrKind::ArrayGet(array, idx)).into()
+    }
+
+    pub fn array_put(&mut self, block: BlockIdx, array: Value, idx: Value, val: Value) -> Value {
+        self.instr(block, InstrKind::ArrayPut(array, idx, val)).into()
+    }
+
+    pub fn call(&mut self, block: BlockIdx, f: Value, args: Vec<Value>, ret_ty: RepType) -> Value {
+        self.instr(block, InstrKind::Call(f, args, ret_ty)).into()
+    }
+
+    pub fn ret(&mut self, block: BlockIdx, v: Value) {
+        self.instr(block, InstrKind::Return(v));
+    }
+
+    pub fn jmp(&mut self, block: BlockIdx, target: BlockIdx) {
+        self.instr(block, InstrKind::Jmp(target));
+    }
+
+    pub fn cond_jmp(
+        &mut self, block: BlockIdx, v1: Value, v2: Value, cond: Cmp, then_target: BlockIdx,
+        else_target: BlockIdx,
+    ) {
+        self.instr(
+            block,
+            InstrKind::CondJmp {
+                v1,
+                v2,
+                cond,
+                then_target,
+                else_target,
+            },
+        );
+    }
+}

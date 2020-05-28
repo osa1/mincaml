@@ -27,9 +27,20 @@ pub enum Value {
     Instr(InstrIdx),
 }
 
+impl From<InstrIdx> for Value {
+    fn from(i: InstrIdx) -> Self {
+        Value::Instr(i)
+    }
+}
+
 #[derive(Debug)]
 pub enum InstrKind {
-    Value(Value),
+    // A move
+    Mov(Value, Value),
+    // Integer constant
+    IImm(i64),
+    // Float constant
+    FImm(f64),
     // Integer addition
     IAdd(Value, Value),
     // Integer subtraction
@@ -68,7 +79,7 @@ pub enum InstrKind {
     // Control-flow instructions. These are the last instructions of a block.
 
     // A direct jump
-    Jump(BlockIdx),
+    Jmp(BlockIdx),
     // A conditional jump
     CondJmp {
         v1: Value,
@@ -78,14 +89,14 @@ pub enum InstrKind {
         else_target: BlockIdx,
     },
     // Function return
-    Return,
+    Return(Value),
 }
 
 impl InstrKind {
     /// Is this instruction a jump or ret?
     pub fn is_control_instr(&self) -> bool {
         match self {
-            InstrKind::Jump(_) | InstrKind::CondJmp { .. } | InstrKind::Return => true,
+            InstrKind::Jmp(_) | InstrKind::CondJmp { .. } | InstrKind::Return(_) => true,
             _ => false,
         }
     }
@@ -93,7 +104,7 @@ impl InstrKind {
     // TODO: Replace the Vec with an iterator
     pub fn targets(&self) -> Vec<BlockIdx> {
         match self {
-            InstrKind::Jump(target) => vec![*target],
+            InstrKind::Jmp(target) => vec![*target],
             InstrKind::CondJmp {
                 then_target,
                 else_target,
