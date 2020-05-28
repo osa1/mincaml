@@ -1,6 +1,6 @@
 use super::instr::InstrIdx;
 
-use cranelift_entity::{entity_impl, PrimaryMap};
+use cranelift_entity::entity_impl;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BlockIdx(u32);

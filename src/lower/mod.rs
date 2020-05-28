@@ -1,5 +1,3 @@
-#![allow(unused_imports, unused_variables)]
-
 mod block;
 mod cfg;
 mod ctx;
@@ -18,14 +16,9 @@ use crate::common::{BinOp, Cmp, FloatBinOp, IntBinOp};
 use crate::ctx as ctx_;
 use crate::ctx::VarId;
 use crate::type_check::Type;
-use crate::var::CompilerPhase::ClosureConvert;
 
-use cfg::CFG;
 use instr::*;
 pub use print::*;
-
-use cranelift_entity::PrimaryMap;
-use std::mem::replace;
 
 // Used when debugging
 #[allow(unused_imports)]

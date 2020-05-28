@@ -56,9 +56,9 @@ impl<'a> Ctx<'a> {
         let fun = Fun {
             name: main_name,
             args: vec![],
-            blocks: blocks,
-            instrs: instrs,
-            cfg: cfg,
+            blocks,
+            instrs,
+            cfg,
             return_type: RepType::Word,
         };
 
@@ -255,7 +255,8 @@ impl<'a> Ctx<'a> {
     }
 
     pub fn array_put(&mut self, block: BlockIdx, array: Value, idx: Value, val: Value) -> Value {
-        self.instr(block, InstrKind::ArrayPut(array, idx, val)).into()
+        self.instr(block, InstrKind::ArrayPut(array, idx, val))
+            .into()
     }
 
     pub fn call(&mut self, block: BlockIdx, f: Value, args: Vec<Value>, ret_ty: RepType) -> Value {
