@@ -73,12 +73,14 @@ impl<'a> Ctx<'a> {
 
     /// Create a new block.
     pub fn create_block(&mut self) -> BlockIdx {
-        self.blocks.push(Default::default())
+        let idx = self.blocks.next_key();
+        self.blocks.push(Block::new(idx))
     }
 
     /// Add an instruction to the given block.
     pub fn instr(&mut self, block: BlockIdx, instr_kind: InstrKind) -> InstrIdx {
         let Block {
+            idx: _,
             ref mut first_instr,
             ref mut last_instr,
             ref mut terminated,

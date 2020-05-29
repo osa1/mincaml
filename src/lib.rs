@@ -102,7 +102,7 @@ fn compile_expr(
     // println!("K normalized:");
     // println!("{:?}", expr);
 
-    let (funs, main) = record_pass_stats(&mut pass_stats, "closure convert", || {
+    let (funs, main) = record_pass_stats(&mut pass_stats, "lower", || {
         lower_pgm(&mut ctx, expr)
     });
 
@@ -110,11 +110,9 @@ fn compile_expr(
         println!("### Closure conversion:\n");
 
         let mut s = String::new();
-        /*
         for fun in &funs {
             fun.pp(&ctx, &mut s).unwrap();
         }
-        */
 
         println!("{}", s);
     }
@@ -122,7 +120,6 @@ fn compile_expr(
     if dump_cg {
         println!("### Code generation:\n");
     }
-
 
     /*
     let object_code = record_pass_stats(&mut pass_stats, "codegen", || {

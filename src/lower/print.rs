@@ -1,9 +1,12 @@
+use super::block::Block;
+use super::fun::Fun;
+use super::instr::{Instr, InstrKind, Value};
+
 use crate::common::*;
 use crate::ctx::{Ctx, VarId};
 
 use std::fmt;
 
-/*
 fn print_comma_sep<A>(
     ctx: &Ctx, stuffs: &mut dyn Iterator<Item = &A>,
     show_stuff: fn(&A, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result, w: &mut dyn fmt::Write,
@@ -20,12 +23,21 @@ fn print_comma_sep<A>(
     Ok(())
 }
 
+fn pp_id(ctx: &Ctx, id: VarId, w: &mut dyn fmt::Write) -> fmt::Result {
+    write!(w, "{}", ctx.get_var(id))
+}
+
+fn pp_id_ref(id: &VarId, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result {
+    write!(w, "{}", ctx.get_var(*id))
+}
+
 impl Fun {
     pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result {
         let Fun {
             name,
             args,
             blocks,
+            instrs,
             cfg,
             return_type,
         } = self;
@@ -39,189 +51,167 @@ impl Fun {
         writeln!(w, "CFG: {:?}", cfg)?;
 
         for block in blocks.values() {
-            match block {
-                BlockData::NA => {}
-                BlockData::Block(block) => {
-                    block.pp(ctx, w)?;
-                }
-            }
+            block.pp(ctx, self, w)?;
         }
         writeln!(w)
     }
 }
 
 impl Block {
-    pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> Result<(), fmt::Error> {
+    pub fn pp(&self, ctx: &Ctx, fun: &Fun, w: &mut dyn fmt::Write) -> fmt::Result {
         let Block {
             idx,
-            comment,
-            stmts,
-            exit,
+            first_instr,
+            last_instr: _,
+            terminated: _,
         } = self;
         write!(w, "{}:", idx)?;
-        match comment {
-            None => {
-                writeln!(w)?;
-            }
-            Some(comment) => {
-                writeln!(w, " // {}", comment)?;
-            }
-        }
-        for asgn in stmts {
-            w.write_str("    ")?;
-            asgn.pp(ctx, w)?;
+        // match comment {
+        //     None => {
+        //         writeln!(w)?;
+        //     }
+        //     Some(comment) => {
+        //         writeln!(w, " // {}", comment)?;
+        //     }
+        // }
+        let mut instr_idx = *first_instr;
+        loop {
+            let Instr {
+                idx,
+                next,
+                prev: _,
+                kind,
+            } = &fun.instrs[instr_idx];
+            writeln!(w, "    ${} = ", idx)?;
+            kind.pp(ctx, w)?;
             writeln!(w)?;
+
+            if *next == instr_idx {
+                break;
+            }
+
+            instr_idx = *next;
         }
-        w.write_str("    ")?;
-        exit.pp(ctx, w)?;
-        writeln!(w)
+
+        Ok(())
     }
 }
 
-impl Exit {
+fn pp_vals(ctx: &Ctx, v1: &Value, v2: &Value, w: &mut dyn fmt::Write) -> fmt::Result {
+    v1.pp(ctx, w)?;
+    w.write_str(", ")?;
+    v2.pp(ctx, w)
+}
+
+impl InstrKind {
     pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result {
-        use Exit::*;
+        use InstrKind::*;
         match self {
-            Return(var) => {
-                w.write_str("return ")?;
-                pp_id(ctx, *var, w)
+            Mov(from, to) => {
+                w.write_str("mov ")?;
+                pp_vals(ctx, from, to, w)
             }
-            Branch {
+            IImm(v) => write!(w, "iimm {}", v),
+            FImm(v) => write!(w, "fimm {}", v),
+            IAdd(v1, v2) => {
+                w.write_str("iadd ")?;
+                pp_vals(ctx, v1, v2, w)
+            }
+            ISub(v1, v2) => {
+                w.write_str("isub ")?;
+                pp_vals(ctx, v1, v2, w)
+            }
+            FAdd(v1, v2) => {
+                w.write_str("fadd ")?;
+                pp_vals(ctx, v1, v2, w)
+            }
+            FSub(v1, v2) => {
+                w.write_str("fsub ")?;
+                pp_vals(ctx, v1, v2, w)
+            }
+            FMul(v1, v2) => {
+                w.write_str("fmul ")?;
+                pp_vals(ctx, v1, v2, w)
+            }
+            FDiv(v1, v2) => {
+                w.write_str("fdiv ")?;
+                pp_vals(ctx, v1, v2, w)
+            }
+            Neg(v) => {
+                w.write_str("neg ")?;
+                v.pp(ctx, w)
+            }
+            FNeg(v) => {
+                w.write_str("fneg ")?;
+                v.pp(ctx, w)
+            }
+            Call(f, args, ret_ty) => {
+                w.write_str("fneg ")?;
+                f.pp(ctx, w)?;
+                w.write_char('(')?;
+                print_comma_sep(ctx, &mut args.iter(), Value::pp, w)?;
+                write!(w, ") -> {}", ret_ty)
+            }
+            Tuple { len } => write!(w, "tuple(len={})", len),
+            TupleGet(tuple, idx) => {
+                w.write_str("tuple ")?;
+                tuple.pp(ctx, w)?;
+                write!(w, "[{}]", idx)
+            }
+            TuplePut(tuple, idx, v) => {
+                w.write_str("tuple ")?;
+                tuple.pp(ctx, w)?;
+                write!(w, "[{}] = ", idx)?;
+                v.pp(ctx, w)
+            }
+            ArrayAlloc { len } => {
+                w.write_str("array(len=")?;
+                len.pp(ctx, w)?;
+                w.write_char(')')
+            }
+            ArrayGet(array, idx) => {
+                w.write_str("array ")?;
+                array.pp(ctx, w)?;
+                w.write_char('[')?;
+                idx.pp(ctx, w)?;
+                w.write_char(']')
+            }
+            ArrayPut(array, idx, v) => {
+                w.write_str("array ")?;
+                array.pp(ctx, w)?;
+                w.write_char('[')?;
+                idx.pp(ctx, w)?;
+                w.write_str("] = ")?;
+                v.pp(ctx, w)
+            }
+            Jmp(target) => write!(w, "jmp {}", target),
+            CondJmp {
                 v1,
                 v2,
                 cond,
-                then_block,
-                else_block,
+                then_target,
+                else_target,
             } => {
                 w.write_str("if ")?;
-                pp_id(ctx, *v1, w)?;
+                v1.pp(ctx, w)?;
                 write!(w, " {} ", cond)?;
-                pp_id(ctx, *v2, w)?;
-                write!(w, " then {} else {}", then_block, else_block)
+                v2.pp(ctx, w)?;
+                write!(w, "then jmp {} else jmp {}", then_target, else_target)
             }
-            Jump(lbl) => write!(w, "jump {}", lbl),
+            Return(v) => {
+                w.write_str("ret ")?;
+                v.pp(ctx, w)
+            }
         }
     }
 }
 
-impl Stmt {
+impl Value {
     pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result {
+        use Value::*;
         match self {
-            Stmt::Asgn(asgn) => asgn.pp(ctx, w),
-            Stmt::Expr(expr) => expr.pp(ctx, w),
+            Arg(idx) => write!(w, "$arg{}", idx),
+            Instr(idx) => write!(w, "${}", idx),
         }
     }
 }
-
-impl Asgn {
-    pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result {
-        let Asgn { lhs, rhs } = self;
-        pp_id(ctx, *lhs, w)?;
-        w.write_str(": ")?;
-        match ctx.var_type_(*lhs) {
-            Some(var_type) => {
-                var_type.pp(w)?;
-            }
-            None => {
-                w.write_str("???")?;
-            }
-        }
-        w.write_str(" = ")?;
-        rhs.pp(ctx, w)
-    }
-}
-
-impl Expr {
-    pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result {
-        use Expr::*;
-        match self {
-            Atom(atom) => atom.pp(ctx, w),
-            IBinOp(BinOp { op, arg1, arg2 }) => {
-                pp_id(ctx, *arg1, w)?;
-                let op_str = match op {
-                    IntBinOp::Add => " + ",
-                    IntBinOp::Sub => " - ",
-                    // IntBinOp::Mul => " * ",
-                    // IntBinOp::Div => " / ",
-                };
-                write!(w, "{}", op_str)?;
-                pp_id(ctx, *arg2, w)
-            }
-            FBinOp(BinOp { op, arg1, arg2 }) => {
-                pp_id(ctx, *arg1, w)?;
-                let op_str = match op {
-                    FloatBinOp::Add => " +. ",
-                    FloatBinOp::Sub => " -. ",
-                    FloatBinOp::Mul => " *. ",
-                    FloatBinOp::Div => " /. ",
-                };
-                write!(w, "{}", op_str)?;
-                pp_id(ctx, *arg2, w)
-            }
-            Neg(var) => {
-                w.write_str("-")?;
-                pp_id(ctx, *var, w)
-            }
-            FNeg(var) => {
-                w.write_str("-.")?;
-                pp_id(ctx, *var, w)
-            }
-            App(fun, args, _) => {
-                pp_id(ctx, *fun, w)?;
-                w.write_str("(")?;
-                print_comma_sep(ctx, &mut args.iter(), pp_id_ref, w)?;
-                w.write_str(")")
-            }
-            Tuple { len } => write!(w, "alloc_tuple(len={})", len),
-            TuplePut(tuple, idx, val) => {
-                pp_id(ctx, *tuple, w)?;
-                write!(w, ".{{{}}} <- ", idx)?;
-                pp_id(ctx, *val, w)
-            }
-            TupleGet(tuple, idx) => {
-                pp_id(ctx, *tuple, w)?;
-                write!(w, ".{}", idx)
-            }
-            ArrayAlloc { len } => {
-                w.write_str("alloc_array(len=")?;
-                pp_id(ctx, *len, w)?;
-                w.write_str(")")
-            }
-            ArrayGet(array, idx) => {
-                pp_id(ctx, *array, w)?;
-                w.write_str(".(")?;
-                pp_id(ctx, *idx, w)?;
-                w.write_str(")")
-            }
-            ArrayPut(array, idx, val) => {
-                pp_id(ctx, *array, w)?;
-                w.write_str(".(")?;
-                pp_id(ctx, *idx, w)?;
-                w.write_str(") <- ")?;
-                pp_id(ctx, *val, w)
-            }
-        }
-    }
-}
-
-impl Atom {
-    pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result {
-        use Atom::*;
-        match self {
-            Unit => w.write_str("()"),
-            Int(i) => write!(w, "{}", i),
-            // Use debug format in floats, otherwise "1.0" is printed as "1"
-            Float(f) => write!(w, "{:?}", f),
-            Var(var) => pp_id(ctx, *var, w),
-        }
-    }
-}
-
-fn pp_id(ctx: &Ctx, id: VarId, w: &mut dyn fmt::Write) -> fmt::Result {
-    write!(w, "{}", ctx.get_var(id))
-}
-
-fn pp_id_ref(id: &VarId, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result {
-    write!(w, "{}", ctx.get_var(*id))
-}
-*/

@@ -8,6 +8,7 @@ entity_impl!(BlockIdx, "b");
 
 #[derive(Debug)]
 pub struct Block {
+    pub idx: BlockIdx,
     /// First instruction of the block
     pub first_instr: InstrIdx,
     /// Last instruction of the block
@@ -16,11 +17,12 @@ pub struct Block {
     pub terminated: bool,
 }
 
-pub const PLACEHOLDER_INSTR_IDX: u32 = u32::MAX;
+pub const PLACEHOLDER_INSTR_IDX: u32 = u32::MAX - 1;
 
-impl Default for Block {
-    fn default() -> Self {
+impl Block {
+    pub fn new(idx: BlockIdx) -> Self {
         Block {
+            idx,
             first_instr: InstrIdx::from_u32(PLACEHOLDER_INSTR_IDX),
             last_instr: InstrIdx::from_u32(PLACEHOLDER_INSTR_IDX),
             terminated: false,
