@@ -7,6 +7,10 @@ use crate::ctx::{Ctx, VarId};
 
 use std::fmt;
 
+pub fn display_id(ctx: &Ctx, id: VarId) -> String {
+    format!("{}", ctx.get_var(id))
+}
+
 fn print_comma_sep<A>(
     ctx: &Ctx, stuffs: &mut dyn Iterator<Item = &A>,
     show_stuff: fn(&A, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result, w: &mut dyn fmt::Write,

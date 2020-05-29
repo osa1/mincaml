@@ -99,8 +99,8 @@ fn compile_expr(
 
     let expr = record_pass_stats(&mut pass_stats, "anormal", || anormal(&mut ctx, expr));
 
-    // println!("K normalized:");
-    // println!("{:?}", expr);
+    println!("K normalized:");
+    println!("{:?}", expr);
 
     let (funs, main) = record_pass_stats(&mut pass_stats, "lower", || {
         lower_pgm(&mut ctx, expr)

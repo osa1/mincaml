@@ -52,7 +52,8 @@ fn finish_block(ctx: &mut Ctx, block: BlockIdx, sequel: Sequel, value: Value) {
         }
         Sequel::Asgn(lhs, target) => {
             let lhs_val = ctx.use_var(lhs);
-            ctx.mov(block, lhs_val, value);
+            ctx.mov(block, lhs_val, value.clone());
+            ctx.def_var(lhs, value);
             ctx.jmp(block, target);
         }
     }
@@ -142,6 +143,7 @@ fn lower_block(ctx: &mut Ctx, block: BlockIdx, sequel: Sequel, expr: anormal::Ex
             rhs,
             body,
         } => {
+            // TODO: we need to declare `id` here to be able to assign to it in `rhs`
             let cont_block = ctx.create_block();
             let rhs_sequel = Sequel::Asgn(id, cont_block);
             lower_block(ctx, block, rhs_sequel, *rhs);
@@ -183,6 +185,10 @@ fn lower_block(ctx: &mut Ctx, block: BlockIdx, sequel: Sequel, expr: anormal::Ex
             // Emit function
             args.insert(0, name); // first argument will be 'self'
             ctx.fork_fun(|ctx| {
+                for (arg_idx, arg) in args.iter().enumerate() {
+                    ctx.def_arg(*arg, arg_idx);
+                }
+
                 // TODO: use def_var
                 let entry_block = ctx.create_block();
                 let tuple_val = ctx.use_var(name);

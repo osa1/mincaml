@@ -2,6 +2,7 @@ use super::block::{is_placeholder_instr, Block, BlockIdx};
 use super::cfg::CFG;
 use super::fun::{Fun, FunSig};
 use super::instr::{Instr, InstrIdx, InstrKind, Value};
+use super::print::display_id;
 
 use crate::cg_types::RepType;
 use crate::common::Cmp;
@@ -162,13 +163,21 @@ impl<'a> Ctx<'a> {
 
     /// Define a variable
     pub fn def_var(&mut self, var: VarId, val: Value) {
+        println!("def_var {:?}", var);
         let old = self.var_values.insert(var, val);
         debug_assert!(old.is_none());
     }
 
     /// Get value of a variable
     pub fn use_var(&self, var: VarId) -> Value {
-        (*self.var_values.get(&var).expect("Unbound variable")).clone()
+        (*self.var_values.get(&var).unwrap_or_else(|| {
+            panic!(
+                "Unbound variable: {} ({:?})",
+                display_id(self.ctx, var),
+                var
+            )
+        }))
+        .clone()
     }
 
     /// Is the variable built-in? Used in free variable generation. Built-in variables are not
