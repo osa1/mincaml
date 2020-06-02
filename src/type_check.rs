@@ -423,6 +423,7 @@ fn unify(subst_env: &mut SubstEnv, ty1: &Type, ty2: &Type) -> Result<(), TypeErr
     }
 }
 
+/*
 use std::fmt;
 
 impl Type {
@@ -458,3 +459,4 @@ impl Type {
         }
     }
 }
+*/

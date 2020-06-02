@@ -2,14 +2,9 @@ use super::block::Block;
 use super::fun::Fun;
 use super::instr::{Instr, InstrKind, Phi, Value, ValueIdx};
 
-use crate::common::*;
 use crate::ctx::{Ctx, VarId};
 
 use std::fmt;
-
-pub fn display_id(ctx: &Ctx, id: VarId) -> String {
-    format!("{}", ctx.get_var(id))
-}
 
 fn print_comma_sep<A>(
     ctx: &Ctx, fun: &Fun, stuffs: &mut dyn Iterator<Item = &A>,
@@ -32,7 +27,7 @@ fn pp_id(ctx: &Ctx, id: VarId, w: &mut dyn fmt::Write) -> fmt::Result {
     write!(w, "{}", ctx.get_var(id))
 }
 
-fn pp_id_ref(id: &VarId, ctx: &Ctx, fun: &Fun, w: &mut dyn fmt::Write) -> fmt::Result {
+fn pp_id_ref(id: &VarId, ctx: &Ctx, _fun: &Fun, w: &mut dyn fmt::Write) -> fmt::Result {
     write!(w, "{}", ctx.get_var(*id))
 }
 
