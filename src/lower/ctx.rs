@@ -55,18 +55,38 @@ pub struct Ctx<'a> {
     incomplete_phis: SecondaryMap<BlockIdx, Vec<(VarId, PhiIdx)>>,
 }
 
+fn create_builtins(
+    ctx: &ctx::Ctx,
+) -> (
+    PrimaryMap<ValueIdx, Value>,
+    SecondaryMap<BlockIdx, FxHashMap<VarId, ValueIdx>>,
+) {
+    let mut vals = PrimaryMap::new();
+    let mut block_vars: SecondaryMap<BlockIdx, FxHashMap<VarId, ValueIdx>> = SecondaryMap::new();
+
+    let entry_block = BlockIdx::from_u32(0);
+
+    for (var, _) in ctx.builtins() {
+        let val_idx = vals.push(Value::Builtin(*var));
+        block_vars[entry_block].insert(*var, val_idx);
+    }
+
+    (vals, block_vars)
+}
+
 impl<'a> Ctx<'a> {
     /// Create a new context.
     pub fn new(ctx: &'a mut ctx::Ctx) -> Self {
+        let (values, block_vars) = create_builtins(ctx);
         Self {
             ctx,
             funs: vec![],
             blocks: PrimaryMap::new(),
-            values: PrimaryMap::new(),
+            values,
             phis: PrimaryMap::new(),
             instrs: PrimaryMap::new(),
             preds: SecondaryMap::new(),
-            block_vars: SecondaryMap::new(),
+            block_vars,
             block_phis: SecondaryMap::new(),
             phi_users: SecondaryMap::new(),
             incomplete_phis: SecondaryMap::new(),
@@ -277,6 +297,13 @@ impl<'a> Ctx<'a> {
             // Incomplete CFG
             let phi_idx = self.create_phi(block_idx, var);
             val_idx = self.values.push(Value::Phi(phi_idx));
+        } else if self.preds[block_idx].len() == 0 {
+            // Sealed and have no predecessors, the variable should've been defined
+            use std::fmt::Write;
+            let mut s = String::new();
+            write!(s, "Undefined variable in {}: ", block_idx).unwrap();
+            super::print::pp_id(self.ctx, var, &mut s).unwrap();
+            panic!("{}", s);
         } else if self.preds[block_idx].len() == 1 {
             // sealed
             // Optimize the common case of one predecessor: no phi needed
@@ -327,8 +354,8 @@ impl<'a> Ctx<'a> {
 //
 
 impl<'a> Ctx<'a> {
-    pub fn mov(&mut self, block: BlockIdx, lhs: ValueIdx, rhs: ValueIdx) -> ValueIdx {
-        self.instr(block, InstrKind::Mov(lhs, rhs)).into()
+    pub fn mov(&mut self, block: BlockIdx, value: ValueIdx, loc: ValueIdx) -> ValueIdx {
+        self.instr(block, InstrKind::Mov(loc, value)).into()
     }
 
     pub fn iimm(&mut self, block: BlockIdx, i: i64) -> ValueIdx {
@@ -375,7 +402,9 @@ impl<'a> Ctx<'a> {
         self.instr(block, InstrKind::Tuple { len }).into()
     }
 
-    pub fn tuple_put(&mut self, block: BlockIdx, tuple: ValueIdx, idx: usize, val: ValueIdx) -> ValueIdx {
+    pub fn tuple_put(
+        &mut self, block: BlockIdx, tuple: ValueIdx, idx: usize, val: ValueIdx,
+    ) -> ValueIdx {
         self.instr(block, InstrKind::TuplePut(tuple, idx, val))
             .into()
     }
@@ -392,11 +421,15 @@ impl<'a> Ctx<'a> {
         self.instr(block, InstrKind::ArrayGet(array, idx)).into()
     }
 
-    pub fn array_put(&mut self, block: BlockIdx, array: ValueIdx, idx: ValueIdx, val: ValueIdx) -> ValueIdx {
+    pub fn array_put(
+        &mut self, block: BlockIdx, array: ValueIdx, idx: ValueIdx, val: ValueIdx,
+    ) -> ValueIdx {
         self.instr(block, InstrKind::ArrayPut(array, idx, val))
     }
 
-    pub fn call(&mut self, block: BlockIdx, f: ValueIdx, args: Vec<ValueIdx>, ret_ty: RepType) -> ValueIdx {
+    pub fn call(
+        &mut self, block: BlockIdx, f: ValueIdx, args: Vec<ValueIdx>, ret_ty: RepType,
+    ) -> ValueIdx {
         self.instr(block, InstrKind::Call(f, args, ret_ty)).into()
     }
 

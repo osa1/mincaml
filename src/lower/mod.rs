@@ -54,8 +54,8 @@ fn finish_block(ctx: &mut Ctx, block: BlockIdx, sequel: Sequel, value: ValueIdx)
             ctx.ret(block, value);
         }
         Sequel::Asgn(lhs, target) => {
-            let lhs_val = ctx.use_var(block, lhs);
-            ctx.mov(block, lhs_val, value.clone());
+            // let lhs_val = ctx.use_var(block, lhs);
+            // ctx.mov(block, value, lhs_val);
             ctx.def_var(block, lhs, value);
             ctx.jmp(block, target);
         }

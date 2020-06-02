@@ -23,7 +23,7 @@ fn print_comma_sep<A>(
     Ok(())
 }
 
-fn pp_id(ctx: &Ctx, id: VarId, w: &mut dyn fmt::Write) -> fmt::Result {
+pub fn pp_id(ctx: &Ctx, id: VarId, w: &mut dyn fmt::Write) -> fmt::Result {
     write!(w, "{}", ctx.get_var(id))
 }
 
@@ -52,15 +52,13 @@ impl Fun {
         print_comma_sep(ctx, self, &mut args.iter(), pp_id_ref, w)?;
         writeln!(w, ") -> {}", return_type)?;
 
-        /*
-        writeln!(w, "args:       {:?}", args)?;
-        writeln!(w, "blocks:     {:?}", blocks)?;
-        writeln!(w, "instrs:     {:?}", instrs)?;
-        writeln!(w, "preds:      {:?}", preds)?;
-        writeln!(w, "values:     {:?}", values)?;
-        writeln!(w, "phis:       {:?}", phis)?;
-        writeln!(w, "block_phis: {:?}", block_phis)?;
-        */
+        // writeln!(w, "args:       {:?}", args)?;
+        // writeln!(w, "blocks:     {:?}", blocks)?;
+        // writeln!(w, "instrs:     {:?}", instrs)?;
+        // writeln!(w, "preds:      {:?}", preds)?;
+        // writeln!(w, "values:     {:?}", values)?;
+        // writeln!(w, "phis:       {:?}", phis)?;
+        // writeln!(w, "block_phis: {:?}", block_phis)?;
 
         for block in blocks.values() {
             block.pp(ctx, self, w)?;
@@ -127,10 +125,11 @@ fn pp_vals(
 }
 
 impl Value {
-    pub fn pp(&self, _ctx: &Ctx, _fun: &Fun, w: &mut dyn fmt::Write) -> fmt::Result {
+    pub fn pp(&self, ctx: &Ctx, _fun: &Fun, w: &mut dyn fmt::Write) -> fmt::Result {
         use Value::*;
         match self {
-            Arg(idx) => write!(w, "{}", idx),
+            Builtin(var) => pp_id(ctx, *var, w),
+            Arg(idx) => write!(w, "arg_{}", idx),
             Instr(idx) => write!(w, "{}", idx),
             Phi(idx) => write!(w, "{}", idx),
         }
@@ -186,7 +185,7 @@ impl InstrKind {
                 v.pp(ctx, fun, w)
             }
             Call(f, args, ret_ty) => {
-                w.write_str("fneg ")?;
+                w.write_str("call ")?;
                 f.pp(ctx, fun, w)?;
                 w.write_char('(')?;
                 print_comma_sep(ctx, fun, &mut args.iter(), ValueIdx::pp, w)?;

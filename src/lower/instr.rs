@@ -3,6 +3,7 @@
 use super::block::BlockIdx;
 use crate::cg_types::RepType;
 use crate::common::Cmp;
+use crate::ctx::VarId;
 
 use cranelift_entity::entity_impl;
 
@@ -39,6 +40,8 @@ pub struct Phi {
 // Values
 #[derive(Debug, Clone)]
 pub enum Value {
+    // A built-in value
+    Builtin(VarId),
     // Nth function argument
     Arg(usize),
     // Result of instruction
