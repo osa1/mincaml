@@ -1,6 +1,6 @@
 use super::block::Block;
 use super::fun::Fun;
-use super::instr::{Instr, InstrKind, Value};
+use super::instr::{Instr, InstrKind, Value, ValueIdx};
 
 use crate::common::*;
 use crate::ctx::{Ctx, VarId};
@@ -12,8 +12,9 @@ pub fn display_id(ctx: &Ctx, id: VarId) -> String {
 }
 
 fn print_comma_sep<A>(
-    ctx: &Ctx, stuffs: &mut dyn Iterator<Item = &A>,
-    show_stuff: fn(&A, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result, w: &mut dyn fmt::Write,
+    ctx: &Ctx, fun: &Fun, stuffs: &mut dyn Iterator<Item = &A>,
+    show_stuff: fn(&A, ctx: &Ctx, fun: &Fun, w: &mut dyn fmt::Write) -> fmt::Result,
+    w: &mut dyn fmt::Write,
 ) -> Result<(), fmt::Error> {
     let mut add_comma = false;
     for stuff in stuffs {
@@ -22,7 +23,7 @@ fn print_comma_sep<A>(
         } else {
             add_comma = true;
         }
-        show_stuff(stuff, ctx, w)?;
+        show_stuff(stuff, ctx, fun, w)?;
     }
     Ok(())
 }
@@ -31,7 +32,7 @@ fn pp_id(ctx: &Ctx, id: VarId, w: &mut dyn fmt::Write) -> fmt::Result {
     write!(w, "{}", ctx.get_var(id))
 }
 
-fn pp_id_ref(id: &VarId, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result {
+fn pp_id_ref(id: &VarId, ctx: &Ctx, fun: &Fun, w: &mut dyn fmt::Write) -> fmt::Result {
     write!(w, "{}", ctx.get_var(*id))
 }
 
@@ -42,17 +43,24 @@ impl Fun {
             args,
             blocks,
             instrs,
-            cfg,
+            preds,
+            values,
+            phis,
             return_type,
         } = self;
 
         w.write_str("function ")?;
         pp_id(ctx, *name, w)?;
         w.write_str("(")?;
-        print_comma_sep(ctx, &mut args.iter(), pp_id_ref, w)?;
+        print_comma_sep(ctx, self, &mut args.iter(), pp_id_ref, w)?;
         writeln!(w, ") -> {}", return_type)?;
 
-        writeln!(w, "CFG: {:?}", cfg)?;
+        writeln!(w, "args:   {:?}", args)?;
+        writeln!(w, "blocks: {:?}", blocks)?;
+        writeln!(w, "instrs: {:?}", instrs)?;
+        writeln!(w, "preds:  {:?}", preds)?;
+        writeln!(w, "values: {:?}", values)?;
+        writeln!(w, "phis:   {:?}", phis)?;
 
         for block in blocks.values() {
             block.pp(ctx, self, w)?;
@@ -67,7 +75,8 @@ impl Block {
             idx,
             first_instr,
             last_instr: _,
-            terminated: _,
+            filled: _,
+            sealed: _,
         } = self;
         write!(w, "{}:", idx)?;
         // match comment {
@@ -87,7 +96,7 @@ impl Block {
                 kind,
             } = &fun.instrs[instr_idx];
             writeln!(w, "    ${} = ", idx)?;
-            kind.pp(ctx, w)?;
+            kind.pp(ctx, fun, w)?;
             writeln!(w)?;
 
             if *next == instr_idx {
@@ -101,92 +110,111 @@ impl Block {
     }
 }
 
-fn pp_vals(ctx: &Ctx, v1: &Value, v2: &Value, w: &mut dyn fmt::Write) -> fmt::Result {
-    v1.pp(ctx, w)?;
+fn pp_vals(
+    ctx: &Ctx, fun: &Fun, v1: ValueIdx, v2: ValueIdx, w: &mut dyn fmt::Write,
+) -> fmt::Result {
+    v1.pp(ctx, fun, w)?;
     w.write_str(", ")?;
-    v2.pp(ctx, w)
+    v2.pp(ctx, fun, w)
+}
+
+impl Value {
+    pub fn pp(&self, ctx: &Ctx, fun: &Fun, w: &mut dyn fmt::Write) -> fmt::Result {
+        use Value::*;
+        match self {
+            Arg(idx) => write!(w, "${}", idx),
+            Instr(idx) => write!(w, "${}", idx),
+            Phi(idx) => write!(w, "${}", idx),
+        }
+    }
+}
+
+impl ValueIdx {
+    pub fn pp(&self, ctx: &Ctx, fun: &Fun, w: &mut dyn fmt::Write) -> fmt::Result {
+        fun.values[*self].pp(ctx, fun, w)
+    }
 }
 
 impl InstrKind {
-    pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result {
+    pub fn pp(&self, ctx: &Ctx, fun: &Fun, w: &mut dyn fmt::Write) -> fmt::Result {
         use InstrKind::*;
         match self {
             Mov(from, to) => {
                 w.write_str("mov ")?;
-                pp_vals(ctx, from, to, w)
+                pp_vals(ctx, fun, *from, *to, w)
             }
             IImm(v) => write!(w, "iimm {}", v),
             FImm(v) => write!(w, "fimm {}", v),
             IAdd(v1, v2) => {
                 w.write_str("iadd ")?;
-                pp_vals(ctx, v1, v2, w)
+                pp_vals(ctx, fun, *v1, *v2, w)
             }
             ISub(v1, v2) => {
                 w.write_str("isub ")?;
-                pp_vals(ctx, v1, v2, w)
+                pp_vals(ctx, fun, *v1, *v2, w)
             }
             FAdd(v1, v2) => {
                 w.write_str("fadd ")?;
-                pp_vals(ctx, v1, v2, w)
+                pp_vals(ctx, fun, *v1, *v2, w)
             }
             FSub(v1, v2) => {
                 w.write_str("fsub ")?;
-                pp_vals(ctx, v1, v2, w)
+                pp_vals(ctx, fun, *v1, *v2, w)
             }
             FMul(v1, v2) => {
                 w.write_str("fmul ")?;
-                pp_vals(ctx, v1, v2, w)
+                pp_vals(ctx, fun, *v1, *v2, w)
             }
             FDiv(v1, v2) => {
                 w.write_str("fdiv ")?;
-                pp_vals(ctx, v1, v2, w)
+                pp_vals(ctx, fun, *v1, *v2, w)
             }
             Neg(v) => {
                 w.write_str("neg ")?;
-                v.pp(ctx, w)
+                v.pp(ctx, fun, w)
             }
             FNeg(v) => {
                 w.write_str("fneg ")?;
-                v.pp(ctx, w)
+                v.pp(ctx, fun, w)
             }
             Call(f, args, ret_ty) => {
                 w.write_str("fneg ")?;
-                f.pp(ctx, w)?;
+                f.pp(ctx, fun, w)?;
                 w.write_char('(')?;
-                print_comma_sep(ctx, &mut args.iter(), Value::pp, w)?;
+                print_comma_sep(ctx, fun, &mut args.iter(), ValueIdx::pp, w)?;
                 write!(w, ") -> {}", ret_ty)
             }
             Tuple { len } => write!(w, "tuple(len={})", len),
             TupleGet(tuple, idx) => {
                 w.write_str("tuple ")?;
-                tuple.pp(ctx, w)?;
+                tuple.pp(ctx, fun, w)?;
                 write!(w, "[{}]", idx)
             }
             TuplePut(tuple, idx, v) => {
                 w.write_str("tuple ")?;
-                tuple.pp(ctx, w)?;
+                tuple.pp(ctx, fun, w)?;
                 write!(w, "[{}] = ", idx)?;
-                v.pp(ctx, w)
+                v.pp(ctx, fun, w)
             }
             ArrayAlloc { len } => {
                 w.write_str("array(len=")?;
-                len.pp(ctx, w)?;
+                len.pp(ctx, fun, w)?;
                 w.write_char(')')
             }
             ArrayGet(array, idx) => {
                 w.write_str("array ")?;
-                array.pp(ctx, w)?;
+                array.pp(ctx, fun, w)?;
                 w.write_char('[')?;
-                idx.pp(ctx, w)?;
+                idx.pp(ctx, fun, w)?;
                 w.write_char(']')
             }
             ArrayPut(array, idx, v) => {
                 w.write_str("array ")?;
-                array.pp(ctx, w)?;
+                array.pp(ctx, fun, w)?;
                 w.write_char('[')?;
-                idx.pp(ctx, w)?;
+                idx.pp(ctx, fun, w)?;
                 w.write_str("] = ")?;
-                v.pp(ctx, w)
+                v.pp(ctx, fun, w)
             }
             Jmp(target) => write!(w, "jmp {}", target),
             CondJmp {
@@ -197,25 +225,15 @@ impl InstrKind {
                 else_target,
             } => {
                 w.write_str("if ")?;
-                v1.pp(ctx, w)?;
+                v1.pp(ctx, fun, w)?;
                 write!(w, " {} ", cond)?;
-                v2.pp(ctx, w)?;
+                v2.pp(ctx, fun, w)?;
                 write!(w, "then jmp {} else jmp {}", then_target, else_target)
             }
             Return(v) => {
                 w.write_str("ret ")?;
-                v.pp(ctx, w)
+                v.pp(ctx, fun, w)
             }
-        }
-    }
-}
-
-impl Value {
-    pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result {
-        use Value::*;
-        match self {
-            Arg(idx) => write!(w, "$arg{}", idx),
-            Instr(idx) => write!(w, "${}", idx),
         }
     }
 }

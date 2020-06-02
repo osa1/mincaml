@@ -1,8 +1,12 @@
+// This implements the SSA construction algorithm described in
+//
+//     Simple and Efficient Construction of Static Single Assignment Form
+//     by Braun et al.
+
 use super::block::{is_placeholder_instr, Block, BlockIdx};
-use super::cfg::CFG;
 use super::fun::{Fun, FunSig};
-use super::instr::{Instr, InstrIdx, InstrKind, Value};
-use super::print::display_id;
+use super::instr::{Instr, InstrIdx, InstrKind, Phi, PhiIdx, Value, ValueIdx};
+// use super::print::display_id;
 
 use crate::cg_types::RepType;
 use crate::common::Cmp;
@@ -11,23 +15,44 @@ use crate::ctx::{TypeId, VarId};
 use crate::type_check::Type;
 use crate::var::CompilerPhase::ClosureConvert;
 
-use cranelift_entity::PrimaryMap;
-use std::collections::HashMap;
+use cranelift_entity::{PrimaryMap, SecondaryMap};
+use fxhash::FxHashMap;
 use std::rc::Rc;
 
 pub struct Ctx<'a> {
     /// Used to generate fresh variables
     ctx: &'a mut ctx::Ctx,
+
     /// Functions generated so far
     funs: Vec<Fun>,
+
     /// Blocks generated so far for the current function
     blocks: PrimaryMap<BlockIdx, Block>,
-    /// Control-flow graph of the current function
-    cfg: CFG,
+
+    /// Heap for values of the current function
+    values: PrimaryMap<ValueIdx, Value>,
+
+    /// Heap for phis of the current function
+    phis: PrimaryMap<PhiIdx, Phi>,
+
     /// Instructions of the current function
     instrs: PrimaryMap<InstrIdx, Instr>,
-    /// Maps variables in scope to their values
-    var_values: HashMap<VarId, Value>,
+
+    /// Maps blocks to their predecessors in the control-flow graph
+    preds: SecondaryMap<BlockIdx, Vec<BlockIdx>>,
+
+    /// Maps blocks to variables defined
+    block_vars: SecondaryMap<BlockIdx, FxHashMap<VarId, ValueIdx>>,
+
+    /// Maps blocks to their phis
+    block_phis: SecondaryMap<BlockIdx, Vec<PhiIdx>>,
+
+    /// Maps phis to referencing values. In other words, for an `idx` in this Vec, `values[idx]`
+    /// is `Value::Phi(idx)`. Used to remove trivial phis.
+    phi_users: SecondaryMap<PhiIdx, Vec<ValueIdx>>,
+
+    /// Phis added as loop breakers. These need to be updated when the block is sealed.
+    incomplete_phis: SecondaryMap<BlockIdx, Vec<(VarId, PhiIdx)>>,
 }
 
 impl<'a> Ctx<'a> {
@@ -37,9 +62,14 @@ impl<'a> Ctx<'a> {
             ctx,
             funs: vec![],
             blocks: PrimaryMap::new(),
-            cfg: CFG::new(),
+            values: PrimaryMap::new(),
+            phis: PrimaryMap::new(),
             instrs: PrimaryMap::new(),
-            var_values: Default::default(),
+            preds: SecondaryMap::new(),
+            block_vars: SecondaryMap::new(),
+            block_phis: SecondaryMap::new(),
+            phi_users: SecondaryMap::new(),
+            incomplete_phis: SecondaryMap::new(),
         }
     }
 
@@ -49,17 +79,21 @@ impl<'a> Ctx<'a> {
             ctx: _,
             mut funs,
             blocks,
-            cfg,
+            values,
+            phis,
             instrs,
-            var_values: _,
+            preds,
+            ..
         } = self;
 
         let fun = Fun {
             name: main_name,
             args: vec![],
             blocks,
+            values,
+            phis,
             instrs,
-            cfg,
+            preds,
             return_type: RepType::Word,
         };
 
@@ -78,23 +112,47 @@ impl<'a> Ctx<'a> {
         self.blocks.push(Block::new(idx))
     }
 
+    pub fn entry_block(&self) -> BlockIdx {
+        BlockIdx::from_u32(0)
+    }
+
+    pub fn seal_block(&mut self, block_idx: BlockIdx) {
+        assert!(!self.blocks[block_idx].sealed);
+        // TODO: clone() below to avoid borrowchk issue
+        for (var, phi_idx) in self.incomplete_phis[block_idx].clone() {
+            self.add_phi_operands(block_idx, var, phi_idx);
+        }
+        self.blocks[block_idx].sealed = true;
+    }
+
+    pub fn create_phi(&mut self, block_idx: BlockIdx, var: VarId) -> PhiIdx {
+        let phi_idx = self.phis.push(Phi {
+            owner: block_idx,
+            values: vec![],
+        });
+        self.block_phis[block_idx].push(phi_idx);
+        self.incomplete_phis[block_idx].push((var, phi_idx));
+        phi_idx
+    }
+
     /// Add an instruction to the given block.
-    pub fn instr(&mut self, block: BlockIdx, instr_kind: InstrKind) -> InstrIdx {
+    pub fn instr(&mut self, block_idx: BlockIdx, instr_kind: InstrKind) -> ValueIdx {
         let Block {
             idx: _,
             ref mut first_instr,
             ref mut last_instr,
-            ref mut terminated,
-        } = &mut self.blocks[block];
+            ref mut filled,
+            sealed: _,
+        } = &mut self.blocks[block_idx];
 
-        assert!(!*terminated);
+        assert!(!*filled);
 
         if instr_kind.is_control_instr() {
-            *terminated = true;
+            *filled = true;
         }
 
         for target in instr_kind.targets() {
-            self.cfg.add_successor(block, target);
+            self.preds[target].push(block_idx);
         }
 
         let instr_idx = self.instrs.next_key();
@@ -122,7 +180,7 @@ impl<'a> Ctx<'a> {
             self.instrs.push(instr);
         }
 
-        instr_idx
+        self.values.push(Value::Instr(instr_idx))
     }
 
     /// Helper for creating new functions
@@ -130,8 +188,13 @@ impl<'a> Ctx<'a> {
         use std::mem::replace;
 
         let blocks = replace(&mut self.blocks, PrimaryMap::new());
-        let cfg = replace(&mut self.cfg, CFG::new());
+        let values = replace(&mut self.values, PrimaryMap::new());
+        let phis = replace(&mut self.phis, PrimaryMap::new());
         let instrs = replace(&mut self.instrs, PrimaryMap::new());
+        let preds = replace(&mut self.preds, SecondaryMap::new());
+        let block_vars = replace(&mut self.block_vars, SecondaryMap::new());
+        let block_phis = replace(&mut self.block_phis, SecondaryMap::new());
+        let incomplete_phis = replace(&mut self.incomplete_phis, SecondaryMap::new());
 
         let FunSig {
             name,
@@ -140,15 +203,22 @@ impl<'a> Ctx<'a> {
         } = f(self);
 
         let fun_blocks = replace(&mut self.blocks, blocks);
-        let fun_cfg = replace(&mut self.cfg, cfg);
+        let fun_values = replace(&mut self.values, values);
+        let fun_phis = replace(&mut self.phis, phis);
         let fun_instrs = replace(&mut self.instrs, instrs);
+        let fun_preds = replace(&mut self.preds, preds);
+        self.block_vars = block_vars;
+        self.block_phis = block_phis;
+        self.incomplete_phis = incomplete_phis;
 
         let fun = Fun {
             name,
             args,
             blocks: fun_blocks,
             instrs: fun_instrs,
-            cfg: fun_cfg,
+            preds: fun_preds,
+            values: fun_values,
+            phis: fun_phis,
             return_type,
         };
 
@@ -157,27 +227,74 @@ impl<'a> Ctx<'a> {
 
     /// Define a function argument
     pub fn def_arg(&mut self, var: VarId, idx: usize) {
-        let old = self.var_values.insert(var, Value::Arg(idx));
-        debug_assert!(old.is_none());
+        let val_idx = self.values.push(Value::Arg(idx));
+        let entry_block = self.entry_block();
+        self.block_vars[entry_block].insert(var, val_idx);
     }
 
-    /// Define a variable
-    pub fn def_var(&mut self, var: VarId, val: Value) {
-        println!("def_var {:?}", var);
-        let old = self.var_values.insert(var, val);
-        debug_assert!(old.is_none());
+    /// Define a variable in the given block
+    // (writeVariable in the paper)
+    pub fn def_var(&mut self, block_idx: BlockIdx, var: VarId, val: Value) {
+        let val_idx = self.values.push(val);
+        self.def_var_(block_idx, var, val_idx);
     }
 
-    /// Get value of a variable
-    pub fn use_var(&self, var: VarId) -> Value {
-        (*self.var_values.get(&var).unwrap_or_else(|| {
-            panic!(
-                "Unbound variable: {} ({:?})",
-                display_id(self.ctx, var),
-                var
-            )
-        }))
-        .clone()
+    pub fn def_var_(&mut self, block_idx: BlockIdx, var: VarId, val_idx: ValueIdx) {
+        self.block_vars[block_idx].insert(var, val_idx);
+    }
+
+    /// Get value of a variable in the given block
+    // (readVariable in the paper)
+    pub fn use_var(&mut self, block_idx: BlockIdx, var: VarId) -> ValueIdx {
+        match self.block_vars[block_idx].get(&var) {
+            Some(val_idx) => {
+                // Local value numbering
+                *val_idx
+            }
+            None => {
+                // Global value numbering
+                self.use_var_recursive(block_idx, var)
+            }
+        }
+    }
+
+    // (readVariableRecursive in the paper)
+    fn use_var_recursive(&mut self, block_idx: BlockIdx, var: VarId) -> ValueIdx {
+        let sealed = self.blocks[block_idx].sealed;
+        let val_idx;
+
+        if !sealed {
+            // Incomplete CFG
+            let phi_idx = self.create_phi(block_idx, var);
+            val_idx = self.values.push(Value::Phi(phi_idx));
+        } else if self.preds[block_idx].len() == 1 {
+            // sealed
+            // Optimize the common case of one predecessor: no phi needed
+            val_idx = self.use_var(self.preds[block_idx][0], var);
+        } else {
+            // sealed
+            // Break potential cycles with operandless phi
+            let phi_idx = self.create_phi(block_idx, var);
+            val_idx = self.values.push(Value::Phi(phi_idx));
+            self.def_var_(block_idx, var, val_idx);
+            self.add_phi_operands(block_idx, var, phi_idx);
+        }
+
+        self.def_var_(block_idx, var, val_idx);
+        val_idx
+    }
+
+    // (addPhiOperands in the paper)
+    fn add_phi_operands(&mut self, block_idx: BlockIdx, var: VarId, phi_idx: PhiIdx) {
+        assert!(self.blocks[block_idx].sealed);
+
+        // TODO: clone below to avoid borrowchk error
+        for pred in self.preds[block_idx].clone() {
+            let val_idx = self.use_var(pred, var);
+            self.phis[phi_idx].values.push(val_idx);
+        }
+
+        // TODO: tryRemoveTrivialPhi
     }
 
     /// Is the variable built-in? Used in free variable generation. Built-in variables are not
@@ -200,81 +317,80 @@ impl<'a> Ctx<'a> {
 //
 
 impl<'a> Ctx<'a> {
-    pub fn mov(&mut self, block: BlockIdx, lhs: Value, rhs: Value) -> Value {
+    pub fn mov(&mut self, block: BlockIdx, lhs: ValueIdx, rhs: ValueIdx) -> ValueIdx {
         self.instr(block, InstrKind::Mov(lhs, rhs)).into()
     }
 
-    pub fn iimm(&mut self, block: BlockIdx, i: i64) -> Value {
+    pub fn iimm(&mut self, block: BlockIdx, i: i64) -> ValueIdx {
         self.instr(block, InstrKind::IImm(i)).into()
     }
 
-    pub fn fimm(&mut self, block: BlockIdx, f: f64) -> Value {
+    pub fn fimm(&mut self, block: BlockIdx, f: f64) -> ValueIdx {
         self.instr(block, InstrKind::FImm(f)).into()
     }
 
-    pub fn iadd(&mut self, block: BlockIdx, v1: Value, v2: Value) -> Value {
+    pub fn iadd(&mut self, block: BlockIdx, v1: ValueIdx, v2: ValueIdx) -> ValueIdx {
         self.instr(block, InstrKind::IAdd(v1, v2)).into()
     }
 
-    pub fn isub(&mut self, block: BlockIdx, v1: Value, v2: Value) -> Value {
+    pub fn isub(&mut self, block: BlockIdx, v1: ValueIdx, v2: ValueIdx) -> ValueIdx {
         self.instr(block, InstrKind::ISub(v1, v2)).into()
     }
 
-    pub fn fadd(&mut self, block: BlockIdx, v1: Value, v2: Value) -> Value {
+    pub fn fadd(&mut self, block: BlockIdx, v1: ValueIdx, v2: ValueIdx) -> ValueIdx {
         self.instr(block, InstrKind::FAdd(v1, v2)).into()
     }
 
-    pub fn fsub(&mut self, block: BlockIdx, v1: Value, v2: Value) -> Value {
+    pub fn fsub(&mut self, block: BlockIdx, v1: ValueIdx, v2: ValueIdx) -> ValueIdx {
         self.instr(block, InstrKind::FSub(v1, v2)).into()
     }
 
-    pub fn fmul(&mut self, block: BlockIdx, v1: Value, v2: Value) -> Value {
+    pub fn fmul(&mut self, block: BlockIdx, v1: ValueIdx, v2: ValueIdx) -> ValueIdx {
         self.instr(block, InstrKind::FMul(v1, v2)).into()
     }
 
-    pub fn fdiv(&mut self, block: BlockIdx, v1: Value, v2: Value) -> Value {
+    pub fn fdiv(&mut self, block: BlockIdx, v1: ValueIdx, v2: ValueIdx) -> ValueIdx {
         self.instr(block, InstrKind::FDiv(v1, v2)).into()
     }
 
-    pub fn neg(&mut self, block: BlockIdx, v: Value) -> Value {
+    pub fn neg(&mut self, block: BlockIdx, v: ValueIdx) -> ValueIdx {
         self.instr(block, InstrKind::Neg(v)).into()
     }
 
-    pub fn fneg(&mut self, block: BlockIdx, v: Value) -> Value {
+    pub fn fneg(&mut self, block: BlockIdx, v: ValueIdx) -> ValueIdx {
         self.instr(block, InstrKind::FNeg(v)).into()
     }
 
-    pub fn tuple(&mut self, block: BlockIdx, len: usize) -> Value {
+    pub fn tuple(&mut self, block: BlockIdx, len: usize) -> ValueIdx {
         self.instr(block, InstrKind::Tuple { len }).into()
     }
 
-    pub fn tuple_put(&mut self, block: BlockIdx, tuple: Value, idx: usize, val: Value) -> Value {
+    pub fn tuple_put(&mut self, block: BlockIdx, tuple: ValueIdx, idx: usize, val: ValueIdx) -> ValueIdx {
         self.instr(block, InstrKind::TuplePut(tuple, idx, val))
             .into()
     }
 
-    pub fn tuple_get(&mut self, block: BlockIdx, tuple: Value, idx: usize) -> Value {
+    pub fn tuple_get(&mut self, block: BlockIdx, tuple: ValueIdx, idx: usize) -> ValueIdx {
         self.instr(block, InstrKind::TupleGet(tuple, idx)).into()
     }
 
-    pub fn array_alloc(&mut self, block: BlockIdx, len: Value) -> Value {
+    pub fn array_alloc(&mut self, block: BlockIdx, len: ValueIdx) -> ValueIdx {
         self.instr(block, InstrKind::ArrayAlloc { len }).into()
     }
 
-    pub fn array_get(&mut self, block: BlockIdx, array: Value, idx: Value) -> Value {
+    pub fn array_get(&mut self, block: BlockIdx, array: ValueIdx, idx: ValueIdx) -> ValueIdx {
         self.instr(block, InstrKind::ArrayGet(array, idx)).into()
     }
 
-    pub fn array_put(&mut self, block: BlockIdx, array: Value, idx: Value, val: Value) -> Value {
+    pub fn array_put(&mut self, block: BlockIdx, array: ValueIdx, idx: ValueIdx, val: ValueIdx) -> ValueIdx {
         self.instr(block, InstrKind::ArrayPut(array, idx, val))
-            .into()
     }
 
-    pub fn call(&mut self, block: BlockIdx, f: Value, args: Vec<Value>, ret_ty: RepType) -> Value {
+    pub fn call(&mut self, block: BlockIdx, f: ValueIdx, args: Vec<ValueIdx>, ret_ty: RepType) -> ValueIdx {
         self.instr(block, InstrKind::Call(f, args, ret_ty)).into()
     }
 
-    pub fn ret(&mut self, block: BlockIdx, v: Value) {
+    pub fn ret(&mut self, block: BlockIdx, v: ValueIdx) {
         self.instr(block, InstrKind::Return(v));
     }
 
@@ -283,7 +399,7 @@ impl<'a> Ctx<'a> {
     }
 
     pub fn cond_jmp(
-        &mut self, block: BlockIdx, v1: Value, v2: Value, cond: Cmp, then_target: BlockIdx,
+        &mut self, block: BlockIdx, v1: ValueIdx, v2: ValueIdx, cond: Cmp, then_target: BlockIdx,
         else_target: BlockIdx,
     ) {
         self.instr(

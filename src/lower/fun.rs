@@ -1,11 +1,10 @@
 use super::block::{Block, BlockIdx};
-use super::cfg::CFG;
-use super::instr::{Instr, InstrIdx};
+use super::instr::{Instr, InstrIdx, Phi, PhiIdx, Value, ValueIdx};
 
 use crate::cg_types::RepType;
 use crate::ctx::VarId;
 
-use cranelift_entity::PrimaryMap;
+use cranelift_entity::{PrimaryMap, SecondaryMap};
 
 #[derive(Debug)]
 pub struct Fun {
@@ -13,7 +12,9 @@ pub struct Fun {
     pub args: Vec<VarId>,
     pub blocks: PrimaryMap<BlockIdx, Block>,
     pub instrs: PrimaryMap<InstrIdx, Instr>,
-    pub cfg: CFG,
+    pub preds: SecondaryMap<BlockIdx, Vec<BlockIdx>>,
+    pub values: PrimaryMap<ValueIdx, Value>,
+    pub phis: PrimaryMap<PhiIdx, Phi>,
     pub return_type: RepType,
 }
 

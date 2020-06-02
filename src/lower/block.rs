@@ -13,8 +13,11 @@ pub struct Block {
     pub first_instr: InstrIdx,
     /// Last instruction of the block
     pub last_instr: InstrIdx,
-    /// A block is terminated after adding a jump or ret.
-    pub terminated: bool,
+    /// A block is filled is the last instruction (which is a control instruction, like 'ret' or
+    /// 'jmp) is added.
+    pub filled: bool,
+    /// A block is selaed after adding all predecessors to it.
+    pub sealed: bool,
 }
 
 pub const PLACEHOLDER_INSTR_IDX: u32 = u32::MAX - 1;
@@ -25,7 +28,8 @@ impl Block {
             idx,
             first_instr: InstrIdx::from_u32(PLACEHOLDER_INSTR_IDX),
             last_instr: InstrIdx::from_u32(PLACEHOLDER_INSTR_IDX),
-            terminated: false,
+            filled: false,
+            sealed: false,
         }
     }
 }

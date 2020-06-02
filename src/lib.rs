@@ -102,9 +102,7 @@ fn compile_expr(
     println!("K normalized:");
     println!("{:?}", expr);
 
-    let (funs, main) = record_pass_stats(&mut pass_stats, "lower", || {
-        lower_pgm(&mut ctx, expr)
-    });
+    let (funs, main) = record_pass_stats(&mut pass_stats, "lower", || lower_pgm(&mut ctx, expr));
 
     if dump_cc {
         println!("### Closure conversion:\n");

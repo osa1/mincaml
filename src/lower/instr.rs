@@ -10,6 +10,14 @@ use cranelift_entity::entity_impl;
 pub struct InstrIdx(u32);
 entity_impl!(InstrIdx, "b");
 
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct PhiIdx(u32);
+entity_impl!(PhiIdx, "p");
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ValueIdx(u32);
+entity_impl!(ValueIdx, "v");
+
 // A linked list of instructions. For first node `prev == idx`, for last `next == idx`.
 #[derive(Debug)]
 pub struct Instr {
@@ -19,12 +27,24 @@ pub struct Instr {
     pub kind: InstrKind,
 }
 
+// A phi
+#[derive(Debug)]
+pub struct Phi {
+    // Owner of the phi.
+    pub owner: BlockIdx,
+    // Operands of the phi. Nth operand is for the Nth predecessor.
+    pub values: Vec<ValueIdx>,
+}
+
+// Values
 #[derive(Debug, Clone)]
 pub enum Value {
-    // Nth block argument
+    // Nth function argument
     Arg(usize),
     // Result of instruction
     Instr(InstrIdx),
+    // A phi
+    Phi(PhiIdx),
 }
 
 impl From<InstrIdx> for Value {
@@ -33,48 +53,54 @@ impl From<InstrIdx> for Value {
     }
 }
 
+impl From<PhiIdx> for Value {
+    fn from(p: PhiIdx) -> Self {
+        Value::Phi(p)
+    }
+}
+
 #[derive(Debug)]
 pub enum InstrKind {
     // A move
-    Mov(Value, Value),
+    Mov(ValueIdx, ValueIdx),
     // Integer constant
     IImm(i64),
     // Float constant
     FImm(f64),
     // Integer addition
-    IAdd(Value, Value),
+    IAdd(ValueIdx, ValueIdx),
     // Integer subtraction
-    ISub(Value, Value),
+    ISub(ValueIdx, ValueIdx),
     // Float addition
-    FAdd(Value, Value),
+    FAdd(ValueIdx, ValueIdx),
     // Float subtraction
-    FSub(Value, Value),
+    FSub(ValueIdx, ValueIdx),
     // Float multiplication
-    FMul(Value, Value),
+    FMul(ValueIdx, ValueIdx),
     // Float division
-    FDiv(Value, Value),
+    FDiv(ValueIdx, ValueIdx),
     // Integer negation
-    Neg(Value),
+    Neg(ValueIdx),
     // Float negation
-    FNeg(Value),
+    FNeg(ValueIdx),
     // Function call
-    Call(Value, Vec<Value>, RepType),
+    Call(ValueIdx, Vec<ValueIdx>, RepType),
     // Tuple allocation
     Tuple {
         len: usize,
     },
     // Tuple field read
-    TupleGet(Value, usize),
+    TupleGet(ValueIdx, usize),
     // Tuple field write
-    TuplePut(Value, usize, Value),
+    TuplePut(ValueIdx, usize, ValueIdx),
     // Array allocation
     ArrayAlloc {
-        len: Value,
+        len: ValueIdx,
     },
     // Array field read
-    ArrayGet(Value, Value),
+    ArrayGet(ValueIdx, ValueIdx),
     // Array field write
-    ArrayPut(Value, Value, Value),
+    ArrayPut(ValueIdx, ValueIdx, ValueIdx),
 
     // Control-flow instructions. These are the last instructions of a block.
 
@@ -82,14 +108,14 @@ pub enum InstrKind {
     Jmp(BlockIdx),
     // A conditional jump
     CondJmp {
-        v1: Value,
-        v2: Value,
+        v1: ValueIdx,
+        v2: ValueIdx,
         cond: Cmp,
         then_target: BlockIdx,
         else_target: BlockIdx,
     },
     // Function return
-    Return(Value),
+    Return(ValueIdx),
 }
 
 impl InstrKind {
