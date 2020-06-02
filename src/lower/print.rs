@@ -74,11 +74,11 @@ impl Block {
         let Block {
             idx,
             first_instr,
-            last_instr: _,
+            last_instr,
             filled: _,
             sealed: _,
         } = self;
-        write!(w, "{}:", idx)?;
+        writeln!(w, "{}:", idx)?;
         // match comment {
         //     None => {
         //         writeln!(w)?;
@@ -95,11 +95,11 @@ impl Block {
                 prev: _,
                 kind,
             } = &fun.instrs[instr_idx];
-            writeln!(w, "    ${} = ", idx)?;
+            write!(w, "    ${} = ", idx)?;
             kind.pp(ctx, fun, w)?;
             writeln!(w)?;
 
-            if *next == instr_idx {
+            if *next == *last_instr {
                 break;
             }
 
