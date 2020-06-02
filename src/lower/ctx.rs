@@ -86,6 +86,11 @@ impl<'a> Ctx<'a> {
             ..
         } = self;
 
+        for block in blocks.values() {
+            assert!(block.filled);
+            assert!(block.sealed);
+        }
+
         let fun = Fun {
             name: main_name,
             args: vec![],
@@ -232,14 +237,16 @@ impl<'a> Ctx<'a> {
         self.block_vars[entry_block].insert(var, val_idx);
     }
 
+    // Define a variable in the given block
+    // (writeVariable in the paper)
+    // pub fn def_var(&mut self, block_idx: BlockIdx, var: VarId, val: Value) {
+    //     let val_idx = self.values.push(val);
+    //     self.def_var_(block_idx, var, val_idx);
+    // }
+
     /// Define a variable in the given block
     // (writeVariable in the paper)
-    pub fn def_var(&mut self, block_idx: BlockIdx, var: VarId, val: Value) {
-        let val_idx = self.values.push(val);
-        self.def_var_(block_idx, var, val_idx);
-    }
-
-    pub fn def_var_(&mut self, block_idx: BlockIdx, var: VarId, val_idx: ValueIdx) {
+    pub fn def_var(&mut self, block_idx: BlockIdx, var: VarId, val_idx: ValueIdx) {
         self.block_vars[block_idx].insert(var, val_idx);
     }
 
@@ -276,11 +283,11 @@ impl<'a> Ctx<'a> {
             // Break potential cycles with operandless phi
             let phi_idx = self.create_phi(block_idx, var);
             val_idx = self.values.push(Value::Phi(phi_idx));
-            self.def_var_(block_idx, var, val_idx);
+            self.def_var(block_idx, var, val_idx);
             self.add_phi_operands(block_idx, var, phi_idx);
         }
 
-        self.def_var_(block_idx, var, val_idx);
+        self.def_var(block_idx, var, val_idx);
         val_idx
     }
 

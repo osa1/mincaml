@@ -17,7 +17,6 @@ use crate::ctx::VarId;
 use crate::type_check::Type;
 
 use instr::*;
-// pub use print::*;
 
 // Used when debugging
 #[allow(unused_imports)]
@@ -32,7 +31,12 @@ pub fn lower_pgm(ctx: &mut ctx_::Ctx, expr: anormal::Expr) -> (Vec<Fun>, VarId) 
 
     let main_name = ctx.fresh_var(RepType::Word);
     let main_block = ctx.create_block();
+
+    // Entry block won't have any predecessors so we can seal it before lowering
+    ctx.seal_block(main_block);
+
     lower_block(&mut ctx, main_block, Sequel::Return, expr);
+
 
     (ctx.finish(main_name), main_name)
 }
@@ -52,7 +56,7 @@ fn finish_block(ctx: &mut Ctx, block: BlockIdx, sequel: Sequel, value: ValueIdx)
         Sequel::Asgn(lhs, target) => {
             let lhs_val = ctx.use_var(block, lhs);
             ctx.mov(block, lhs_val, value.clone());
-            ctx.def_var_(block, lhs, value);
+            ctx.def_var(block, lhs, value);
             ctx.jmp(block, target);
         }
     }
@@ -131,6 +135,8 @@ fn lower_block(ctx: &mut Ctx, block: BlockIdx, sequel: Sequel, expr: anormal::Ex
             let val2 = ctx.use_var(block, var2);
 
             ctx.cond_jmp(block, val1, val2, cmp, then_block, else_block);
+            ctx.seal_block(then_block);
+            ctx.seal_block(else_block);
 
             lower_block(ctx, then_block, sequel.clone(), *then_e);
             lower_block(ctx, else_block, sequel, *else_e);
@@ -146,6 +152,7 @@ fn lower_block(ctx: &mut Ctx, block: BlockIdx, sequel: Sequel, expr: anormal::Ex
             let cont_block = ctx.create_block();
             let rhs_sequel = Sequel::Asgn(id, cont_block);
             lower_block(ctx, block, rhs_sequel, *rhs);
+            ctx.seal_block(cont_block);
             lower_block(ctx, cont_block, sequel, *body);
         }
 
@@ -190,11 +197,14 @@ fn lower_block(ctx: &mut Ctx, block: BlockIdx, sequel: Sequel, expr: anormal::Ex
 
                 // TODO: use def_var
                 let entry_block = ctx.create_block();
+                // Entry blocks don't have predecessors, seal it here
+                ctx.seal_block(entry_block);
+
                 let tuple_val = ctx.use_var(entry_block, name);
                 // Bind captured variables in function body
                 for (fv_idx, fv) in closure_fvs.iter().enumerate() {
                     let val = ctx.tuple_get(entry_block, tuple_val.clone(), fv_idx);
-                    ctx.def_var_(entry_block, *fv, val);
+                    ctx.def_var(entry_block, *fv, val);
                 }
                 lower_block(ctx, entry_block, Sequel::Return, *rhs);
 
@@ -215,7 +225,7 @@ fn lower_block(ctx: &mut Ctx, block: BlockIdx, sequel: Sequel, expr: anormal::Ex
             let mut closure_tuple_args = closure_fvs;
             closure_tuple_args.insert(0, fun_var);
             let tuple_val = ctx.tuple(block, closure_tuple_args.len());
-            ctx.def_var_(block, name, tuple_val.clone());
+            ctx.def_var(block, name, tuple_val.clone());
             for (arg_idx, arg) in closure_tuple_args.iter().enumerate() {
                 let arg_val = ctx.use_var(block, *arg);
                 ctx.tuple_put(block, tuple_val.clone(), arg_idx, arg_val);
@@ -285,12 +295,16 @@ fn lower_block(ctx: &mut Ctx, block: BlockIdx, sequel: Sequel, expr: anormal::Ex
                 loop_body_block,
             );
 
+            ctx.seal_block(loop_body_block);
+
             // loop_body
             ctx.array_put(loop_body_block, array.clone(), idx.clone(), elem);
             let inc = ctx.iimm(loop_body_block, 1);
             let idx_plus_one = ctx.iadd(loop_body_block, idx.clone(), inc);
             ctx.mov(loop_body_block, idx, idx_plus_one);
             ctx.jmp(loop_body_block, loop_cond_block);
+
+            ctx.seal_block(loop_cond_block);
 
             finish_block(ctx, block, sequel, array);
         }
