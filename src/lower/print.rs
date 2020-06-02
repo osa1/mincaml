@@ -1,6 +1,6 @@
 use super::block::Block;
 use super::fun::Fun;
-use super::instr::{Instr, InstrKind, Value, ValueIdx};
+use super::instr::{Instr, InstrKind, Phi, Value, ValueIdx};
 
 use crate::common::*;
 use crate::ctx::{Ctx, VarId};
@@ -38,14 +38,16 @@ fn pp_id_ref(id: &VarId, ctx: &Ctx, fun: &Fun, w: &mut dyn fmt::Write) -> fmt::R
 
 impl Fun {
     pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result {
+        #[allow(unused_variables)]
         let Fun {
             name,
             args,
             blocks,
-            instrs,
-            preds,
             values,
             phis,
+            instrs,
+            preds,
+            block_phis,
             return_type,
         } = self;
 
@@ -55,12 +57,15 @@ impl Fun {
         print_comma_sep(ctx, self, &mut args.iter(), pp_id_ref, w)?;
         writeln!(w, ") -> {}", return_type)?;
 
-        writeln!(w, "args:   {:?}", args)?;
-        writeln!(w, "blocks: {:?}", blocks)?;
-        writeln!(w, "instrs: {:?}", instrs)?;
-        writeln!(w, "preds:  {:?}", preds)?;
-        writeln!(w, "values: {:?}", values)?;
-        writeln!(w, "phis:   {:?}", phis)?;
+        /*
+        writeln!(w, "args:       {:?}", args)?;
+        writeln!(w, "blocks:     {:?}", blocks)?;
+        writeln!(w, "instrs:     {:?}", instrs)?;
+        writeln!(w, "preds:      {:?}", preds)?;
+        writeln!(w, "values:     {:?}", values)?;
+        writeln!(w, "phis:       {:?}", phis)?;
+        writeln!(w, "block_phis: {:?}", block_phis)?;
+        */
 
         for block in blocks.values() {
             block.pp(ctx, self, w)?;
@@ -87,6 +92,14 @@ impl Block {
         //         writeln!(w, " // {}", comment)?;
         //     }
         // }
+
+        for phi_idx in &fun.block_phis[*idx] {
+            write!(w, "    {} = ", phi_idx)?;
+            let Phi { values, .. } = &fun.phis[*phi_idx];
+            print_comma_sep(ctx, fun, &mut values.iter(), ValueIdx::pp, w)?;
+            writeln!(w)?;
+        }
+
         let mut instr_idx = *first_instr;
         loop {
             let Instr {
@@ -95,11 +108,11 @@ impl Block {
                 prev: _,
                 kind,
             } = &fun.instrs[instr_idx];
-            write!(w, "    ${} = ", idx)?;
+            write!(w, "    {} = ", idx)?;
             kind.pp(ctx, fun, w)?;
             writeln!(w)?;
 
-            if *next == *last_instr {
+            if *last_instr == instr_idx {
                 break;
             }
 
@@ -119,12 +132,12 @@ fn pp_vals(
 }
 
 impl Value {
-    pub fn pp(&self, ctx: &Ctx, fun: &Fun, w: &mut dyn fmt::Write) -> fmt::Result {
+    pub fn pp(&self, _ctx: &Ctx, _fun: &Fun, w: &mut dyn fmt::Write) -> fmt::Result {
         use Value::*;
         match self {
-            Arg(idx) => write!(w, "${}", idx),
-            Instr(idx) => write!(w, "${}", idx),
-            Phi(idx) => write!(w, "${}", idx),
+            Arg(idx) => write!(w, "{}", idx),
+            Instr(idx) => write!(w, "{}", idx),
+            Phi(idx) => write!(w, "{}", idx),
         }
     }
 }

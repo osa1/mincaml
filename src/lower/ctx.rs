@@ -83,6 +83,7 @@ impl<'a> Ctx<'a> {
             phis,
             instrs,
             preds,
+            block_phis,
             ..
         } = self;
 
@@ -99,6 +100,7 @@ impl<'a> Ctx<'a> {
             phis,
             instrs,
             preds,
+            block_phis,
             return_type: RepType::Word,
         };
 
@@ -212,18 +214,19 @@ impl<'a> Ctx<'a> {
         let fun_phis = replace(&mut self.phis, phis);
         let fun_instrs = replace(&mut self.instrs, instrs);
         let fun_preds = replace(&mut self.preds, preds);
+        let fun_block_phis = replace(&mut self.block_phis, block_phis);
         self.block_vars = block_vars;
-        self.block_phis = block_phis;
         self.incomplete_phis = incomplete_phis;
 
         let fun = Fun {
             name,
             args,
             blocks: fun_blocks,
-            instrs: fun_instrs,
-            preds: fun_preds,
             values: fun_values,
             phis: fun_phis,
+            instrs: fun_instrs,
+            preds: fun_preds,
+            block_phis: fun_block_phis,
             return_type,
         };
 

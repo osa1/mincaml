@@ -8,11 +8,11 @@ use cranelift_entity::entity_impl;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct InstrIdx(u32);
-entity_impl!(InstrIdx, "b");
+entity_impl!(InstrIdx, "i");
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PhiIdx(u32);
-entity_impl!(PhiIdx, "p");
+entity_impl!(PhiIdx, "φ");
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ValueIdx(u32);
