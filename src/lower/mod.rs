@@ -295,6 +295,7 @@ fn lower_block(ctx: &mut Ctx, block: BlockIdx, sequel: Sequel, expr: anormal::Ex
                 loop_body_block,
             );
 
+            ctx.seal_block(cont_block);
             ctx.seal_block(loop_body_block);
 
             // loop_body
@@ -306,7 +307,7 @@ fn lower_block(ctx: &mut Ctx, block: BlockIdx, sequel: Sequel, expr: anormal::Ex
 
             ctx.seal_block(loop_cond_block);
 
-            finish_block(ctx, block, sequel, array);
+            finish_block(ctx, cont_block, sequel, array);
         }
 
         anormal::Expr::ArrayGet(array, idx) => {

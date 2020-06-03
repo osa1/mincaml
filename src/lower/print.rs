@@ -235,7 +235,7 @@ impl InstrKind {
                 v1.pp(ctx, fun, w)?;
                 write!(w, " {} ", cond)?;
                 v2.pp(ctx, fun, w)?;
-                write!(w, "then jmp {} else jmp {}", then_target, else_target)
+                write!(w, " then jmp {} else jmp {}", then_target, else_target)
             }
             Return(v) => {
                 w.write_str("ret ")?;
