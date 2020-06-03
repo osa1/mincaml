@@ -57,7 +57,7 @@ impl Fun {
         // writeln!(w, "instrs:     {:?}", instrs)?;
         // writeln!(w, "preds:      {:?}", preds)?;
         // writeln!(w, "values:     {:?}", values)?;
-        // writeln!(w, "phis:       {:?}", phis)?;
+        writeln!(w, "phis:       {:?}", phis)?;
         // writeln!(w, "block_phis: {:?}", block_phis)?;
 
         for block in blocks.values() {
@@ -146,10 +146,10 @@ impl InstrKind {
     pub fn pp(&self, ctx: &Ctx, fun: &Fun, w: &mut dyn fmt::Write) -> fmt::Result {
         use InstrKind::*;
         match self {
-            Mov(from, to) => {
-                w.write_str("mov ")?;
-                pp_vals(ctx, fun, *from, *to, w)
-            }
+            // Mov(from, to) => {
+            //     w.write_str("mov ")?;
+            //     pp_vals(ctx, fun, *from, *to, w)
+            // }
             IImm(v) => write!(w, "iimm {}", v),
             FImm(v) => write!(w, "fimm {}", v),
             IAdd(v1, v2) => {

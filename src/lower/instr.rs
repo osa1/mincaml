@@ -65,7 +65,7 @@ impl From<PhiIdx> for Value {
 #[derive(Debug)]
 pub enum InstrKind {
     // A move
-    Mov(ValueIdx, ValueIdx),
+    // Mov(ValueIdx, ValueIdx),
     // Integer constant
     IImm(i64),
     // Float constant

@@ -332,8 +332,6 @@ impl<'a> Ctx<'a> {
 
     // (addPhiOperands in the paper)
     fn add_phi_operands(&mut self, block_idx: BlockIdx, var: VarId, phi_idx: PhiIdx) {
-        assert!(self.blocks[block_idx].sealed);
-
         // TODO: clone below to avoid borrowchk error
         for pred in self.preds[block_idx].clone() {
             let val_idx = self.use_var(pred, var);
@@ -363,9 +361,9 @@ impl<'a> Ctx<'a> {
 //
 
 impl<'a> Ctx<'a> {
-    pub fn mov(&mut self, block: BlockIdx, value: ValueIdx, loc: ValueIdx) -> ValueIdx {
-        self.instr(block, InstrKind::Mov(loc, value)).into()
-    }
+    // pub fn mov(&mut self, block: BlockIdx, value: ValueIdx, loc: ValueIdx) -> ValueIdx {
+    //     self.instr(block, InstrKind::Mov(loc, value)).into()
+    // }
 
     pub fn iimm(&mut self, block: BlockIdx, i: i64) -> ValueIdx {
         self.instr(block, InstrKind::IImm(i)).into()

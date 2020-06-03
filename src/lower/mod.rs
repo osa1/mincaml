@@ -53,8 +53,6 @@ fn finish_block(ctx: &mut Ctx, block: BlockIdx, sequel: Sequel, value: ValueIdx)
             ctx.ret(block, value);
         }
         Sequel::Asgn(lhs, target) => {
-            // let lhs_val = ctx.use_var(block, lhs);
-            // ctx.mov(block, value, lhs_val);
             ctx.def_var(block, lhs, value);
             ctx.jmp(block, target);
         }
@@ -147,7 +145,6 @@ fn lower_block(ctx: &mut Ctx, block: BlockIdx, sequel: Sequel, expr: anormal::Ex
             rhs,
             body,
         } => {
-            // TODO: we need to declare `id` here to be able to assign to it in `rhs`
             let cont_block = ctx.create_block();
             let rhs_sequel = Sequel::Asgn(id, cont_block);
             lower_block(ctx, block, rhs_sequel, *rhs);
@@ -277,7 +274,11 @@ fn lower_block(ctx: &mut Ctx, block: BlockIdx, sequel: Sequel, expr: anormal::Ex
             let array = ctx.array_alloc(block, len.clone());
             let elem = ctx.use_var(block, elem);
 
-            let idx = ctx.iimm(block, 0);
+            let idx_var = ctx.fresh_var(RepType::Word);
+            {
+                let idx = ctx.iimm(block, 0);
+                ctx.def_var(block, idx_var, idx);
+            }
 
             let loop_cond_block = ctx.create_block();
             ctx.jmp(block, loop_cond_block);
@@ -286,24 +287,30 @@ fn lower_block(ctx: &mut Ctx, block: BlockIdx, sequel: Sequel, expr: anormal::Ex
             let cont_block = ctx.create_block();
 
             // loop_cond
-            ctx.cond_jmp(
-                loop_cond_block,
-                idx.clone(),
-                len,
-                Cmp::Equal,
-                cont_block,
-                loop_body_block,
-            );
+            {
+                let idx = ctx.use_var(loop_cond_block, idx_var);
+                ctx.cond_jmp(
+                    loop_cond_block,
+                    idx,
+                    len,
+                    Cmp::Equal,
+                    cont_block,
+                    loop_body_block,
+                );
+            }
 
             ctx.seal_block(cont_block);
             ctx.seal_block(loop_body_block);
 
             // loop_body
-            ctx.array_put(loop_body_block, array.clone(), idx.clone(), elem);
-            let inc = ctx.iimm(loop_body_block, 1);
-            let idx_plus_one = ctx.iadd(loop_body_block, idx.clone(), inc);
-            ctx.mov(loop_body_block, idx, idx_plus_one);
-            ctx.jmp(loop_body_block, loop_cond_block);
+            {
+                let idx = ctx.use_var(loop_body_block, idx_var);
+                ctx.array_put(loop_body_block, array, idx, elem);
+                let inc = ctx.iimm(loop_body_block, 1);
+                let idx_plus_one = ctx.iadd(loop_body_block, idx.clone(), inc);
+                ctx.def_var(loop_body_block, idx_var, idx_plus_one);
+                ctx.jmp(loop_body_block, loop_cond_block);
+            }
 
             ctx.seal_block(loop_cond_block);
 
