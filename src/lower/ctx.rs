@@ -67,7 +67,7 @@ fn create_builtins(
     let entry_block = BlockIdx::from_u32(0);
 
     for (var, _) in ctx.builtins() {
-        let val_idx = vals.push(Value::Builtin(*var));
+        let val_idx = vals.push(Value::Global(*var));
         block_vars[entry_block].insert(*var, val_idx);
     }
 
@@ -214,12 +214,14 @@ impl<'a> Ctx<'a> {
     pub fn fork_fun<F: FnOnce(&mut Ctx) -> FunSig>(&mut self, f: F) {
         use std::mem::replace;
 
+        let (fun_values, fun_block_vars) = create_builtins(self.ctx);
+
         let blocks = replace(&mut self.blocks, PrimaryMap::new());
-        let values = replace(&mut self.values, PrimaryMap::new());
+        let values = replace(&mut self.values, fun_values);
         let phis = replace(&mut self.phis, PrimaryMap::new());
         let instrs = replace(&mut self.instrs, PrimaryMap::new());
         let preds = replace(&mut self.preds, SecondaryMap::new());
-        let block_vars = replace(&mut self.block_vars, SecondaryMap::new());
+        let block_vars = replace(&mut self.block_vars, fun_block_vars);
         let block_phis = replace(&mut self.block_phis, SecondaryMap::new());
         let incomplete_phis = replace(&mut self.incomplete_phis, SecondaryMap::new());
 
@@ -267,6 +269,12 @@ impl<'a> Ctx<'a> {
     //     self.def_var_(block_idx, var, val_idx);
     // }
 
+    pub fn def_global(&mut self, var: VarId) {
+        let val_idx = self.values.push(Value::Global(var));
+        let entry_block = self.entry_block();
+        self.block_vars[entry_block].insert(var, val_idx);
+    }
+
     /// Define a variable in the given block
     // (writeVariable in the paper)
     pub fn def_var(&mut self, block_idx: BlockIdx, var: VarId, val_idx: ValueIdx) {
@@ -301,8 +309,9 @@ impl<'a> Ctx<'a> {
             // Sealed and have no predecessors, the variable should've been defined
             use std::fmt::Write;
             let mut s = String::new();
-            write!(s, "Undefined variable in {}: ", block_idx).unwrap();
+            write!(s, "\n\nUndefined variable in {}: {:?} ", block_idx, var).unwrap();
             super::print::pp_id(self.ctx, var, &mut s).unwrap();
+            writeln!(s, "\nblock_vars: {:?}\n\n", self.block_vars[block_idx]).unwrap();
             panic!("{}", s);
         } else if self.preds[block_idx].len() == 1 {
             // sealed

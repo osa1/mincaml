@@ -40,8 +40,8 @@ pub struct Phi {
 // Values
 #[derive(Debug, Clone)]
 pub enum Value {
-    // A built-in value
-    Builtin(VarId),
+    // A global value, like a built-in or a function
+    Global(VarId),
     // Nth function argument
     Arg(usize),
     // Result of instruction

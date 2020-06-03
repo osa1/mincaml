@@ -37,7 +37,6 @@ pub fn lower_pgm(ctx: &mut ctx_::Ctx, expr: anormal::Expr) -> (Vec<Fun>, VarId) 
 
     lower_block(&mut ctx, main_block, Sequel::Return, expr);
 
-
     (ctx.finish(main_name), main_name)
 }
 
@@ -170,6 +169,7 @@ fn lower_block(ctx: &mut Ctx, block: BlockIdx, sequel: Sequel, expr: anormal::Ex
         } => {
             // 'name' will refer to the closure tuple. For the actual function create a fresh var
             let fun_var = ctx.fresh_var(RepType::Word);
+            ctx.def_global(fun_var);
             // Free variables of the closure will be moved to tuple payload
             // NOTE: An inefficiency here is that if we have deeply nested letrecs we'll be
             // computing fvs of nested letrecs when computing the outer ones. One solution could be
@@ -240,7 +240,7 @@ fn lower_block(ctx: &mut Ctx, block: BlockIdx, sequel: Sequel, expr: anormal::Ex
             let fun = ctx.tuple_get(block, tuple, 0);
 
             let mut arg_vals = Vec::with_capacity(args.len() + 1);
-            arg_vals.push(fun.clone());
+            arg_vals.push(tuple);
 
             for arg in args {
                 let arg_val = ctx.use_var(block, arg);

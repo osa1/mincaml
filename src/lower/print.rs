@@ -128,7 +128,7 @@ impl Value {
     pub fn pp(&self, ctx: &Ctx, _fun: &Fun, w: &mut dyn fmt::Write) -> fmt::Result {
         use Value::*;
         match self {
-            Builtin(var) => pp_id(ctx, *var, w),
+            Global(var) => pp_id(ctx, *var, w),
             Arg(idx) => write!(w, "arg_{}", idx),
             Instr(idx) => write!(w, "{}", idx),
             Phi(idx) => write!(w, "{}", idx),
