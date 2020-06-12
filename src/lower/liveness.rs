@@ -54,8 +54,8 @@ impl Liveness {
 // - All dominators of a block come before the block
 // - All blocks belonging to the same loop are contiguous
 //
-pub fn build_intervals(_fun: &Fun) {
-    // TODO: We need live-ins first
+pub fn build_intervals(fun: &Fun, liveness: &Liveness) {
+
 }
 
 // We implement simple dataflow-based liveness analysis for now.
@@ -72,7 +72,12 @@ pub fn gen_liveness(fun: &Fun) -> Liveness {
 
         while let Some(block) = work_list.pop() {
             updated |= update_block_liveness(fun, &mut visited, &mut liveness, block);
-            work_list.extend_from_slice(&fun.preds[block]);
+
+            for pred in &fun.preds[block] {
+                if !visited.contains(pred) {
+                    work_list.push(*pred);
+                }
+            }
         }
 
         if !updated {
@@ -86,10 +91,6 @@ pub fn gen_liveness(fun: &Fun) -> Liveness {
 fn update_block_liveness(
     fun: &Fun, visited: &mut FxHashSet<BlockIdx>, liveness: &mut Liveness, block_idx: BlockIdx,
 ) -> bool {
-    if visited.contains(&block_idx) {
-        return false;
-    }
-
     visited.insert(block_idx);
 
     let mut updated = false;
@@ -97,6 +98,16 @@ fn update_block_liveness(
     let block = &fun.blocks[block_idx];
     let first_instr_idx = block.first_instr;
     let last_instr_idx = block.last_instr;
+
+    // Add phi operands as live-outs to predecessors
+    for phi_idx in &fun.block_phis[block_idx] {
+        let phi = &fun.phis[*phi_idx];
+        for (pred_idx, pred_val_idx) in phi.values.iter().enumerate() {
+            let pred_block_idx = fun.preds[block_idx][pred_idx];
+            let pred_block_last_instr = fun.blocks[pred_block_idx].last_instr;
+            updated |= liveness.live_outs[pred_block_last_instr].insert(*pred_val_idx);
+        }
+    }
 
     let mut instr_idx = last_instr_idx;
     loop {
