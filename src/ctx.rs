@@ -4,6 +4,7 @@ use crate::type_check::{TyVar, Type};
 use crate::var::{CompilerPhase, Uniq, Var};
 
 use fxhash::FxHashMap;
+use std::fmt;
 use std::num::NonZeroU32;
 use std::rc::Rc;
 
@@ -224,5 +225,27 @@ impl Ctx {
 
         let cos_var = self.fresh_builtin_var("cos", "mc_cos");
         self.add_builtin(cos_var, float_float);
+    }
+}
+
+//
+// Debug interface
+//
+
+pub struct VarIdDebug<'a> {
+    var: VarId,
+    ctx: &'a Ctx,
+}
+
+impl VarId {
+    pub fn debug_display<'a>(&'a self, ctx: &'a Ctx) -> VarIdDebug<'a> {
+        VarIdDebug { var: *self, ctx }
+    }
+}
+
+impl<'a> fmt::Debug for VarIdDebug<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let var = self.ctx.get_var(self.var);
+        <Var as fmt::Display>::fmt(&*var, f)
     }
 }

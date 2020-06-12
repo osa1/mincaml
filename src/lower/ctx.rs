@@ -29,6 +29,9 @@ pub struct Ctx<'a> {
     /// Blocks generated so far for the current function
     blocks: PrimaryMap<BlockIdx, Block>,
 
+    /// Exit blocks of the current function
+    exit_blocks: Vec<BlockIdx>,
+
     /// Heap for values of the current function
     values: PrimaryMap<ValueIdx, Value>,
 
@@ -38,8 +41,14 @@ pub struct Ctx<'a> {
     /// Instructions of the current function
     instrs: PrimaryMap<InstrIdx, Instr>,
 
+    /// Maps blocks to their successors in the control-flow graph
+    succs: SecondaryMap<BlockIdx, Vec<BlockIdx>>,
+
     /// Maps blocks to their predecessors in the control-flow graph
     preds: SecondaryMap<BlockIdx, Vec<BlockIdx>>,
+
+    /// Maps values to their use sites
+    value_uses: SecondaryMap<ValueIdx, Vec<ValueIdx>>, // TODO: Update this
 
     /// Maps blocks to variables defined
     block_vars: SecondaryMap<BlockIdx, FxHashMap<VarId, ValueIdx>>,
@@ -82,10 +91,13 @@ impl<'a> Ctx<'a> {
             ctx,
             funs: vec![],
             blocks: PrimaryMap::new(),
+            exit_blocks: vec![],
             values,
             phis: PrimaryMap::new(),
             instrs: PrimaryMap::new(),
+            succs: SecondaryMap::new(),
             preds: SecondaryMap::new(),
+            value_uses: SecondaryMap::new(),
             block_vars,
             block_phis: SecondaryMap::new(),
             phi_users: SecondaryMap::new(),
@@ -99,10 +111,13 @@ impl<'a> Ctx<'a> {
             ctx: _,
             mut funs,
             blocks,
+            exit_blocks,
             values,
             phis,
             instrs,
+            succs,
             preds,
+            value_uses,
             block_phis,
             ..
         } = self;
@@ -116,10 +131,13 @@ impl<'a> Ctx<'a> {
             name: main_name,
             args: vec![],
             blocks,
+            exit_blocks,
             values,
             phis,
             instrs,
+            succs,
             preds,
+            value_uses,
             block_phis,
             return_type: RepType::Word,
         };
@@ -180,6 +198,7 @@ impl<'a> Ctx<'a> {
 
         for target in instr_kind.targets() {
             self.preds[target].push(block_idx);
+            self.succs[block_idx].push(target);
         }
 
         let instr_idx = self.instrs.next_key();
@@ -188,6 +207,7 @@ impl<'a> Ctx<'a> {
             // First instruction in the block
             let instr = Instr {
                 idx: instr_idx,
+                block: block_idx,
                 next: instr_idx,
                 prev: instr_idx,
                 kind: instr_kind,
@@ -199,6 +219,7 @@ impl<'a> Ctx<'a> {
             self.instrs[*last_instr].next = instr_idx;
             let instr = Instr {
                 idx: instr_idx,
+                block: block_idx,
                 next: instr_idx,
                 prev: *last_instr,
                 kind: instr_kind,
@@ -217,10 +238,13 @@ impl<'a> Ctx<'a> {
         let (fun_values, fun_block_vars) = create_builtins(self.ctx);
 
         let blocks = replace(&mut self.blocks, PrimaryMap::new());
+        let exit_blocks = replace(&mut self.exit_blocks, vec![]);
         let values = replace(&mut self.values, fun_values);
         let phis = replace(&mut self.phis, PrimaryMap::new());
         let instrs = replace(&mut self.instrs, PrimaryMap::new());
+        let succs = replace(&mut self.succs, SecondaryMap::new());
         let preds = replace(&mut self.preds, SecondaryMap::new());
+        let value_uses = replace(&mut self.value_uses, SecondaryMap::new());
         let block_vars = replace(&mut self.block_vars, fun_block_vars);
         let block_phis = replace(&mut self.block_phis, SecondaryMap::new());
         let incomplete_phis = replace(&mut self.incomplete_phis, SecondaryMap::new());
@@ -232,10 +256,13 @@ impl<'a> Ctx<'a> {
         } = f(self);
 
         let fun_blocks = replace(&mut self.blocks, blocks);
+        let fun_exit_blocks = replace(&mut self.exit_blocks, exit_blocks);
         let fun_values = replace(&mut self.values, values);
         let fun_phis = replace(&mut self.phis, phis);
         let fun_instrs = replace(&mut self.instrs, instrs);
+        let fun_succs = replace(&mut self.succs, succs);
         let fun_preds = replace(&mut self.preds, preds);
+        let fun_value_uses = replace(&mut self.value_uses, value_uses);
         let fun_block_phis = replace(&mut self.block_phis, block_phis);
         self.block_vars = block_vars;
         self.incomplete_phis = incomplete_phis;
@@ -244,10 +271,13 @@ impl<'a> Ctx<'a> {
             name,
             args,
             blocks: fun_blocks,
+            exit_blocks: fun_exit_blocks,
             values: fun_values,
             phis: fun_phis,
             instrs: fun_instrs,
+            succs: fun_succs,
             preds: fun_preds,
+            value_uses: fun_value_uses,
             block_phis: fun_block_phis,
             return_type,
         };
@@ -441,6 +471,12 @@ impl<'a> Ctx<'a> {
     }
 
     pub fn ret(&mut self, block: BlockIdx, v: ValueIdx) {
+        #[cfg(debug_assertions)]
+        for exit_block in &self.exit_blocks {
+            assert_ne!(block, *exit_block);
+        }
+
+        self.exit_blocks.push(block);
         self.instr(block, InstrKind::Return(v));
     }
 

@@ -11,10 +11,13 @@ pub struct Fun {
     pub name: VarId,
     pub args: Vec<VarId>,
     pub blocks: PrimaryMap<BlockIdx, Block>,
+    pub exit_blocks: Vec<BlockIdx>,
     pub values: PrimaryMap<ValueIdx, Value>,
     pub phis: PrimaryMap<PhiIdx, Phi>,
     pub instrs: PrimaryMap<InstrIdx, Instr>,
+    pub succs: SecondaryMap<BlockIdx, Vec<BlockIdx>>,
     pub preds: SecondaryMap<BlockIdx, Vec<BlockIdx>>,
+    pub value_uses: SecondaryMap<ValueIdx, Vec<ValueIdx>>,
     pub block_phis: SecondaryMap<BlockIdx, Vec<PhiIdx>>,
     pub return_type: RepType,
 }

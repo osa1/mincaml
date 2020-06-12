@@ -18,6 +18,7 @@ mod var;
 use anormal::anormal;
 // use codegen::codegen;
 use lexer::{tokenize, Token};
+use lower::liveness::gen_liveness;
 use lower::lower_pgm;
 use parser::parse;
 use type_check::type_check_pgm;
@@ -105,7 +106,7 @@ fn compile_expr(
     let (funs, main) = record_pass_stats(&mut pass_stats, "lower", || lower_pgm(&mut ctx, expr));
 
     if dump_cc {
-        println!("### Closure conversion:\n");
+        println!("### Lowering:\n");
 
         let mut s = String::new();
         for fun in &funs {
@@ -115,9 +116,14 @@ fn compile_expr(
         println!("{}", s);
     }
 
-    if dump_cg {
-        println!("### Code generation:\n");
+    for fun in funs.iter() {
+        let liveness = gen_liveness(fun);
+        println!("{:?}", liveness.debug(&ctx, fun));
     }
+
+    // if dump_cg {
+    //     println!("### Code generation:\n");
+    // }
 
     /*
     let object_code = record_pass_stats(&mut pass_stats, "codegen", || {

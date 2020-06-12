@@ -2,7 +2,7 @@ mod block;
 mod ctx;
 mod fun;
 mod instr;
-mod liveness;
+pub mod liveness; // pub for testing purposes
 mod print;
 
 use block::BlockIdx;

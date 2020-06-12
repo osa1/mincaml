@@ -38,10 +38,13 @@ impl Fun {
             name,
             args,
             blocks,
+            exit_blocks: _,
             values,
             phis,
             instrs,
+            succs: _,
             preds,
+            value_uses,
             block_phis,
             return_type,
         } = self;
@@ -97,6 +100,7 @@ impl Block {
         loop {
             let Instr {
                 idx,
+                block: _,
                 next,
                 prev: _,
                 kind,
