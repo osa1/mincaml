@@ -108,17 +108,14 @@ fn compile_expr(
     if dump_cc {
         println!("### Lowering:\n");
 
-        let mut s = String::new();
         for fun in &funs {
+            let mut s = String::new();
             fun.pp(&ctx, &mut s).unwrap();
+            println!("{}", s);
+
+            let liveness = gen_liveness(fun);
+            println!("{:?}\n", liveness.debug(&ctx, fun));
         }
-
-        println!("{}", s);
-    }
-
-    for fun in funs.iter() {
-        let liveness = gen_liveness(fun);
-        println!("{:?}", liveness.debug(&ctx, fun));
     }
 
     // if dump_cg {

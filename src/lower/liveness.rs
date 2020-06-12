@@ -53,15 +53,16 @@ pub fn gen_liveness(fun: &Fun) -> Liveness {
     let mut liveness = Liveness {
         live_ins: SecondaryMap::new(),
         live_outs: SecondaryMap::new(),
-        // interferences: Vec::new(),
     };
 
     loop {
+        let mut work_list = fun.exit_blocks.clone();
         let mut updated = false;
         let mut visited: FxHashSet<BlockIdx> = Default::default();
 
-        for exit_block in &fun.exit_blocks {
-            updated |= update_block_liveness(fun, &mut visited, &mut liveness, *exit_block);
+        while let Some(block) = work_list.pop() {
+            updated |= update_block_liveness(fun, &mut visited, &mut liveness, block);
+            work_list.extend_from_slice(&fun.preds[block]);
         }
 
         if !updated {
@@ -186,11 +187,22 @@ impl<'a> fmt::Debug for ValueSetDebug<'a> {
 
 impl<'a> fmt::Debug for LivenessDebug<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("live-ins: ")?;
+        f.write_str("live-ins:  ")?;
         let mut lst = f.debug_list();
         for live_in in self.liveness.live_ins.values() {
             lst.entry(&ValueSetDebug {
                 set: live_in,
+                ctx: self.ctx,
+                fun: self.fun,
+            });
+        }
+        lst.finish()?;
+
+        f.write_str("\nlive-outs: ")?;
+        let mut lst = f.debug_list();
+        for live_out in self.liveness.live_outs.values() {
+            lst.entry(&ValueSetDebug {
+                set: live_out,
                 ctx: self.ctx,
                 fun: self.fun,
             });
