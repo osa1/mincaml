@@ -37,6 +37,16 @@ pub struct Liveness {
     live_outs: SecondaryMap<InstrIdx, FxHashSet<ValueIdx>>,
 }
 
+impl Liveness {
+    pub fn instr_live_ins(&self, instr_idx: InstrIdx) -> &FxHashSet<ValueIdx> {
+        &self.live_ins[instr_idx]
+    }
+
+    pub fn instr_live_outs(&self, instr_idx: InstrIdx) -> &FxHashSet<ValueIdx> {
+        &self.live_outs[instr_idx]
+    }
+}
+
 // BuildIntervals in paper
 //
 // Input blocks should be ordered so that
@@ -150,8 +160,14 @@ pub struct LivenessDebug<'a> {
     liveness: &'a Liveness,
 }
 
+pub fn value_set_debug<'a>(
+    set: &'a FxHashSet<ValueIdx>, ctx: &'a Ctx, fun: &'a Fun,
+) -> ValueSetDebug<'a> {
+    ValueSetDebug { set, ctx, fun }
+}
+
 // Provides a better `Debug` impl for `FxHashSet<ValueIdx>`: shows actual values instead of indices
-struct ValueSetDebug<'a> {
+pub struct ValueSetDebug<'a> {
     set: &'a FxHashSet<ValueIdx>,
     ctx: &'a Ctx,
     fun: &'a Fun,
@@ -188,25 +204,31 @@ impl<'a> fmt::Debug for ValueSetDebug<'a> {
 impl<'a> fmt::Debug for LivenessDebug<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("live-ins:  ")?;
-        let mut lst = f.debug_list();
-        for live_in in self.liveness.live_ins.values() {
-            lst.entry(&ValueSetDebug {
-                set: live_in,
-                ctx: self.ctx,
-                fun: self.fun,
-            });
+        let mut map = f.debug_map();
+        for (idx, live_in) in self.liveness.live_ins.values().enumerate() {
+            map.entry(
+                &idx,
+                &ValueSetDebug {
+                    set: live_in,
+                    ctx: self.ctx,
+                    fun: self.fun,
+                },
+            );
         }
-        lst.finish()?;
+        map.finish()?;
 
         f.write_str("\nlive-outs: ")?;
-        let mut lst = f.debug_list();
-        for live_out in self.liveness.live_outs.values() {
-            lst.entry(&ValueSetDebug {
-                set: live_out,
-                ctx: self.ctx,
-                fun: self.fun,
-            });
+        let mut map = f.debug_map();
+        for (idx, live_out) in self.liveness.live_outs.values().enumerate() {
+            map.entry(
+                &idx,
+                &ValueSetDebug {
+                    set: live_out,
+                    ctx: self.ctx,
+                    fun: self.fun,
+                },
+            );
         }
-        lst.finish()
+        map.finish()
     }
 }

@@ -1,6 +1,7 @@
 use super::block::Block;
 use super::fun::Fun;
 use super::instr::{Instr, InstrKind, Phi, Value, ValueIdx};
+use super::liveness::{value_set_debug, Liveness};
 
 use crate::ctx::{Ctx, VarId};
 
@@ -32,7 +33,9 @@ fn pp_id_ref(id: &VarId, ctx: &Ctx, _fun: &Fun, w: &mut dyn fmt::Write) -> fmt::
 }
 
 impl Fun {
-    pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result {
+    pub fn pp(
+        &self, ctx: &Ctx, liveness: Option<&Liveness>, w: &mut dyn fmt::Write,
+    ) -> fmt::Result {
         #[allow(unused_variables)]
         let Fun {
             name,
@@ -64,14 +67,16 @@ impl Fun {
         // writeln!(w, "block_phis: {:?}", block_phis)?;
 
         for block in blocks.values() {
-            block.pp(ctx, self, w)?;
+            block.pp(ctx, self, liveness, w)?;
         }
         writeln!(w)
     }
 }
 
 impl Block {
-    pub fn pp(&self, ctx: &Ctx, fun: &Fun, w: &mut dyn fmt::Write) -> fmt::Result {
+    pub fn pp(
+        &self, ctx: &Ctx, fun: &Fun, liveness: Option<&Liveness>, w: &mut dyn fmt::Write,
+    ) -> fmt::Result {
         let Block {
             idx,
             first_instr,
@@ -107,6 +112,16 @@ impl Block {
             } = &fun.instrs[instr_idx];
             write!(w, "    {} = ", idx)?;
             kind.pp(ctx, fun, w)?;
+
+            if let Some(liveness) = liveness {
+                write!(
+                    w,
+                    " // {:?} {:?}",
+                    value_set_debug(liveness.instr_live_ins(*idx), ctx, fun),
+                    value_set_debug(liveness.instr_live_outs(*idx), ctx, fun),
+                )?;
+            }
+
             writeln!(w)?;
 
             if *last_instr == instr_idx {

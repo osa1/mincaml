@@ -109,12 +109,10 @@ fn compile_expr(
         println!("### Lowering:\n");
 
         for fun in &funs {
-            let mut s = String::new();
-            fun.pp(&ctx, &mut s).unwrap();
-            println!("{}", s);
-
             let liveness = gen_liveness(fun);
-            println!("{:?}\n", liveness.debug(&ctx, fun));
+            let mut s = String::new();
+            fun.pp(&ctx, Some(&liveness), &mut s).unwrap();
+            println!("{}", s);
         }
     }
 
