@@ -396,78 +396,119 @@ impl<'a> Ctx<'a> {
     // }
 
     pub fn iimm(&mut self, block: BlockIdx, i: i64) -> ValueIdx {
-        self.instr(block, InstrKind::IImm(i)).into()
+        self.instr(block, InstrKind::IImm(i))
     }
 
     pub fn fimm(&mut self, block: BlockIdx, f: f64) -> ValueIdx {
-        self.instr(block, InstrKind::FImm(f)).into()
+        self.instr(block, InstrKind::FImm(f))
     }
 
     pub fn iadd(&mut self, block: BlockIdx, v1: ValueIdx, v2: ValueIdx) -> ValueIdx {
-        self.instr(block, InstrKind::IAdd(v1, v2)).into()
+        let value_idx = self.instr(block, InstrKind::IAdd(v1, v2));
+        self.value_uses[value_idx].push(v1);
+        self.value_uses[value_idx].push(v2);
+        value_idx
     }
 
     pub fn isub(&mut self, block: BlockIdx, v1: ValueIdx, v2: ValueIdx) -> ValueIdx {
-        self.instr(block, InstrKind::ISub(v1, v2)).into()
+        let value_idx = self.instr(block, InstrKind::ISub(v1, v2));
+        self.value_uses[value_idx].push(v1);
+        self.value_uses[value_idx].push(v2);
+        value_idx
     }
 
     pub fn fadd(&mut self, block: BlockIdx, v1: ValueIdx, v2: ValueIdx) -> ValueIdx {
-        self.instr(block, InstrKind::FAdd(v1, v2)).into()
+        let value_idx = self.instr(block, InstrKind::FAdd(v1, v2));
+        self.value_uses[value_idx].push(v1);
+        self.value_uses[value_idx].push(v2);
+        value_idx
     }
 
     pub fn fsub(&mut self, block: BlockIdx, v1: ValueIdx, v2: ValueIdx) -> ValueIdx {
-        self.instr(block, InstrKind::FSub(v1, v2)).into()
+        let value_idx = self.instr(block, InstrKind::FSub(v1, v2));
+        self.value_uses[value_idx].push(v1);
+        self.value_uses[value_idx].push(v2);
+        value_idx
     }
 
     pub fn fmul(&mut self, block: BlockIdx, v1: ValueIdx, v2: ValueIdx) -> ValueIdx {
-        self.instr(block, InstrKind::FMul(v1, v2)).into()
+        let value_idx = self.instr(block, InstrKind::FMul(v1, v2));
+        self.value_uses[value_idx].push(v1);
+        self.value_uses[value_idx].push(v2);
+        value_idx
     }
 
     pub fn fdiv(&mut self, block: BlockIdx, v1: ValueIdx, v2: ValueIdx) -> ValueIdx {
-        self.instr(block, InstrKind::FDiv(v1, v2)).into()
+        let value_idx = self.instr(block, InstrKind::FDiv(v1, v2));
+        self.value_uses[value_idx].push(v1);
+        self.value_uses[value_idx].push(v2);
+        value_idx
     }
 
     pub fn neg(&mut self, block: BlockIdx, v: ValueIdx) -> ValueIdx {
-        self.instr(block, InstrKind::Neg(v)).into()
+        let value_idx = self.instr(block, InstrKind::Neg(v));
+        self.value_uses[value_idx].push(v);
+        value_idx
     }
 
     pub fn fneg(&mut self, block: BlockIdx, v: ValueIdx) -> ValueIdx {
-        self.instr(block, InstrKind::FNeg(v)).into()
+        let value_idx = self.instr(block, InstrKind::FNeg(v));
+        self.value_uses[value_idx].push(v);
+        value_idx
     }
 
     pub fn tuple(&mut self, block: BlockIdx, len: usize) -> ValueIdx {
-        self.instr(block, InstrKind::Tuple { len }).into()
+        self.instr(block, InstrKind::Tuple { len })
     }
 
     pub fn tuple_put(
         &mut self, block: BlockIdx, tuple: ValueIdx, idx: usize, val: ValueIdx,
     ) -> ValueIdx {
-        self.instr(block, InstrKind::TuplePut(tuple, idx, val))
-            .into()
+        let value_idx = self.instr(block, InstrKind::TuplePut(tuple, idx, val));
+        self.value_uses[value_idx].push(tuple);
+        self.value_uses[value_idx].push(val);
+        value_idx
     }
 
     pub fn tuple_get(&mut self, block: BlockIdx, tuple: ValueIdx, idx: usize) -> ValueIdx {
-        self.instr(block, InstrKind::TupleGet(tuple, idx)).into()
+        let value_idx = self.instr(block, InstrKind::TupleGet(tuple, idx));
+        self.value_uses[value_idx].push(tuple);
+        value_idx
     }
 
     pub fn array_alloc(&mut self, block: BlockIdx, len: ValueIdx) -> ValueIdx {
-        self.instr(block, InstrKind::ArrayAlloc { len }).into()
+        let value_idx = self.instr(block, InstrKind::ArrayAlloc { len });
+        self.value_uses[value_idx].push(len);
+        value_idx
     }
 
     pub fn array_get(&mut self, block: BlockIdx, array: ValueIdx, idx: ValueIdx) -> ValueIdx {
-        self.instr(block, InstrKind::ArrayGet(array, idx)).into()
+        let value_idx = self.instr(block, InstrKind::ArrayGet(array, idx));
+        self.value_uses[value_idx].push(array);
+        self.value_uses[value_idx].push(idx);
+        value_idx
     }
 
     pub fn array_put(
         &mut self, block: BlockIdx, array: ValueIdx, idx: ValueIdx, val: ValueIdx,
     ) -> ValueIdx {
-        self.instr(block, InstrKind::ArrayPut(array, idx, val))
+        let value_idx = self.instr(block, InstrKind::ArrayPut(array, idx, val));
+        self.value_uses[value_idx].push(array);
+        self.value_uses[value_idx].push(idx);
+        self.value_uses[value_idx].push(val);
+        value_idx
     }
 
     pub fn call(
         &mut self, block: BlockIdx, f: ValueIdx, args: Vec<ValueIdx>, ret_ty: RepType,
     ) -> ValueIdx {
-        self.instr(block, InstrKind::Call(f, args, ret_ty)).into()
+        // TODO: Redundant clone below
+        let value_idx = self.instr(block, InstrKind::Call(f, args.clone(), ret_ty));
+        self.value_uses[value_idx].push(f);
+        for arg in args {
+            self.value_uses[value_idx].push(arg);
+        }
+        value_idx
     }
 
     pub fn ret(&mut self, block: BlockIdx, v: ValueIdx) {
@@ -477,7 +518,8 @@ impl<'a> Ctx<'a> {
         }
 
         self.exit_blocks.push(block);
-        self.instr(block, InstrKind::Return(v));
+        let value_idx = self.instr(block, InstrKind::Return(v));
+        self.value_uses[value_idx].push(v);
     }
 
     pub fn jmp(&mut self, block: BlockIdx, target: BlockIdx) {
@@ -488,7 +530,7 @@ impl<'a> Ctx<'a> {
         &mut self, block: BlockIdx, v1: ValueIdx, v2: ValueIdx, cond: Cmp, then_target: BlockIdx,
         else_target: BlockIdx,
     ) {
-        self.instr(
+        let value_idx = self.instr(
             block,
             InstrKind::CondJmp {
                 v1,
@@ -498,5 +540,7 @@ impl<'a> Ctx<'a> {
                 else_target,
             },
         );
+        self.value_uses[value_idx].push(v1);
+        self.value_uses[value_idx].push(v2);
     }
 }
