@@ -11,6 +11,7 @@ use super::block::BlockIdx;
 use super::fun::Fun;
 use super::instr::{InstrIdx, Value, ValueIdx};
 use crate::ctx::Ctx;
+use crate::utils::NoAlternate;
 
 use cranelift_entity::SecondaryMap;
 use fxhash::FxHashSet;
@@ -511,7 +512,7 @@ impl<'a> fmt::Debug for LiveIntervalMapDebug<'a> {
                 &value_idx.debug(self.ctx, self.fun),
                 &live_ranges
                     .iter()
-                    .map(|LiveRange { begin, end }| (begin, end))
+                    .map(|LiveRange { begin, end }| NoAlternate((begin, end)))
                     .collect::<Vec<_>>(),
             );
         }

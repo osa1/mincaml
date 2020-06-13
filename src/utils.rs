@@ -76,3 +76,11 @@ pub fn base62_encode(uniq: Uniq, w: &mut dyn Write) -> fmt::Result {
 
     Ok(())
 }
+
+pub struct NoAlternate<T>(pub T);
+
+impl<T: fmt::Debug> fmt::Debug for NoAlternate<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self.0)
+    }
+}
