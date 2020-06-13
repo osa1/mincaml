@@ -29,10 +29,42 @@ pub struct LiveRange {
     end: InstrIdx,
 }
 
-// Non-overlapping list of live ranges
-type LiveInterval = Vec<LiveRange>;
+/// Non-overlapping list of live ranges. Ranges are sotred on begin index.
+#[derive(Debug, Default, Clone)]
+pub struct LiveInterval {
+    pub ranges: Vec<LiveRange>,
+}
 
-pub struct LiveIntervalMap(pub SecondaryMap<ValueIdx, LiveInterval>);
+#[derive(Debug)]
+pub struct LiveIntervalMap {
+    pub map: SecondaryMap<ValueIdx, LiveInterval>,
+}
+
+impl LiveIntervalMap {
+    fn new() -> Self {
+        LiveIntervalMap {
+            map: SecondaryMap::new(),
+        }
+    }
+
+    fn add_range(&mut self, value: ValueIdx, begin: InstrIdx, end: InstrIdx) {
+        let ranges = &mut self.map[value].ranges;
+
+        if ranges.is_empty() {
+            ranges.push(LiveRange { begin, end });
+            return;
+        }
+
+        match ranges.binary_search_by_key(&begin, |LiveRange { begin, end: _ }| *begin) {
+            Ok(idx) => {
+                ranges[idx].end = ::std::cmp::max(ranges[idx].end, end);
+            }
+            Err(idx) => {
+                ranges.insert(idx, LiveRange { begin, end });
+            }
+        }
+    }
+}
 
 // TODO: We could implement the algorithm in `build_intervals` more efficiently if we had def sites
 // in `Fun`.
@@ -72,7 +104,7 @@ enum Work {
 
 // Algorithm from "Modern Compiler Impl in ...", section 19.6
 pub fn build_intervals(ctx: &Ctx, fun: &Fun) -> LiveIntervalMap {
-    let mut intervals: SecondaryMap<ValueIdx, LiveInterval> = SecondaryMap::new();
+    let mut intervals = LiveIntervalMap::new();
 
     // for each variable v
     for (value_idx, uses) in fun.value_use_sites.iter() {
@@ -158,20 +190,14 @@ pub fn build_intervals(ctx: &Ctx, fun: &Fun) -> LiveIntervalMap {
                             loop {
                                 if instr_idx == value_instr_idx {
                                     // Found the def site
-                                    intervals[value].push(LiveRange {
-                                        begin: instr_idx,
-                                        end: block.last_instr,
-                                    });
+                                    intervals.add_range(value, instr_idx, block.last_instr);
                                     break;
                                 }
 
                                 if instr_idx == block.first_instr {
                                     // Reached the beginning of the block: value is not defined
                                     // here. Continue with predecessors.
-                                    intervals[value].push(LiveRange {
-                                        begin: block.first_instr,
-                                        end: block.last_instr,
-                                    });
+                                    intervals.add_range(value, block.first_instr, block.last_instr);
                                     for pred in &fun.preds[block_idx] {
                                         if !visited.contains(pred) {
                                             work_list.push(Work::LiveOutAtBlock {
@@ -191,17 +217,11 @@ pub fn build_intervals(ctx: &Ctx, fun: &Fun) -> LiveIntervalMap {
                             let phi = &fun.phis[phi_idx];
                             if phi.owner == block_idx {
                                 // Phi defined in this block
-                                intervals[value].push(LiveRange {
-                                    begin: block.first_instr,
-                                    end: block.last_instr,
-                                });
+                                intervals.add_range(value, block.first_instr, block.last_instr);
                             } else {
                                 // Phi not defined at this block, it should be live-out in
                                 // predecessors
-                                intervals[value].push(LiveRange {
-                                    begin: block.first_instr,
-                                    end: block.last_instr,
-                                });
+                                intervals.add_range(value, block.first_instr, block.last_instr);
                                 for pred in &fun.preds[block_idx] {
                                     if !visited.contains(pred) {
                                         work_list.push(Work::LiveOutAtBlock {
@@ -233,20 +253,18 @@ pub fn build_intervals(ctx: &Ctx, fun: &Fun) -> LiveIntervalMap {
                             loop {
                                 if instr_idx == value_instr_idx {
                                     // Found the def site
-                                    intervals[value].push(LiveRange {
-                                        begin: instr_idx,
-                                        end: live_in_instr_idx,
-                                    });
+                                    intervals.add_range(value, instr_idx, live_in_instr_idx);
                                     break;
                                 }
 
                                 if instr_idx == block.first_instr {
                                     // Reached the beginning of the block: value is not defined
                                     // here. Continue with predecessors.
-                                    intervals[value].push(LiveRange {
-                                        begin: block.first_instr,
-                                        end: live_in_instr_idx,
-                                    });
+                                    intervals.add_range(
+                                        value,
+                                        block.first_instr,
+                                        live_in_instr_idx,
+                                    );
                                     for pred in &fun.preds[block.idx] {
                                         if !visited.contains(pred) {
                                             work_list.push(Work::LiveOutAtBlock {
@@ -266,17 +284,11 @@ pub fn build_intervals(ctx: &Ctx, fun: &Fun) -> LiveIntervalMap {
                             let phi = &fun.phis[phi_idx];
                             if phi.owner == block.idx {
                                 // Phi defined in this block
-                                intervals[value].push(LiveRange {
-                                    begin: block.first_instr,
-                                    end: block.last_instr,
-                                });
+                                intervals.add_range(value, block.first_instr, block.last_instr);
                             } else {
                                 // Phi not defined at this block, it should be live-out in
                                 // predecessors
-                                intervals[value].push(LiveRange {
-                                    begin: block.first_instr,
-                                    end: block.last_instr,
-                                });
+                                intervals.add_range(value, block.first_instr, block.last_instr);
                                 for pred in &fun.preds[block.idx] {
                                     if !visited.contains(pred) {
                                         work_list.push(Work::LiveOutAtBlock {
@@ -293,7 +305,7 @@ pub fn build_intervals(ctx: &Ctx, fun: &Fun) -> LiveIntervalMap {
         }
     }
 
-    LiveIntervalMap(intervals)
+    intervals
 }
 
 //
@@ -496,7 +508,7 @@ pub struct LiveIntervalMapDebug<'a> {
 impl LiveIntervalMap {
     pub fn debug<'a>(&'a self, ctx: &'a Ctx, fun: &'a Fun) -> LiveIntervalMapDebug<'a> {
         LiveIntervalMapDebug {
-            map: &self.0,
+            map: &self.map,
             ctx,
             fun,
         }
@@ -511,6 +523,7 @@ impl<'a> fmt::Debug for LiveIntervalMapDebug<'a> {
             map.entry(
                 &value_idx.debug(self.ctx, self.fun),
                 &live_ranges
+                    .ranges
                     .iter()
                     .map(|LiveRange { begin, end }| NoAlternate((begin, end)))
                     .collect::<Vec<_>>(),
