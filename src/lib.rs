@@ -20,6 +20,7 @@ use anormal::anormal;
 use lexer::{tokenize, Token};
 use lower::liveness::{build_intervals, gen_liveness};
 use lower::lower_pgm;
+use lower::reg_alloc::reg_alloc;
 use parser::parse;
 use type_check::type_check_pgm;
 
@@ -117,6 +118,8 @@ fn compile_expr(
             let live_intervals = build_intervals(&ctx, fun);
             println!("Live intervals:");
             println!("{:#?}", live_intervals.debug(&ctx, fun));
+
+            reg_alloc(live_intervals);
         }
     }
 

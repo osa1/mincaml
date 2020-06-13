@@ -25,8 +25,8 @@ use std::mem::replace;
 
 #[derive(Debug, Clone)]
 pub struct LiveRange {
-    begin: InstrIdx,
-    end: InstrIdx,
+    pub begin: InstrIdx,
+    pub end: InstrIdx,
 }
 
 /// Non-overlapping list of live ranges. Ranges are sotred on begin index.

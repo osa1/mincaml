@@ -4,6 +4,7 @@ mod fun;
 mod instr;
 pub mod liveness; // pub for testing purposes
 mod print;
+pub mod reg_alloc; // pub for testing purposes
 
 use block::BlockIdx;
 use ctx::Ctx;
