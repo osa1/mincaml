@@ -114,8 +114,9 @@ fn compile_expr(
             fun.pp(&ctx, Some(&liveness), &mut s).unwrap();
             println!("{}", s);
 
+            let live_intervals = build_intervals(&ctx, fun);
             println!("Live intervals:");
-            println!("{:?}", build_intervals(&ctx, fun));
+            println!("{:#?}", live_intervals.debug(&ctx, fun));
         }
     }
 

@@ -31,6 +31,8 @@ pub struct LiveRange {
 // Non-overlapping list of live ranges
 type LiveInterval = Vec<LiveRange>;
 
+pub struct LiveIntervalMap(pub SecondaryMap<ValueIdx, LiveInterval>);
+
 // TODO: We could implement the algorithm in `build_intervals` more efficiently if we had def sites
 // in `Fun`.
 
@@ -68,7 +70,7 @@ enum Work {
 }
 
 // Algorithm from "Modern Compiler Impl in ...", section 19.6
-pub fn build_intervals(ctx: &Ctx, fun: &Fun) -> SecondaryMap<ValueIdx, LiveInterval> {
+pub fn build_intervals(ctx: &Ctx, fun: &Fun) -> LiveIntervalMap {
     let mut intervals: SecondaryMap<ValueIdx, LiveInterval> = SecondaryMap::new();
 
     // for each variable v
@@ -242,7 +244,7 @@ pub fn build_intervals(ctx: &Ctx, fun: &Fun) -> SecondaryMap<ValueIdx, LiveInter
                                     // here. Continue with predecessors.
                                     intervals[value].push(LiveRange {
                                         begin: block.first_instr,
-                                        end: block.last_instr,
+                                        end: live_in_instr_idx,
                                     });
                                     for pred in &fun.preds[block.idx] {
                                         if !visited.contains(pred) {
@@ -290,7 +292,7 @@ pub fn build_intervals(ctx: &Ctx, fun: &Fun) -> SecondaryMap<ValueIdx, LiveInter
         }
     }
 
-    intervals
+    LiveIntervalMap(intervals)
 }
 
 //
@@ -480,6 +482,40 @@ impl<'a> fmt::Debug for LivenessDebug<'a> {
                 },
             );
         }
+        map.finish()
+    }
+}
+
+pub struct LiveIntervalMapDebug<'a> {
+    map: &'a SecondaryMap<ValueIdx, LiveInterval>,
+    ctx: &'a Ctx,
+    fun: &'a Fun,
+}
+
+impl LiveIntervalMap {
+    pub fn debug<'a>(&'a self, ctx: &'a Ctx, fun: &'a Fun) -> LiveIntervalMapDebug<'a> {
+        LiveIntervalMapDebug {
+            map: &self.0,
+            ctx,
+            fun,
+        }
+    }
+}
+
+impl<'a> fmt::Debug for LiveIntervalMapDebug<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut map = f.debug_map();
+
+        for (value_idx, live_ranges) in self.map.iter() {
+            map.entry(
+                &value_idx.debug(self.ctx, self.fun),
+                &live_ranges
+                    .iter()
+                    .map(|LiveRange { begin, end }| (begin, end))
+                    .collect::<Vec<_>>(),
+            );
+        }
+
         map.finish()
     }
 }
