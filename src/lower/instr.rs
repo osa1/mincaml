@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use super::{fun::Fun, block::BlockIdx};
+use super::{block::BlockIdx, fun::Fun};
 use crate::cg_types::RepType;
 use crate::common::Cmp;
 use crate::ctx::{Ctx, VarId};
@@ -216,7 +216,11 @@ pub struct ValueIdxDebug<'a> {
 
 impl ValueIdx {
     pub fn debug<'a>(&'a self, ctx: &'a Ctx, fun: &'a Fun) -> ValueIdxDebug<'a> {
-        ValueIdxDebug { value: *self, ctx, fun }
+        ValueIdxDebug {
+            value: *self,
+            ctx,
+            fun,
+        }
     }
 }
 

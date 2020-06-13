@@ -72,11 +72,14 @@ pub fn build_intervals(ctx: &Ctx, fun: &Fun) -> SecondaryMap<ValueIdx, LiveInter
     let mut intervals: SecondaryMap<ValueIdx, LiveInterval> = SecondaryMap::new();
 
     // for each variable v
-    for (value_idx, uses) in fun.value_uses.iter() {
+    for (value_idx, uses) in fun.value_use_sites.iter() {
         println!(
-            "{:?} uses: {:?}",
+            "{:?} use sites: {:?}",
             value_idx.debug(ctx, fun),
-            uses.iter().map(|use_idx| use_idx.debug(ctx, fun))
+            uses.iter()
+                // .map(|use_idx| (use_idx, use_idx.debug(ctx, fun)))
+                .map(|use_idx| use_idx.debug(ctx, fun))
+                .collect::<Vec<_>>()
         );
 
         // Only consider instructions and phis

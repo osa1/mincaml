@@ -48,7 +48,7 @@ pub struct Ctx<'a> {
     preds: SecondaryMap<BlockIdx, Vec<BlockIdx>>,
 
     /// Maps values to their use sites
-    value_uses: SecondaryMap<ValueIdx, Vec<ValueIdx>>, // TODO: Update this
+    value_use_sites: SecondaryMap<ValueIdx, Vec<ValueIdx>>,
 
     /// Maps blocks to variables defined
     block_vars: SecondaryMap<BlockIdx, FxHashMap<VarId, ValueIdx>>,
@@ -97,7 +97,7 @@ impl<'a> Ctx<'a> {
             instrs: PrimaryMap::new(),
             succs: SecondaryMap::new(),
             preds: SecondaryMap::new(),
-            value_uses: SecondaryMap::new(),
+            value_use_sites: SecondaryMap::new(),
             block_vars,
             block_phis: SecondaryMap::new(),
             phi_users: SecondaryMap::new(),
@@ -117,7 +117,7 @@ impl<'a> Ctx<'a> {
             instrs,
             succs,
             preds,
-            value_uses,
+            value_use_sites,
             block_phis,
             ..
         } = self;
@@ -137,7 +137,7 @@ impl<'a> Ctx<'a> {
             instrs,
             succs,
             preds,
-            value_uses,
+            value_use_sites,
             block_phis,
             return_type: RepType::Word,
         };
@@ -244,7 +244,7 @@ impl<'a> Ctx<'a> {
         let instrs = replace(&mut self.instrs, PrimaryMap::new());
         let succs = replace(&mut self.succs, SecondaryMap::new());
         let preds = replace(&mut self.preds, SecondaryMap::new());
-        let value_uses = replace(&mut self.value_uses, SecondaryMap::new());
+        let value_uses = replace(&mut self.value_use_sites, SecondaryMap::new());
         let block_vars = replace(&mut self.block_vars, fun_block_vars);
         let block_phis = replace(&mut self.block_phis, SecondaryMap::new());
         let incomplete_phis = replace(&mut self.incomplete_phis, SecondaryMap::new());
@@ -262,7 +262,7 @@ impl<'a> Ctx<'a> {
         let fun_instrs = replace(&mut self.instrs, instrs);
         let fun_succs = replace(&mut self.succs, succs);
         let fun_preds = replace(&mut self.preds, preds);
-        let fun_value_uses = replace(&mut self.value_uses, value_uses);
+        let fun_value_uses = replace(&mut self.value_use_sites, value_uses);
         let fun_block_phis = replace(&mut self.block_phis, block_phis);
         self.block_vars = block_vars;
         self.incomplete_phis = incomplete_phis;
@@ -277,7 +277,7 @@ impl<'a> Ctx<'a> {
             instrs: fun_instrs,
             succs: fun_succs,
             preds: fun_preds,
-            value_uses: fun_value_uses,
+            value_use_sites: fun_value_uses,
             block_phis: fun_block_phis,
             return_type,
         };
@@ -405,55 +405,55 @@ impl<'a> Ctx<'a> {
 
     pub fn iadd(&mut self, block: BlockIdx, v1: ValueIdx, v2: ValueIdx) -> ValueIdx {
         let value_idx = self.instr(block, InstrKind::IAdd(v1, v2));
-        self.value_uses[value_idx].push(v1);
-        self.value_uses[value_idx].push(v2);
+        self.value_use_sites[v1].push(value_idx);
+        self.value_use_sites[v2].push(value_idx);
         value_idx
     }
 
     pub fn isub(&mut self, block: BlockIdx, v1: ValueIdx, v2: ValueIdx) -> ValueIdx {
         let value_idx = self.instr(block, InstrKind::ISub(v1, v2));
-        self.value_uses[value_idx].push(v1);
-        self.value_uses[value_idx].push(v2);
+        self.value_use_sites[v1].push(value_idx);
+        self.value_use_sites[v2].push(value_idx);
         value_idx
     }
 
     pub fn fadd(&mut self, block: BlockIdx, v1: ValueIdx, v2: ValueIdx) -> ValueIdx {
         let value_idx = self.instr(block, InstrKind::FAdd(v1, v2));
-        self.value_uses[value_idx].push(v1);
-        self.value_uses[value_idx].push(v2);
+        self.value_use_sites[v1].push(value_idx);
+        self.value_use_sites[v2].push(value_idx);
         value_idx
     }
 
     pub fn fsub(&mut self, block: BlockIdx, v1: ValueIdx, v2: ValueIdx) -> ValueIdx {
         let value_idx = self.instr(block, InstrKind::FSub(v1, v2));
-        self.value_uses[value_idx].push(v1);
-        self.value_uses[value_idx].push(v2);
+        self.value_use_sites[v1].push(value_idx);
+        self.value_use_sites[v2].push(value_idx);
         value_idx
     }
 
     pub fn fmul(&mut self, block: BlockIdx, v1: ValueIdx, v2: ValueIdx) -> ValueIdx {
         let value_idx = self.instr(block, InstrKind::FMul(v1, v2));
-        self.value_uses[value_idx].push(v1);
-        self.value_uses[value_idx].push(v2);
+        self.value_use_sites[v1].push(value_idx);
+        self.value_use_sites[v2].push(value_idx);
         value_idx
     }
 
     pub fn fdiv(&mut self, block: BlockIdx, v1: ValueIdx, v2: ValueIdx) -> ValueIdx {
         let value_idx = self.instr(block, InstrKind::FDiv(v1, v2));
-        self.value_uses[value_idx].push(v1);
-        self.value_uses[value_idx].push(v2);
+        self.value_use_sites[v1].push(value_idx);
+        self.value_use_sites[v2].push(value_idx);
         value_idx
     }
 
     pub fn neg(&mut self, block: BlockIdx, v: ValueIdx) -> ValueIdx {
         let value_idx = self.instr(block, InstrKind::Neg(v));
-        self.value_uses[value_idx].push(v);
+        self.value_use_sites[v].push(value_idx);
         value_idx
     }
 
     pub fn fneg(&mut self, block: BlockIdx, v: ValueIdx) -> ValueIdx {
         let value_idx = self.instr(block, InstrKind::FNeg(v));
-        self.value_uses[value_idx].push(v);
+        self.value_use_sites[v].push(value_idx);
         value_idx
     }
 
@@ -465,27 +465,27 @@ impl<'a> Ctx<'a> {
         &mut self, block: BlockIdx, tuple: ValueIdx, idx: usize, val: ValueIdx,
     ) -> ValueIdx {
         let value_idx = self.instr(block, InstrKind::TuplePut(tuple, idx, val));
-        self.value_uses[value_idx].push(tuple);
-        self.value_uses[value_idx].push(val);
+        self.value_use_sites[tuple].push(value_idx);
+        self.value_use_sites[val].push(value_idx);
         value_idx
     }
 
     pub fn tuple_get(&mut self, block: BlockIdx, tuple: ValueIdx, idx: usize) -> ValueIdx {
         let value_idx = self.instr(block, InstrKind::TupleGet(tuple, idx));
-        self.value_uses[value_idx].push(tuple);
+        self.value_use_sites[tuple].push(value_idx);
         value_idx
     }
 
     pub fn array_alloc(&mut self, block: BlockIdx, len: ValueIdx) -> ValueIdx {
         let value_idx = self.instr(block, InstrKind::ArrayAlloc { len });
-        self.value_uses[value_idx].push(len);
+        self.value_use_sites[len].push(value_idx);
         value_idx
     }
 
     pub fn array_get(&mut self, block: BlockIdx, array: ValueIdx, idx: ValueIdx) -> ValueIdx {
         let value_idx = self.instr(block, InstrKind::ArrayGet(array, idx));
-        self.value_uses[value_idx].push(array);
-        self.value_uses[value_idx].push(idx);
+        self.value_use_sites[array].push(value_idx);
+        self.value_use_sites[idx].push(value_idx);
         value_idx
     }
 
@@ -493,9 +493,9 @@ impl<'a> Ctx<'a> {
         &mut self, block: BlockIdx, array: ValueIdx, idx: ValueIdx, val: ValueIdx,
     ) -> ValueIdx {
         let value_idx = self.instr(block, InstrKind::ArrayPut(array, idx, val));
-        self.value_uses[value_idx].push(array);
-        self.value_uses[value_idx].push(idx);
-        self.value_uses[value_idx].push(val);
+        self.value_use_sites[array].push(value_idx);
+        self.value_use_sites[idx].push(value_idx);
+        self.value_use_sites[val].push(value_idx);
         value_idx
     }
 
@@ -504,9 +504,9 @@ impl<'a> Ctx<'a> {
     ) -> ValueIdx {
         // TODO: Redundant clone below
         let value_idx = self.instr(block, InstrKind::Call(f, args.clone(), ret_ty));
-        self.value_uses[value_idx].push(f);
+        self.value_use_sites[f].push(value_idx);
         for arg in args {
-            self.value_uses[value_idx].push(arg);
+            self.value_use_sites[arg].push(value_idx);
         }
         value_idx
     }
@@ -519,7 +519,7 @@ impl<'a> Ctx<'a> {
 
         self.exit_blocks.push(block);
         let value_idx = self.instr(block, InstrKind::Return(v));
-        self.value_uses[value_idx].push(v);
+        self.value_use_sites[v].push(value_idx);
     }
 
     pub fn jmp(&mut self, block: BlockIdx, target: BlockIdx) {
@@ -540,7 +540,7 @@ impl<'a> Ctx<'a> {
                 else_target,
             },
         );
-        self.value_uses[value_idx].push(v1);
-        self.value_uses[value_idx].push(v2);
+        self.value_use_sites[v1].push(value_idx);
+        self.value_use_sites[v2].push(value_idx);
     }
 }

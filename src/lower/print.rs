@@ -47,7 +47,7 @@ impl Fun {
             instrs,
             succs: _,
             preds,
-            value_uses,
+            value_use_sites,
             block_phis,
             return_type,
         } = self;

@@ -18,7 +18,7 @@ mod var;
 use anormal::anormal;
 // use codegen::codegen;
 use lexer::{tokenize, Token};
-use lower::liveness::{gen_liveness, build_intervals};
+use lower::liveness::{build_intervals, gen_liveness};
 use lower::lower_pgm;
 use parser::parse;
 use type_check::type_check_pgm;
