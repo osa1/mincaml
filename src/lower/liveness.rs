@@ -18,15 +18,281 @@ use fxhash::FxHashSet;
 use std::fmt;
 use std::mem::replace;
 
-#[derive(Debug)]
+//
+// Generating live ranges and intervals
+//
+
+#[derive(Debug, Clone)]
 pub struct LiveRange {
     begin: InstrIdx,
     end: InstrIdx,
 }
 
 // Non-overlapping list of live ranges
+type LiveInterval = Vec<LiveRange>;
+
+// TODO: We could implement the algorithm in `build_intervals` more efficiently if we had def sites
+// in `Fun`.
+
+// TODO: The algorithm below makes some assumptions that currently doesn't hold:
+//
+// - Instructions of blocks are numbered consecutively, so for example if a live range is (5, 10)
+//   then instructions 5, 6, .. 10 all belong to the same block. (I think this currently holds)
+//
+// - What else?
+
 #[derive(Debug)]
-pub struct LiveInterval(Vec<LiveRange>);
+enum Work {
+    // Value is live-out at the block. There are two cases:
+    //
+    // - The value is defined in this block: we'll have a live range from the defining instruction
+    //   to the end of the block.
+    //
+    // - The value is NOT defined in this block: the value should be live-out in predecessors of
+    //   this block.
+    //
+    // (NB. In the first case the value may be defined as phi. I don't think that's a special case
+    // though, a phi definition is definition like any other for the purposes of interval analysis)
+    LiveOutAtBlock {
+        block_idx: BlockIdx,
+        value: ValueIdx,
+    },
+    // Value is live-in at the instruction. Similar to `LiveOutAtBlock`, there are two cases, and
+    // they're handled the same.
+    LiveInAtInstr {
+        instr_idx: InstrIdx,
+        value: ValueIdx,
+    },
+    // Value is live-out at the instruction
+    // LiveOutAtInstr(InstrIdx, ValueIdx),
+}
+
+// Algorithm from "Modern Compiler Impl in ...", section 19.6
+pub fn build_intervals(ctx: &Ctx, fun: &Fun) -> SecondaryMap<ValueIdx, LiveInterval> {
+    let mut intervals: SecondaryMap<ValueIdx, LiveInterval> = SecondaryMap::new();
+
+    // for each variable v
+    for (value_idx, uses) in fun.value_uses.iter() {
+        println!(
+            "{:?} uses: {:?}",
+            value_idx.debug(ctx, fun),
+            uses.iter().map(|use_idx| use_idx.debug(ctx, fun))
+        );
+
+        // Only consider instructions and phis
+        match fun.values[value_idx] {
+            Value::Global(_) | Value::Arg(_) => {
+                continue;
+            }
+            Value::Instr(_) | Value::Phi(_) => {}
+        }
+
+        let mut work_list: Vec<Work> = vec![];
+
+        for use_idx in uses {
+            let user = &fun.values[*use_idx];
+            match user {
+                Value::Global(_) => panic!(
+                    "Variable {:?} used by global: {:?}",
+                    value_idx.debug(ctx, fun),
+                    user.debug(ctx)
+                ),
+                Value::Arg(arg) => panic!(
+                    "Variable {:?} used by function argument {}",
+                    value_idx.debug(ctx, fun),
+                    arg
+                ),
+                Value::Instr(instr_idx) => {
+                    work_list.push(Work::LiveInAtInstr {
+                        instr_idx: *instr_idx,
+                        value: value_idx,
+                    });
+                }
+                Value::Phi(phi_idx) => {
+                    // Value used by a phi: if it's Nth argument of the phi then it should be
+                    // live-out at the Nth predecessor of phi's block
+                    let phi = &fun.phis[*phi_idx];
+                    // Index of the value in phi
+                    let mut phi_value_idx = None;
+                    for (phi_op_idx, phi_op) in phi.values.iter().enumerate() {
+                        if *phi_op == value_idx {
+                            phi_value_idx = Some(phi_op_idx);
+                            break;
+                        }
+                    }
+
+                    let phi_value_idx = phi_value_idx.unwrap();
+                    let phi_block = phi.owner;
+                    let pred_block = fun.preds[phi_block][phi_value_idx];
+                    work_list.push(Work::LiveOutAtBlock {
+                        block_idx: pred_block,
+                        value: value_idx,
+                    });
+                }
+            }
+        }
+
+        let mut visited: FxHashSet<BlockIdx> = Default::default();
+        while let Some(work_) = work_list.pop() {
+            match work_ {
+                Work::LiveOutAtBlock { block_idx, value } => {
+                    visited.insert(block_idx);
+
+                    // Find the def site of `value` in the block. If not defined in the block then
+                    // it should be live-out at predecessors.
+
+                    let block = &fun.blocks[block_idx];
+                    match fun.values[value] {
+                        Value::Global(_) | Value::Arg(_) => {
+                            panic!();
+                        }
+                        Value::Instr(value_instr_idx) => {
+                            // Is the instructions defined at this block?
+                            let mut instr_idx = block.last_instr;
+                            loop {
+                                if instr_idx == value_instr_idx {
+                                    // Found the def site
+                                    intervals[value].push(LiveRange {
+                                        begin: instr_idx,
+                                        end: block.last_instr,
+                                    });
+                                    break;
+                                }
+
+                                if instr_idx == block.first_instr {
+                                    // Reached the beginning of the block: value is not defined
+                                    // here. Continue with predecessors.
+                                    intervals[value].push(LiveRange {
+                                        begin: block.first_instr,
+                                        end: block.last_instr,
+                                    });
+                                    for pred in &fun.preds[block_idx] {
+                                        if !visited.contains(pred) {
+                                            work_list.push(Work::LiveOutAtBlock {
+                                                block_idx: *pred,
+                                                value,
+                                            });
+                                        }
+                                    }
+                                    break;
+                                }
+
+                                instr_idx = fun.instrs[instr_idx].prev;
+                            }
+                        }
+                        Value::Phi(phi_idx) => {
+                            // Is the phi defined in this block?
+                            let phi = &fun.phis[phi_idx];
+                            if phi.owner == block_idx {
+                                // Phi defined in this block
+                                intervals[value].push(LiveRange {
+                                    begin: block.first_instr,
+                                    end: block.last_instr,
+                                });
+                            } else {
+                                // Phi not defined at this block, it should be live-out in
+                                // predecessors
+                                intervals[value].push(LiveRange {
+                                    begin: block.first_instr,
+                                    end: block.last_instr,
+                                });
+                                for pred in &fun.preds[block_idx] {
+                                    if !visited.contains(pred) {
+                                        work_list.push(Work::LiveOutAtBlock {
+                                            block_idx: *pred,
+                                            value,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Work::LiveInAtInstr {
+                    instr_idx: live_in_instr_idx,
+                    value,
+                } => {
+                    let instr = &fun.instrs[live_in_instr_idx];
+                    let block = &fun.blocks[instr.block];
+
+                    match fun.values[value] {
+                        Value::Global(_) | Value::Arg(_) => {
+                            panic!();
+                        }
+
+                        Value::Instr(value_instr_idx) => {
+                            // Is the instructions defined at this block?
+                            let mut instr_idx = live_in_instr_idx;
+                            loop {
+                                if instr_idx == value_instr_idx {
+                                    // Found the def site
+                                    intervals[value].push(LiveRange {
+                                        begin: instr_idx,
+                                        end: live_in_instr_idx,
+                                    });
+                                    break;
+                                }
+
+                                if instr_idx == block.first_instr {
+                                    // Reached the beginning of the block: value is not defined
+                                    // here. Continue with predecessors.
+                                    intervals[value].push(LiveRange {
+                                        begin: block.first_instr,
+                                        end: block.last_instr,
+                                    });
+                                    for pred in &fun.preds[block.idx] {
+                                        if !visited.contains(pred) {
+                                            work_list.push(Work::LiveOutAtBlock {
+                                                block_idx: *pred,
+                                                value,
+                                            });
+                                        }
+                                    }
+                                    break;
+                                }
+
+                                instr_idx = fun.instrs[instr_idx].prev;
+                            }
+                        }
+                        Value::Phi(phi_idx) => {
+                            // Is the phi defined in this block?
+                            let phi = &fun.phis[phi_idx];
+                            if phi.owner == block.idx {
+                                // Phi defined in this block
+                                intervals[value].push(LiveRange {
+                                    begin: block.first_instr,
+                                    end: block.last_instr,
+                                });
+                            } else {
+                                // Phi not defined at this block, it should be live-out in
+                                // predecessors
+                                intervals[value].push(LiveRange {
+                                    begin: block.first_instr,
+                                    end: block.last_instr,
+                                });
+                                for pred in &fun.preds[block.idx] {
+                                    if !visited.contains(pred) {
+                                        work_list.push(Work::LiveOutAtBlock {
+                                            block_idx: *pred,
+                                            value,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    intervals
+}
+
+//
+// Generating live-ins and live-outs
+//
 
 #[derive(Debug)]
 pub struct Liveness {
@@ -45,17 +311,6 @@ impl Liveness {
     pub fn instr_live_outs(&self, instr_idx: InstrIdx) -> &FxHashSet<ValueIdx> {
         &self.live_outs[instr_idx]
     }
-}
-
-// BuildIntervals in paper
-//
-// Input blocks should be ordered so that
-//
-// - All dominators of a block come before the block
-// - All blocks belonging to the same loop are contiguous
-//
-pub fn build_intervals(fun: &Fun, liveness: &Liveness) {
-
 }
 
 // We implement simple dataflow-based liveness analysis for now.
@@ -184,29 +439,11 @@ pub struct ValueSetDebug<'a> {
     fun: &'a Fun,
 }
 
-// Provides a better `Debug` impl for `ValueIdx`: shows the value instead of index
-struct ValueIdxDebug<'a> {
-    value: ValueIdx,
-    ctx: &'a Ctx,
-    fun: &'a Fun,
-}
-
-impl<'a> fmt::Debug for ValueIdxDebug<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let value = &self.fun.values[self.value];
-        value.debug(self.ctx).fmt(f)
-    }
-}
-
 impl<'a> fmt::Debug for ValueSetDebug<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut set = f.debug_set();
         for value in self.set {
-            set.entry(&ValueIdxDebug {
-                value: *value,
-                ctx: self.ctx,
-                fun: self.fun,
-            });
+            set.entry(&value.debug(self.ctx, self.fun));
         }
         set.finish()
     }

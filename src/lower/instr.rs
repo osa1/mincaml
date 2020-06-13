@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use super::block::BlockIdx;
+use super::{fun::Fun, block::BlockIdx};
 use crate::cg_types::RepType;
 use crate::common::Cmp;
 use crate::ctx::{Ctx, VarId};
@@ -204,5 +204,25 @@ impl<'a> fmt::Debug for ValueDebug<'a> {
             Value::Instr(instr_idx) => write!(f, "{}", instr_idx),
             Value::Phi(phi_idx) => write!(f, "{}", phi_idx),
         }
+    }
+}
+
+// Provides a better `Debug` impl for `ValueIdx`: shows the value instead of index
+pub struct ValueIdxDebug<'a> {
+    value: ValueIdx,
+    ctx: &'a Ctx,
+    fun: &'a Fun,
+}
+
+impl ValueIdx {
+    pub fn debug<'a>(&'a self, ctx: &'a Ctx, fun: &'a Fun) -> ValueIdxDebug<'a> {
+        ValueIdxDebug { value: *self, ctx, fun }
+    }
+}
+
+impl<'a> fmt::Debug for ValueIdxDebug<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let value = &self.fun.values[self.value];
+        value.debug(self.ctx).fmt(f)
     }
 }
