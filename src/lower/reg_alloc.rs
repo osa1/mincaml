@@ -57,7 +57,11 @@ pub struct Allocation {
     reg: Reg,
 }
 
-pub fn reg_alloc(mut live_intervals: LiveIntervalMap, ctx: &Ctx, fun: &Fun) {
+pub fn reg_alloc(
+    mut live_intervals: LiveIntervalMap, ctx: &Ctx, fun: &Fun,
+) -> Vec<(ValueIdx, Reg)> {
+    let mut assigns = vec![];
+
     // Ranges sorted by decreasing start positions so that pop gives us the one that starts next
     let mut unhandled: Vec<(ValueIdx, Vec<LiveRange>)> = vec![];
 
@@ -73,62 +77,172 @@ pub fn reg_alloc(mut live_intervals: LiveIntervalMap, ctx: &Ctx, fun: &Fun) {
         let mut ranges = replace(&mut interval.ranges, vec![]);
         ranges.reverse();
 
+        // If this returns `Ok(idx)` then there's another value here with the same begin position,
+        // doesn't matter which one comes first
         match unhandled.binary_search_by_key(&Reverse(ranges[0].begin), |(_, ranges)| {
             Reverse(ranges.last().unwrap().begin)
         }) {
-            Ok(idx) => {
-                // Another value here with the same begin position, doesn't matter which one
-                // comes first
-                unhandled.insert(idx, (value_idx, ranges));
-            }
-            Err(idx) => {
+            Ok(idx) | Err(idx) => {
                 unhandled.insert(idx, (value_idx, ranges));
             }
         }
     }
 
-    println!("unhandled: {:?}", unhandled);
+    println!(
+        "unhandled: {:?}",
+        unhandled
+            .iter()
+            .rev()
+            .map(|(value_idx, live_ranges)| {
+                (
+                    value_idx.debug(ctx, fun),
+                    live_ranges
+                        .iter()
+                        .rev()
+                        .map(|live_range| live_range.debug(ctx, fun))
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .collect::<Vec<_>>()
+    );
 
+    // Intervals that are active in the current range (with registers assigned)
     let mut active: Vec<Allocation> = vec![];
+    // Intervals that are not active in the current range
     let mut inactive: Vec<Allocation> = vec![];
-    let mut handled: Vec<Allocation> = vec![];
 
     while let Some((current_value_idx, mut current_interval)) = unhandled.pop() {
-        let position = current_interval.last().unwrap().begin;
+        let LiveRange {
+            begin: current_begin,
+            end: current_end,
+        } = current_interval.last().unwrap().clone();
+
+        println!("--- NEW ALLOCATION");
+
+        println!("current begin: {}, end: {}", current_begin, current_end);
+
+        println!(
+            "active: {:#?}",
+            active
+                .iter()
+                .map(|alloc| alloc.debug(ctx, fun))
+                .collect::<Vec<_>>()
+        );
+
+        println!(
+            "inactive: {:#?}",
+            inactive
+                .iter()
+                .map(|alloc| alloc.debug(ctx, fun))
+                .collect::<Vec<_>>()
+        );
 
         // Check for intervals in 'active' that are handled or inactive
         {
             let mut active_idx = 0;
-            while active_idx < active.len() {
-                let a = &active[active_idx];
-                if a.ranges[0].end < position {
-                    let range = active.remove(active_idx);
-                    handled.push(range);
-                } else if !covers(&a.ranges, position) {
-                    let range = active.remove(active_idx);
-                    inactive.push(range);
+            'next_active: while active_idx < active.len() {
+                let a = &mut active[active_idx];
+                if a.ranges[0].end < current_begin {
+                    // Handled
+                    active.remove(active_idx);
                 } else {
-                    active_idx += 1;
+                    // Pop ranges that are handled, then check if 'position' intersects with the
+                    // next range in this 'active' interval. If it is then it'll stay as active,
+                    // otherwise we'll move it to 'inactive'.
+                    while let Some(next) = a.ranges.pop() {
+                        if next.end < current_begin {
+                            continue; // Range is handled and popped
+                        } else {
+                            let next_begin = next.begin;
+                            a.ranges.push(next);
+                            if next_begin > current_end {
+                                // The range doesn't overlap with current
+                                let r = active.remove(active_idx);
+                                inactive.push(r);
+                                continue 'next_active;
+                            } else {
+                                // The range overlaps with current; keep it
+                                active_idx += 1;
+                                continue 'next_active;
+                            }
+                        }
+                    }
+
+                    assert!(a.ranges.is_empty());
+                    active.remove(active_idx);
                 }
             }
         }
 
+        println!("actives updated");
+
+        println!(
+            "active: {:#?}",
+            active
+                .iter()
+                .map(|alloc| alloc.debug(ctx, fun))
+                .collect::<Vec<_>>()
+        );
+
+        println!(
+            "inactive: {:#?}",
+            inactive
+                .iter()
+                .map(|alloc| alloc.debug(ctx, fun))
+                .collect::<Vec<_>>()
+        );
+
         // Check for intervals in 'inactive' that are handled or active
         {
             let mut inactive_idx = 0;
-            while inactive_idx < inactive.len() {
-                let a = &inactive[inactive_idx];
-                if a.ranges[0].end < position {
-                    let range = active.remove(inactive_idx);
-                    handled.push(range);
-                } else if covers(&a.ranges, position) {
-                    let range = active.remove(inactive_idx);
-                    active.push(range);
+            'next_inactive: while inactive_idx < inactive.len() {
+                let a = &mut inactive[inactive_idx];
+                if a.ranges[0].end < current_begin {
+                    // Handled
+                    inactive.remove(inactive_idx);
                 } else {
-                    inactive_idx += 1;
+                    while let Some(next) = a.ranges.pop() {
+                        if next.end < current_begin {
+                            continue; // Range is handled and popped
+                        } else {
+                            let next_begin = next.begin;
+                            a.ranges.push(next);
+                            if next_begin > current_end {
+                                // The range doesn't overlap with current; keep it
+                                inactive_idx += 1;
+                                continue 'next_inactive;
+                            } else {
+                                // The range overlaps with current; move it to active
+                                let r = inactive.remove(inactive_idx);
+                                active.push(r);
+                                continue 'next_inactive;
+                            }
+                        }
+                    }
+
+                    assert!(a.ranges.is_empty());
+                    inactive.remove(inactive_idx);
                 }
             }
         }
+
+        println!("inactives updated");
+
+        println!(
+            "active: {:#?}",
+            active
+                .iter()
+                .map(|alloc| alloc.debug(ctx, fun))
+                .collect::<Vec<_>>()
+        );
+
+        println!(
+            "inactive: {:#?}",
+            inactive
+                .iter()
+                .map(|alloc| alloc.debug(ctx, fun))
+                .collect::<Vec<_>>()
+        );
 
         //
         // Find a register for 'current'
@@ -138,10 +252,21 @@ pub fn reg_alloc(mut live_intervals: LiveIntervalMap, ctx: &Ctx, fun: &Fun) {
         // free_until_pos[N]. Initially all registers are available.
         let mut free_until_pos: [InstrIdx; 16] = [InstrIdx::from_u32(u32::MAX - 1); 16];
 
+        println!(
+            "free_until_pos before updating for actives: {:?}",
+            free_until_pos
+        );
+
         // Registers of 'active' intervals are not available
         for a in &active {
+            println!("--- {:?}", a);
             free_until_pos[a.reg as usize] = InstrIdx::from_u32(0);
         }
+
+        println!(
+            "free_until_pos after updating for actives: {:?}",
+            free_until_pos
+        );
 
         // Registers of 'inactive' intervals are avaiable until the next instruction they'll be
         // used again
@@ -154,6 +279,11 @@ pub fn reg_alloc(mut live_intervals: LiveIntervalMap, ctx: &Ctx, fun: &Fun) {
             free_until_pos[a.reg as usize] = min(free_until_pos[a.reg as usize], first_range.begin);
         }
 
+        println!(
+            "free_until_pos after updating for inactives: {:?}",
+            free_until_pos
+        );
+
         // Find the register with highest 'free_until_pos' for the current interval
         // TODO: We don't have to search here, we could store index of assignment with largest
         // InstrUdx above and use it.
@@ -163,15 +293,25 @@ pub fn reg_alloc(mut live_intervals: LiveIntervalMap, ctx: &Ctx, fun: &Fun) {
         for (reg_idx_, free_until) in free_until_pos[1..].iter().enumerate() {
             if free_until.as_u32() > max_free_until {
                 max_free_until = free_until.as_u32();
-                reg_idx = reg_idx_;
+                reg_idx = reg_idx_ + 1;
             }
         }
+
+        println!("reg_idx: {}, free_until: {}", reg_idx, max_free_until);
 
         if max_free_until == 0 {
             // No register available without spilling
             todo!("spill");
         } else if current_interval[0].end.as_u32() < max_free_until {
             // Register available for the whole interval
+            println!(
+                "assign {:?} -> {:?}",
+                current_value_idx.debug(ctx, fun),
+                Reg::from(reg_idx)
+            );
+
+            assigns.push((current_value_idx, Reg::from(reg_idx)));
+
             let alloc = Allocation {
                 value: current_value_idx,
                 ranges: current_interval,
@@ -194,6 +334,12 @@ pub fn reg_alloc(mut live_intervals: LiveIntervalMap, ctx: &Ctx, fun: &Fun) {
 
             assert!(!current_interval.is_empty());
 
+            println!(
+                "assign with split {:?} -> {:?}",
+                current_value_idx.debug(ctx, fun),
+                Reg::from(reg_idx)
+            );
+            assigns.push((current_value_idx, Reg::from(reg_idx)));
             let alloc = Allocation {
                 value: current_value_idx,
                 ranges: handled,
@@ -231,13 +377,15 @@ pub fn reg_alloc(mut live_intervals: LiveIntervalMap, ctx: &Ctx, fun: &Fun) {
             .map(|alloc| alloc.debug(ctx, fun))
             .collect::<Vec<_>>()
     );
+
     println!(
-        "handled: {:?}",
-        handled
+        "assigns: {:?}",
+        assigns
             .iter()
-            .map(|alloc| alloc.debug(ctx, fun))
+            .map(|(value_idx, reg)| (value_idx.debug(ctx, fun), reg))
             .collect::<Vec<_>>()
     );
+    assigns
 }
 
 fn covers(interval: &[LiveRange], idx: InstrIdx) -> bool {
