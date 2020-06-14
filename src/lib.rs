@@ -119,7 +119,7 @@ fn compile_expr(
             println!("Live intervals:");
             println!("{:#?}", live_intervals.debug(&ctx, fun));
 
-            reg_alloc(live_intervals);
+            reg_alloc(live_intervals, &ctx, fun);
         }
     }
 
