@@ -48,7 +48,7 @@ pub struct Ctx<'a> {
     preds: SecondaryMap<BlockIdx, Vec<BlockIdx>>,
 
     /// Maps values to their use sites
-    value_use_sites: SecondaryMap<ValueIdx, Vec<ValueIdx>>,
+    value_use_sites: SecondaryMap<ValueIdx, Vec<ValueIdx>>, // use sites sorted
 
     /// Maps blocks to variables defined
     block_vars: SecondaryMap<BlockIdx, FxHashMap<VarId, ValueIdx>>,
@@ -262,7 +262,10 @@ impl<'a> Ctx<'a> {
         let fun_instrs = replace(&mut self.instrs, instrs);
         let fun_succs = replace(&mut self.succs, succs);
         let fun_preds = replace(&mut self.preds, preds);
-        let fun_value_uses = replace(&mut self.value_use_sites, value_uses);
+        let mut fun_value_uses = replace(&mut self.value_use_sites, value_uses);
+        for use_sites in fun_value_uses.values_mut() {
+            use_sites.sort();
+        }
         let fun_block_phis = replace(&mut self.block_phis, block_phis);
         self.block_vars = block_vars;
         self.incomplete_phis = incomplete_phis;

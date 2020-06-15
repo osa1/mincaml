@@ -1,4 +1,4 @@
-#![feature(or_patterns, box_patterns)]
+#![feature(or_patterns, box_patterns, is_sorted)]
 
 mod anormal;
 mod cg_types;

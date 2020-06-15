@@ -17,7 +17,7 @@ pub struct Fun {
     pub instrs: PrimaryMap<InstrIdx, Instr>,
     pub succs: SecondaryMap<BlockIdx, Vec<BlockIdx>>,
     pub preds: SecondaryMap<BlockIdx, Vec<BlockIdx>>,
-    pub value_use_sites: SecondaryMap<ValueIdx, Vec<ValueIdx>>,
+    pub value_use_sites: SecondaryMap<ValueIdx, Vec<ValueIdx>>, // use sites sorted
     pub block_phis: SecondaryMap<BlockIdx, Vec<PhiIdx>>,
     pub return_type: RepType,
 }

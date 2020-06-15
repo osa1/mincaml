@@ -23,10 +23,22 @@ use std::mem::replace;
 // Generating live ranges and intervals
 //
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LiveRange {
     pub begin: InstrIdx,
     pub end: InstrIdx,
+}
+
+impl PartialOrd for LiveRange {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.begin.partial_cmp(&other.begin)
+    }
+}
+
+impl Ord for LiveRange {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.begin.cmp(&other.begin)
+    }
 }
 
 /// Non-overlapping list of live ranges. Ranges are sotred on begin index.

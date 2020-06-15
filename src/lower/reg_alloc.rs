@@ -9,7 +9,7 @@
 // TODO: Make is easier to keep range lists in sorted order, and searching in them.
 
 use super::fun::Fun;
-use super::instr::{InstrIdx, ValueIdx};
+use super::instr::{InstrIdx, Value, ValueIdx};
 use super::liveness::{LiveInterval, LiveIntervalMap, LiveRange};
 use crate::{ctx::Ctx, utils::NoAlternate};
 
@@ -388,6 +388,108 @@ pub fn reg_alloc(
     assigns
 }
 
+// Called when unable to assign a register to the current interval. Spills the current interval, or
+// spills another interval and assigns the register to the current interval.
+fn spill(
+    fun: &Fun, current_value_idx: ValueIdx, current: &[LiveRange], active: &[Allocation],
+    inactive: &[Allocation],
+) {
+    // next_use_pos: maps registers to their *next uses* after `current`.
+    let mut next_use_pos: [InstrIdx; 16] = [InstrIdx::from_u32(u32::MAX - 1); 16];
+
+    // Update next_use_pos for active intervals
+    for Allocation { value, reg, .. } in active {
+        if let Some(next) = next_use(fun, *value, current[0].begin) {
+            let instr_idx = get_value_instr(fun, next);
+            next_use_pos[*reg as usize] = min(next_use_pos[*reg as usize], instr_idx);
+        }
+    }
+
+    // Update next_use_pos for inactive intervals that intersect with the current interval
+    for Allocation { value, reg, ranges } in inactive {
+        if !intersects(current, ranges) {
+            continue;
+        }
+
+        if let Some(next) = next_use(fun, *value, current[0].begin) {
+            let instr_idx = get_value_instr(fun, next);
+            next_use_pos[*reg as usize] = min(next_use_pos[*reg as usize], instr_idx);
+        }
+    }
+
+    // Find the register with highest 'next_use_pos'
+    let mut max_next_use_pos: InstrIdx = next_use_pos[0];
+    let mut reg_idx = 0;
+    for (reg_idx_, free_until) in next_use_pos[1..].iter().enumerate() {
+        if *free_until > max_next_use_pos {
+            max_next_use_pos = *free_until;
+            reg_idx = reg_idx_ + 1;
+        }
+    }
+
+    if current[0].begin > max_next_use_pos {
+        // All other intervals are used before 'current', so it is est to spill 'current'
+        // TODO: I don't understand this code.. I think this branch won't ever be taken?
+
+        // TODO: spill 'current', split its interval before its first use that requires a register
+    } else {
+        // TODO: Spill intervals that currently block 'reg'
+        // TODO: Split inactive intervals for reg
+    }
+
+    // TODO: something something about fixed interval of reg???
+}
+
+fn get_value_instr(fun: &Fun, value: ValueIdx) -> InstrIdx {
+    // If 'next' is a phi then we consider first instruction of the block as use site
+    // (TODO: not sure about this)
+    match &fun.values[value] {
+        Value::Global(_) | Value::Arg(_) => {
+            panic!("Global or arg as use site");
+        }
+        Value::Instr(instr_idx) => *instr_idx,
+        Value::Phi(phi_idx) => {
+            let phi = &fun.phis[*phi_idx];
+            let block = &fun.blocks[phi.owner];
+            block.first_instr
+        }
+    }
+}
+
+fn intersects(r1: &[LiveRange], r2: &[LiveRange]) -> bool {
+    debug_assert!(!r1.is_empty());
+    debug_assert!(r1.is_sorted());
+    debug_assert!(!r2.is_empty());
+    debug_assert!(r2.is_sorted());
+
+    let mut r1_iter = r1.iter().peekable();
+    let mut r2_iter = r2.iter().peekable();
+
+    loop {
+        match (r1_iter.peek(), r2_iter.peek()) {
+            (None, _) | (_, None) => {
+                return false;
+            }
+            (Some(r1_), Some(r2_)) => {
+                if r2_.end < r1_.begin {
+                    r2_iter.next();
+                } else if r1_.end < r2_.begin {
+                    r1_iter.next();
+                } else {
+                    if between(r1_.begin, r2_) || between(r1_.end, r2_) {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn between(i: InstrIdx, r: &LiveRange) -> bool {
+    i >= r.begin && i <= r.end
+}
+
+/// Does the given interval cover 'idx' ?
 fn covers(interval: &[LiveRange], idx: InstrIdx) -> bool {
     match interval
         .binary_search_by(|LiveRange { begin, end: _ }| Reverse(begin).cmp(&Reverse(&idx)))
@@ -398,6 +500,26 @@ fn covers(interval: &[LiveRange], idx: InstrIdx) -> bool {
                 false
             } else {
                 interval[range_idx].end >= idx
+            }
+        }
+    }
+}
+
+/// Find next use of a value
+fn next_use(fun: &Fun, value: ValueIdx, instr: InstrIdx) -> Option<ValueIdx> {
+    let use_sites = &fun.value_use_sites[value];
+    match use_sites.binary_search(&value) {
+        Ok(idx) => {
+            // Value used in current position
+            assert_eq!(fun.values[use_sites[idx]], Value::Instr(instr));
+            Some(use_sites[idx])
+        }
+        Err(idx) => {
+            if idx == use_sites.len() {
+                // Value not used after `instr`
+                None
+            } else {
+                Some(use_sites[idx])
             }
         }
     }
@@ -471,71 +593,64 @@ impl<'a> fmt::Debug for LiveRangeDebug<'a> {
 
 #[test]
 fn test_covers() {
+    let r = |begin, end| LiveRange {
+        begin: InstrIdx::from_u32(begin),
+        end: InstrIdx::from_u32(end),
+    };
+
     assert_eq!(
-        covers(
-            &vec![
-                LiveRange {
-                    begin: InstrIdx::from_u32(5),
-                    end: InstrIdx::from_u32(10)
-                },
-                LiveRange {
-                    begin: InstrIdx::from_u32(2),
-                    end: InstrIdx::from_u32(4)
-                }
-            ],
-            InstrIdx::from_u32(1)
-        ),
+        covers(&vec![r(5, 10), r(2, 4)], InstrIdx::from_u32(1)),
         false
     );
 
     assert_eq!(
-        covers(
-            &vec![
-                LiveRange {
-                    begin: InstrIdx::from_u32(5),
-                    end: InstrIdx::from_u32(10)
-                },
-                LiveRange {
-                    begin: InstrIdx::from_u32(2),
-                    end: InstrIdx::from_u32(4)
-                }
-            ],
-            InstrIdx::from_u32(2)
-        ),
+        covers(&vec![r(5, 10), r(2, 4),], InstrIdx::from_u32(2)),
         true
     );
 
     assert_eq!(
-        covers(
-            &vec![
-                LiveRange {
-                    begin: InstrIdx::from_u32(5),
-                    end: InstrIdx::from_u32(10)
-                },
-                LiveRange {
-                    begin: InstrIdx::from_u32(2),
-                    end: InstrIdx::from_u32(4)
-                }
-            ],
-            InstrIdx::from_u32(3)
-        ),
+        covers(&vec![r(5, 10), r(2, 4),], InstrIdx::from_u32(3)),
         true
     );
 
     assert_eq!(
-        covers(
-            &vec![
-                LiveRange {
-                    begin: InstrIdx::from_u32(7),
-                    end: InstrIdx::from_u32(10)
-                },
-                LiveRange {
-                    begin: InstrIdx::from_u32(2),
-                    end: InstrIdx::from_u32(4)
-                }
-            ],
-            InstrIdx::from_u32(6)
-        ),
+        covers(&vec![r(7, 10), r(2, 4),], InstrIdx::from_u32(6)),
         false
     );
+}
+
+#[test]
+fn test_intersects() {
+    let r = |begin, end| LiveRange {
+        begin: InstrIdx::from_u32(begin),
+        end: InstrIdx::from_u32(end),
+    };
+
+    {
+        let r1: Vec<LiveRange> = vec![r(1, 2)];
+        let r2: Vec<LiveRange> = vec![r(3, 4)];
+        assert!(!intersects(&r1, &r2));
+        assert!(!intersects(&r2, &r1));
+    }
+
+    {
+        let r1: Vec<LiveRange> = vec![r(1, 2)];
+        let r2: Vec<LiveRange> = vec![r(2, 3)];
+        assert!(intersects(&r1, &r2));
+        assert!(intersects(&r2, &r1));
+    }
+
+    {
+        let r1: Vec<LiveRange> = vec![r(1, 2), r(5, 6)];
+        let r2: Vec<LiveRange> = vec![r(3, 4)];
+        assert!(!intersects(&r1, &r2));
+        assert!(!intersects(&r2, &r1));
+    }
+
+    {
+        let r1: Vec<LiveRange> = vec![r(1, 2), r(9, 10)];
+        let r2: Vec<LiveRange> = vec![r(3, 4), r(5, 6), r(7, 8), r(9, 15)];
+        assert!(intersects(&r1, &r2));
+        assert!(intersects(&r2, &r1));
+    }
 }
