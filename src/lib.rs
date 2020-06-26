@@ -20,7 +20,7 @@ use anormal::anormal;
 use lexer::{tokenize, Token};
 use lower::liveness::{build_intervals, gen_liveness};
 use lower::lower_pgm;
-use lower::reg_alloc::reg_alloc;
+use lower::reg_alloc::linear_interval_split::reg_alloc;
 use parser::parse;
 use type_check::type_check_pgm;
 

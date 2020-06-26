@@ -8,9 +8,9 @@
 
 // TODO: Make is easier to keep range lists in sorted order, and searching in them.
 
-use super::fun::Fun;
-use super::instr::{InstrIdx, Value, ValueIdx};
-use super::liveness::{LiveInterval, LiveIntervalMap, LiveRange};
+use crate::lower::fun::Fun;
+use crate::lower::instr::{InstrIdx, Value, ValueIdx};
+use crate::lower::liveness::{LiveInterval, LiveIntervalMap, LiveRange};
 use crate::{ctx::Ctx, utils::NoAlternate};
 
 use std::cmp::{min, Reverse};
