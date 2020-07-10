@@ -16,7 +16,7 @@ mod utils;
 mod var;
 
 use anormal::anormal;
-use codegen::codegen;
+use codegen::native::codegen;
 use lexer::{tokenize, Token};
 use lower::lower_pgm;
 use parser::parse;
