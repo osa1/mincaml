@@ -7,9 +7,10 @@ use fun_builder::*;
 use types::*;
 
 use crate::cg_types::RepType;
+use crate::common::*;
 use crate::ctx::{Ctx, VarId};
 use crate::lower;
-use crate::lower::{Fun, Stmt, Asgn};
+use crate::lower::{Asgn, Fun, Stmt};
 
 use fxhash::FxHashMap;
 
@@ -44,6 +45,15 @@ impl<'ctx> WasmCtx<'ctx> {
                 self.fun_tys.insert(fun_ty, idx);
                 idx
             }
+        }
+    }
+
+    fn get_fun_idx(&self, fun: VarId) -> FunIdx {
+        match self.fun_indices.get(&fun) {
+            None => {
+                panic!("Function called before declared: {:?}", fun);
+            }
+            Some(fun_idx) => *fun_idx,
         }
     }
 }
@@ -90,10 +100,16 @@ fn cg_fun(ctx: &mut WasmCtx, fun: &lower::Fun) {
         }
 
         for stmt in &block.stmts {
-            match stmt {
-                Stmt::Asgn(Asgn { lhs, rhs }) => {}
-                Stmt::Expr(expr) => {}
-            }
+            cg_stmt(ctx, &mut fun_builder, stmt);
+
+            /*
+                        match stmt {
+                            Stmt::Asgn(Asgn { lhs, rhs }) => {
+
+                            }
+                            Stmt::Expr(expr) => {}
+                        }
+            */
         }
 
         if block.loop_header {
@@ -106,5 +122,81 @@ fn rep_type_to_wasm(ty: RepType) -> Ty {
     match ty {
         RepType::Word => Ty::I64,
         RepType::Float => Ty::F64,
+    }
+}
+
+fn cg_stmt(ctx: &mut WasmCtx, builder: &mut FunBuilder, stmt: &lower::Stmt) {
+    match stmt {
+        Stmt::Asgn(Asgn { lhs, rhs }) => {
+            cg_expr(ctx, builder, rhs);
+            builder.local_set(*lhs);
+        }
+        Stmt::Expr(expr) => {
+            cg_expr(ctx, builder, expr);
+        }
+    }
+}
+
+fn cg_expr(ctx: &mut WasmCtx, builder: &mut FunBuilder, stmt: &lower::Expr) {
+    match stmt {
+        lower::Expr::Atom(atom) => cg_atom(builder, atom),
+        lower::Expr::IBinOp(BinOp { op, arg1, arg2 }) => {
+            builder.local_get(*arg1);
+            builder.local_get(*arg2);
+            cg_int_binop(builder, *op);
+        }
+        lower::Expr::FBinOp(BinOp { op, arg1, arg2 }) => {
+            builder.local_get(*arg1);
+            builder.local_get(*arg2);
+            cg_float_binop(builder, *op);
+        }
+        lower::Expr::Neg(var) => {
+            // NOTE: I think Wasm doesn't have an integer negation op so we have to do `0-x` here
+            builder.i64_const(0);
+            builder.local_get(*var);
+            cg_int_binop(builder, IntBinOp::Sub);
+        }
+        lower::Expr::FNeg(var) => {
+            builder.local_get(*var);
+            builder.f64_neg();
+        }
+        lower::Expr::App(fun, args, ret_ty) => {
+            let fun_idx = ctx.get_fun_idx(*fun);
+            for arg in args {
+                builder.local_get(*arg);
+            }
+            builder.call(fun_idx);
+        }
+        lower::Expr::Tuple { len: _ } => todo!(),
+        lower::Expr::TupleGet(_, _) => todo!(),
+        lower::Expr::TuplePut(_, _, _) => todo!(),
+        lower::Expr::ArrayAlloc { len } => todo!(),
+        lower::Expr::ArrayGet(_, _) => todo!(),
+        lower::Expr::ArrayPut(_, _, _) => todo!(),
+    }
+}
+
+fn cg_atom(builder: &mut FunBuilder, atom: &lower::Atom) {
+    match atom {
+        lower::Atom::Unit => builder.i64_const(0),
+        lower::Atom::Int(i) => builder.i64_const(*i),
+        lower::Atom::Float(f) => builder.f64_const(*f),
+        lower::Atom::Var(var) => builder.local_get(*var),
+    }
+}
+
+fn cg_int_binop(builder: &mut FunBuilder, op: IntBinOp) {
+    match op {
+        IntBinOp::Add => builder.i64_add(),
+        IntBinOp::Sub => builder.i64_sub(),
+    }
+}
+
+fn cg_float_binop(builder: &mut FunBuilder, op: FloatBinOp) {
+    match op {
+        FloatBinOp::Add => builder.f64_add(),
+        FloatBinOp::Sub => builder.f64_sub(),
+        FloatBinOp::Mul => builder.f64_mul(),
+        FloatBinOp::Div => builder.f64_div(),
     }
 }
