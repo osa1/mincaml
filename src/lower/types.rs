@@ -47,6 +47,7 @@ pub struct Block {
     pub comment: Option<String>,
     pub stmts: Vec<Stmt>,
     pub exit: Exit,
+    pub loop_header: bool,
 }
 
 #[derive(Debug)]

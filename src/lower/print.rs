@@ -55,6 +55,7 @@ impl Block {
             comment,
             stmts,
             exit,
+            loop_header: _,
         } = self;
         write!(w, "{}:", idx)?;
         match comment {

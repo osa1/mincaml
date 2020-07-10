@@ -297,6 +297,7 @@ fn codegen_fun(
             comment: _,
             stmts,
             exit,
+            loop_header: _,
         } = block;
 
         let mut cl_block = *label_to_block.get(&idx).unwrap();

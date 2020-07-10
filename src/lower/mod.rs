@@ -110,7 +110,7 @@ impl<'ctx> CcCtx<'ctx> {
         });
     }
 
-    fn finish_block(&mut self, block: BlockBuilder, sequel: Sequel, value: Atom) {
+    fn finish_block(&mut self, block: BlockBuilder, sequel: Sequel, value: Atom, loop_header: bool) {
         let BlockBuilder {
             idx,
             mut stmts,
@@ -166,6 +166,7 @@ impl<'ctx> CcCtx<'ctx> {
             comment,
             stmts,
             exit,
+            loop_header,
         };
 
         self.finish_block_(block);
@@ -198,34 +199,34 @@ pub fn lower_pgm(ctx: &mut Ctx, expr: anormal::Expr) -> (Vec<Fun>, VarId) {
 // Returns whether the added block was a fork (i.e. then or else branch of an if)
 fn cc_block(ctx: &mut CcCtx, mut block: BlockBuilder, sequel: Sequel, expr: anormal::Expr) {
     match expr {
-        anormal::Expr::Unit => ctx.finish_block(block, sequel, Atom::Unit),
+        anormal::Expr::Unit => ctx.finish_block(block, sequel, Atom::Unit, false),
 
-        anormal::Expr::Int(i) => ctx.finish_block(block, sequel, Atom::Int(i)),
+        anormal::Expr::Int(i) => ctx.finish_block(block, sequel, Atom::Int(i), false),
 
-        anormal::Expr::Float(f) => ctx.finish_block(block, sequel, Atom::Float(f)),
+        anormal::Expr::Float(f) => ctx.finish_block(block, sequel, Atom::Float(f), false),
 
         anormal::Expr::Neg(var) => {
             let tmp = ctx.fresh_var(RepType::Word);
             block.asgn(tmp, Expr::Neg(var));
-            ctx.finish_block(block, sequel, Atom::Var(tmp));
+            ctx.finish_block(block, sequel, Atom::Var(tmp), false);
         }
 
         anormal::Expr::FNeg(var) => {
             let tmp = ctx.fresh_var(RepType::Float);
             block.asgn(tmp, Expr::FNeg(var));
-            ctx.finish_block(block, sequel, Atom::Var(tmp));
+            ctx.finish_block(block, sequel, Atom::Var(tmp), false);
         }
 
         anormal::Expr::IBinOp(BinOp { op, arg1, arg2 }) => {
             let tmp = sequel.get_ret_var(ctx, RepType::Word);
             block.asgn(tmp, Expr::IBinOp(BinOp { op, arg1, arg2 }));
-            ctx.finish_block(block, sequel, Atom::Var(tmp));
+            ctx.finish_block(block, sequel, Atom::Var(tmp), false);
         }
 
         anormal::Expr::FBinOp(BinOp { op, arg1, arg2 }) => {
             let tmp = sequel.get_ret_var(ctx, RepType::Float);
             block.asgn(tmp, Expr::FBinOp(BinOp { op, arg1, arg2 }));
-            ctx.finish_block(block, sequel, Atom::Var(tmp));
+            ctx.finish_block(block, sequel, Atom::Var(tmp), false);
         }
 
         anormal::Expr::If(v1, v2, cmp, e1, e2) => {
@@ -242,13 +243,14 @@ fn cc_block(ctx: &mut CcCtx, mut block: BlockBuilder, sequel: Sequel, expr: anor
                     then_block: then_block.idx,
                     else_block: else_block.idx,
                 },
+                loop_header: false,
             });
             cc_block(ctx, then_block, sequel.clone(), *e1);
             cc_block(ctx, else_block, sequel, *e2);
         }
 
         anormal::Expr::Var(var) => {
-            ctx.finish_block(block, sequel, Atom::Var(var));
+            ctx.finish_block(block, sequel, Atom::Var(var), false);
         }
 
         anormal::Expr::Let {
@@ -347,7 +349,7 @@ fn cc_block(ctx: &mut CcCtx, mut block: BlockBuilder, sequel: Sequel, expr: anor
             let ret_tmp = sequel.get_ret_var(ctx, fun_ret_ty);
 
             block.asgn(ret_tmp, Expr::App(fun_tmp, args, fun_ret_ty));
-            ctx.finish_block(block, sequel, Atom::Var(ret_tmp));
+            ctx.finish_block(block, sequel, Atom::Var(ret_tmp), false);
         }
 
         anormal::Expr::Tuple(args) => {
@@ -356,7 +358,7 @@ fn cc_block(ctx: &mut CcCtx, mut block: BlockBuilder, sequel: Sequel, expr: anor
             for (arg_idx, arg) in args.iter().enumerate() {
                 block.expr(Expr::TuplePut(ret_tmp, arg_idx, *arg));
             }
-            ctx.finish_block(block, sequel, Atom::Var(ret_tmp));
+            ctx.finish_block(block, sequel, Atom::Var(ret_tmp), false);
         }
 
         anormal::Expr::TupleGet(tuple, idx) => {
@@ -369,7 +371,7 @@ fn cc_block(ctx: &mut CcCtx, mut block: BlockBuilder, sequel: Sequel, expr: anor
             };
             let ret_tmp = sequel.get_ret_var(ctx, elem_ty);
             block.asgn(ret_tmp, Expr::TupleGet(tuple, idx));
-            ctx.finish_block(block, sequel, Atom::Var(ret_tmp));
+            ctx.finish_block(block, sequel, Atom::Var(ret_tmp), false);
         }
 
         anormal::Expr::ArrayAlloc { len, elem } => {
@@ -388,6 +390,7 @@ fn cc_block(ctx: &mut CcCtx, mut block: BlockBuilder, sequel: Sequel, expr: anor
                 comment: block.comment,
                 stmts: block.stmts,
                 exit: Exit::Jump(loop_cond_block.idx),
+                loop_header: false,
             });
 
             // loop_cond
@@ -402,6 +405,7 @@ fn cc_block(ctx: &mut CcCtx, mut block: BlockBuilder, sequel: Sequel, expr: anor
                     then_block: cont_block.idx,
                     else_block: loop_body_block.idx,
                 },
+                loop_header: true,
             });
 
             // loop_body
@@ -421,9 +425,10 @@ fn cc_block(ctx: &mut CcCtx, mut block: BlockBuilder, sequel: Sequel, expr: anor
                 comment: Some("array body".to_string()),
                 stmts: loop_body_block.stmts,
                 exit: Exit::Jump(loop_cond_block.idx),
+                loop_header: false,
             });
 
-            ctx.finish_block(cont_block, sequel, Atom::Var(array_tmp));
+            ctx.finish_block(cont_block, sequel, Atom::Var(array_tmp), false);
         }
 
         anormal::Expr::ArrayGet(array, idx) => {
@@ -436,7 +441,7 @@ fn cc_block(ctx: &mut CcCtx, mut block: BlockBuilder, sequel: Sequel, expr: anor
             };
             let ret_tmp = sequel.get_ret_var(ctx, elem_ty);
             block.asgn(ret_tmp, Expr::ArrayGet(array, idx));
-            ctx.finish_block(block, sequel, Atom::Var(ret_tmp));
+            ctx.finish_block(block, sequel, Atom::Var(ret_tmp), false);
         }
 
         anormal::Expr::ArrayPut(array, idx, val) => {
@@ -449,7 +454,7 @@ fn cc_block(ctx: &mut CcCtx, mut block: BlockBuilder, sequel: Sequel, expr: anor
             };
             let ret_tmp = sequel.get_ret_var(ctx, elem_ty);
             block.asgn(ret_tmp, Expr::ArrayPut(array, idx, val));
-            ctx.finish_block(block, sequel, Atom::Var(ret_tmp));
+            ctx.finish_block(block, sequel, Atom::Var(ret_tmp), false);
         }
     }
 }
