@@ -18,5 +18,5 @@ pub struct FunIdx(pub u32);
 #[derive(Debug, Clone, Copy)]
 pub struct TypeIdx(pub u32);
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct LocalIdx(pub u32);

@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+mod encoding;
 mod fun_builder;
 mod types;
 
@@ -14,18 +15,55 @@ use crate::lower::{Asgn, Fun, Stmt};
 
 use fxhash::FxHashMap;
 
-pub fn codegen(ctx: &mut Ctx, funs: &[lower::Fun], main_id: VarId, dump: bool) {
+pub fn codegen(ctx: &mut Ctx, funs: &[lower::Fun], main: VarId, dump: bool) -> Vec<u8> {
     let mut ctx = WasmCtx::new(ctx);
 
-    for fun in funs {
-        cg_fun(&mut ctx, fun);
-    }
+    // Module structure:
+    //
+    // 1. type section
+    // 2. import section: NA? or do we need to import RTS stuff?
+    // 3. function section
+    // 4. table section: NA
+    // 5. memory section: NA
+    // 6. global section: NA
+    // 7. export section: do we need to export main? TODO
+    // 8. start section
+    // 9. element section: NA (I don't understand what this is for)
+    // 10. code section
+    // 11. data section: NA
+    //
+    // So we only generate (1), (3), (8), (10)
+
+    let fun_section = cg_fun_section(&mut ctx, funs);
+
+    todo!()
 }
 
 struct WasmCtx<'ctx> {
     ctx: &'ctx mut Ctx,
     fun_tys: FxHashMap<FunTy, TypeIdx>,
     fun_indices: FxHashMap<VarId, FunIdx>,
+}
+
+fn cg_fun_section(ctx: &mut WasmCtx, funs: &[lower::Fun]) -> Vec<u8> {
+    let mut section_bytes = vec![];
+    section_bytes.push(10);
+
+    let mut code = Vec::with_capacity(funs.len());
+    let mut section_size = 0;
+
+    for fun in funs {
+        let fun_code = cg_fun(ctx, fun);
+        section_size += fun_code.len();
+        code.push(fun_code);
+    }
+
+    encoding::encode_u32_uleb128(section_size as u32, &mut section_bytes);
+    for code in code {
+        section_bytes.extend_from_slice(&code);
+    }
+
+    section_bytes
 }
 
 impl<'ctx> WasmCtx<'ctx> {
@@ -58,12 +96,12 @@ impl<'ctx> WasmCtx<'ctx> {
     }
 }
 
-fn cg_fun(ctx: &mut WasmCtx, fun: &lower::Fun) {
+fn cg_fun(ctx: &mut WasmCtx, fun: &lower::Fun) -> Vec<u8> {
     let Fun {
         name,
-        args,
+        args: _,
         blocks,
-        return_type,
+        return_type: _,
     } = fun;
 
     // Index of the current function
@@ -73,19 +111,21 @@ fn cg_fun(ctx: &mut WasmCtx, fun: &lower::Fun) {
     ctx.fun_indices.insert(*name, fun_idx);
 
     // Get function type idx
-    let arg_tys: Vec<Ty> = args
-        .iter()
-        .map(|arg| rep_type_to_wasm(ctx.ctx.var_rep_type(*arg)))
-        .collect();
-    let ret_ty = rep_type_to_wasm(*return_type);
-    let fun_ty = FunTy {
-        args: arg_tys,
-        ret: ret_ty,
-    };
-    let ty_idx = ctx.add_fun_ty(fun_ty);
+    // let arg_tys: Vec<Ty> = args
+    //     .iter()
+    //     .map(|arg| rep_type_to_wasm(ctx.ctx.var_rep_type(*arg)))
+    //     .collect();
+    // let ret_ty = rep_type_to_wasm(*return_type);
+    // let fun_ty = FunTy {
+    //     args: arg_tys,
+    //     ret: ret_ty,
+    // };
+    // let ty_idx = ctx.add_fun_ty(fun_ty);
+
+    let mut fun_builder = FunBuilder::new();
 
     // TODO: This will only work in 'blocks' is in dependency order
-    for (block_idx, block) in blocks {
+    for (_block_idx, block) in blocks {
         let block = match block {
             lower::BlockData::NA => {
                 continue;
@@ -93,29 +133,42 @@ fn cg_fun(ctx: &mut WasmCtx, fun: &lower::Fun) {
             lower::BlockData::Block(block) => block,
         };
 
-        let mut fun_builder = FunBuilder::new();
-
         if block.loop_header {
             fun_builder.enter_loop();
         }
 
         for stmt in &block.stmts {
             cg_stmt(ctx, &mut fun_builder, stmt);
-
-            /*
-                        match stmt {
-                            Stmt::Asgn(Asgn { lhs, rhs }) => {
-
-                            }
-                            Stmt::Expr(expr) => {}
-                        }
-            */
         }
 
         if block.loop_header {
             fun_builder.exit_loop();
         }
     }
+
+    let (fun_bytes, fun_locals) = fun_builder.finish();
+
+    let mut locals_bytes = vec![];
+    encoding::encode_vec(
+        &fun_locals,
+        &mut |local, buf| {
+            encoding::encode_u32_uleb128(1, buf);
+            buf.push(match rep_type_to_wasm(ctx.ctx.var_rep_type(*local)) {
+                Ty::I32 => 0x7F,
+                Ty::I64 => 0x7E,
+                Ty::F32 => 0x7D,
+                Ty::F64 => 0x7C,
+            });
+        },
+        &mut locals_bytes,
+    );
+
+    let code_size = (locals_bytes.len() + fun_bytes.len()) as u32;
+    let mut code = vec![];
+    encoding::encode_u32_uleb128(code_size, &mut code);
+    code.extend_from_slice(&locals_bytes);
+    code.extend_from_slice(&fun_bytes);
+    code
 }
 
 fn rep_type_to_wasm(ty: RepType) -> Ty {
@@ -160,7 +213,7 @@ fn cg_expr(ctx: &mut WasmCtx, builder: &mut FunBuilder, stmt: &lower::Expr) {
             builder.local_get(*var);
             builder.f64_neg();
         }
-        lower::Expr::App(fun, args, ret_ty) => {
+        lower::Expr::App(fun, args, _ret_ty) => {
             let fun_idx = ctx.get_fun_idx(*fun);
             for arg in args {
                 builder.local_get(*arg);
@@ -170,7 +223,7 @@ fn cg_expr(ctx: &mut WasmCtx, builder: &mut FunBuilder, stmt: &lower::Expr) {
         lower::Expr::Tuple { len: _ } => todo!(),
         lower::Expr::TupleGet(_, _) => todo!(),
         lower::Expr::TuplePut(_, _, _) => todo!(),
-        lower::Expr::ArrayAlloc { len } => todo!(),
+        lower::Expr::ArrayAlloc { len: _ } => todo!(),
         lower::Expr::ArrayGet(_, _) => todo!(),
         lower::Expr::ArrayPut(_, _, _) => todo!(),
     }
