@@ -8,6 +8,8 @@ pub fn encode_vec<A>(stuff: &[A], encode: &mut dyn FnMut(&A, &mut Vec<u8>), buf:
 }
 
 pub fn encode_type_section(mut fun_tys: Vec<(FunTy, TypeIdx)>, buf: &mut Vec<u8>) {
+    // We need to sort the types by index so that when generating the 'code' section we can use the
+    // `TypeIdx` as the index of the type in 'type' section.
     fun_tys.sort_by_key(|(_fun_ty, type_idx)| *type_idx);
     let fun_tys: Vec<FunTy> = fun_tys.into_iter().map(|(fun_ty, _)| fun_ty).collect();
 
@@ -22,10 +24,37 @@ pub fn encode_type_section(mut fun_tys: Vec<(FunTy, TypeIdx)>, buf: &mut Vec<u8>
         &mut vec_bytes,
     );
 
+    buf.push(1);
+    encode_u32_uleb128(vec_bytes.len() as u32, buf);
+    buf.extend_from_slice(&vec_bytes);
+}
+
+pub fn encode_function_section(ty_indices: &[TypeIdx], buf: &mut Vec<u8>) {
+    let mut vec_bytes = vec![];
+    encode_vec(
+        ty_indices,
+        &mut |ty, buf| {
+            encode_u32_uleb128(ty.0, buf);
+        },
+        &mut vec_bytes,
+    );
+
+    buf.push(3);
+    encode_u32_uleb128(vec_bytes.len() as u32, buf);
+    buf.extend_from_slice(&vec_bytes);
+}
+
+pub fn encode_start_section(start: FunIdx, buf: &mut Vec<u8>) {
+    buf.push(8);
+
     let mut section_bytes = vec![];
-    section_bytes.push(1);
-    encode_u32_uleb128(vec_bytes.len() as u32, &mut section_bytes);
-    section_bytes.extend_from_slice(&vec_bytes);
+    encode_u32_uleb128(start.0, &mut section_bytes);
+
+    buf.extend_from_slice(&section_bytes);
+}
+
+pub fn encode_code_section(buf: &mut Vec<u8>) {
+
 }
 
 pub fn encode_result_type(ty: &[Ty], buf: &mut Vec<u8>) {

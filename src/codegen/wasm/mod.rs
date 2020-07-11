@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 mod encoding;
 mod fun_builder;
 mod types;
@@ -15,14 +13,16 @@ use crate::lower::{Asgn, Fun, Stmt};
 
 use fxhash::FxHashMap;
 
-pub fn codegen(ctx: &mut Ctx, funs: &[lower::Fun], main: VarId, dump: bool) -> Vec<u8> {
+pub fn codegen(ctx: &mut Ctx, funs: &[lower::Fun], main: VarId, _dump: bool) -> Vec<u8> {
     let mut ctx = WasmCtx::new(ctx);
+
+    let mut module_bytes = vec![];
 
     // Module structure:
     //
     // 1. type section
     // 2. import section: NA? or do we need to import RTS stuff?
-    // 3. function section
+    // 3. function section: Nth index here is the Nth function's (in 'code' section) type index
     // 4. table section: NA
     // 5. memory section: NA
     // 6. global section: NA
@@ -34,23 +34,28 @@ pub fn codegen(ctx: &mut Ctx, funs: &[lower::Fun], main: VarId, dump: bool) -> V
     //
     // So we only generate (1), (3), (8), (10)
 
-    let fun_section = cg_fun_section(&mut ctx, funs);
+    let code_section = cg_code_section(&mut ctx, funs);
 
-    // Get function types for the types section
-    let mut fun_tys: Vec<(FunTy, TypeIdx)> = ctx.fun_tys.into_iter().collect();
-    fun_tys.sort_by_key(|(_fun_ty, type_idx)| *type_idx);
-    let fun_tys: Vec<FunTy> = fun_tys.into_iter().map(|(fun_ty, _)| fun_ty).collect();
+    encoding::encode_type_section(ctx.fun_tys.into_iter().collect(), &mut module_bytes);
+    encoding::encode_function_section(&ctx.fun_ty_indices, &mut module_bytes);
+    encoding::encode_start_section(*ctx.fun_indices.get(&main).unwrap(), &mut module_bytes);
+    module_bytes.extend_from_slice(&code_section);
 
-    todo!()
+    module_bytes
 }
 
 struct WasmCtx<'ctx> {
     ctx: &'ctx mut Ctx,
+    // Maps function types to their type indices in 'type' section
     fun_tys: FxHashMap<FunTy, TypeIdx>,
+    // Maps functions to their types' indices in 'type' section. Used to generate 'function'
+    // section which maps functions to their type indices. Nth element is Nth function's type
+    // index.
+    fun_ty_indices: Vec<TypeIdx>,
     fun_indices: FxHashMap<VarId, FunIdx>,
 }
 
-fn cg_fun_section(ctx: &mut WasmCtx, funs: &[lower::Fun]) -> Vec<u8> {
+fn cg_code_section(ctx: &mut WasmCtx, funs: &[lower::Fun]) -> Vec<u8> {
     let mut section_bytes = vec![];
     section_bytes.push(10);
 
@@ -76,17 +81,20 @@ impl<'ctx> WasmCtx<'ctx> {
         WasmCtx {
             ctx,
             fun_tys: Default::default(),
+            fun_ty_indices: vec![],
             fun_indices: Default::default(),
         }
     }
 
-    fn add_fun_ty(&mut self, fun_ty: FunTy) -> TypeIdx {
+    fn add_fun_ty(&mut self, fun_ty: FunTy) {
         match self.fun_tys.get(&fun_ty) {
-            Some(ty_idx) => *ty_idx,
+            Some(ty_idx) => {
+                self.fun_ty_indices.push(*ty_idx);
+            }
             None => {
                 let idx = TypeIdx(self.fun_tys.len() as u32);
                 self.fun_tys.insert(fun_ty, idx);
-                idx
+                self.fun_ty_indices.push(idx);
             }
         }
     }
@@ -104,9 +112,9 @@ impl<'ctx> WasmCtx<'ctx> {
 fn cg_fun(ctx: &mut WasmCtx, fun: &lower::Fun) -> Vec<u8> {
     let Fun {
         name,
-        args: _,
+        args,
         blocks,
-        return_type: _,
+        return_type,
     } = fun;
 
     // Index of the current function
@@ -116,16 +124,16 @@ fn cg_fun(ctx: &mut WasmCtx, fun: &lower::Fun) -> Vec<u8> {
     ctx.fun_indices.insert(*name, fun_idx);
 
     // Get function type idx
-    // let arg_tys: Vec<Ty> = args
-    //     .iter()
-    //     .map(|arg| rep_type_to_wasm(ctx.ctx.var_rep_type(*arg)))
-    //     .collect();
-    // let ret_ty = rep_type_to_wasm(*return_type);
-    // let fun_ty = FunTy {
-    //     args: arg_tys,
-    //     ret: ret_ty,
-    // };
-    // let ty_idx = ctx.add_fun_ty(fun_ty);
+    let arg_tys: Vec<Ty> = args
+        .iter()
+        .map(|arg| rep_type_to_wasm(ctx.ctx.var_rep_type(*arg)))
+        .collect();
+    let ret_ty = rep_type_to_wasm(*return_type);
+    let fun_ty = FunTy {
+        args: arg_tys,
+        ret: ret_ty,
+    };
+    ctx.add_fun_ty(fun_ty);
 
     let mut fun_builder = FunBuilder::new();
 
