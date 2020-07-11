@@ -180,6 +180,7 @@ fn link(path: &str, out_dir: Option<&str>, object_code: ObjectCode) -> i32 {
         .write_all(&object_code)
         .unwrap();
 
+/*
     // Build RTS
     let output = Command::new("gcc")
         .args(&["rts.c", "-c", "-o", &format!("{}/rts.o", out_dir)])
@@ -206,6 +207,7 @@ fn link(path: &str, out_dir: Option<&str>, object_code: ObjectCode) -> i32 {
         .unwrap();
 
     assert!(output.status.success());
+*/
 
     0
 }

@@ -16,7 +16,7 @@ use fxhash::FxHashMap;
 pub fn codegen(ctx: &mut Ctx, funs: &[lower::Fun], main: VarId, _dump: bool) -> Vec<u8> {
     let mut ctx = WasmCtx::new(ctx);
 
-    let mut module_bytes = vec![];
+    let mut module_bytes = vec![0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00];
 
     // Module structure:
     //
