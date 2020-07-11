@@ -304,7 +304,7 @@ fn cg_expr(ctx: &mut WasmCtx, builder: &mut FunBuilder, stmt: &lower::Expr) {
             let tuple_ty = ctx.ctx.var_type(*tuple);
             let elem_ty = match &*tuple_ty {
                 crate::type_check::Type::Tuple(elem_tys) => &elem_tys[*idx],
-                other => panic!("Non-tuple in tuple position"),
+                other => panic!("{:?} in tuple position", other),
             };
             match RepType::from(elem_ty) {
                 RepType::Word => {
@@ -329,7 +329,7 @@ fn cg_expr(ctx: &mut WasmCtx, builder: &mut FunBuilder, stmt: &lower::Expr) {
                     builder.i64_store();
                 }
                 RepType::Float => {
-                    builder.i64_store();
+                    builder.f64_store();
                 }
             }
         }

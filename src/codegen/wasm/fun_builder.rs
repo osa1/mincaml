@@ -92,7 +92,7 @@ impl FunBuilder {
     }
 
     pub fn f64_load(&mut self) {
-        f64_store(&mut self.bytes);
+        f64_load(&mut self.bytes);
     }
 
     pub fn f64_add(&mut self) {
