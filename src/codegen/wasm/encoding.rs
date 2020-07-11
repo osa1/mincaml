@@ -1,3 +1,4 @@
+use super::instr;
 use super::types::*;
 
 pub fn encode_vec<A>(stuff: &[A], encode: &mut dyn FnMut(&A, &mut Vec<u8>), buf: &mut Vec<u8>) {
@@ -47,6 +48,26 @@ pub fn encode_function_section(ty_indices: &[TypeIdx], buf: &mut Vec<u8>) {
     buf.extend_from_slice(&vec_bytes);
 }
 
+pub fn encode_table_section(n_funs: u32, buf: &mut Vec<u8>) {
+    // section(vec(table))
+    // table = 0x70 limits
+    // limits = 0x00 min:u32
+    //        | 0x01 min:u32 max:u32
+
+    // TODO: I don't understand the min/max stuff, and why tables are created uninitialized
+
+    let mut vec_bytes = vec![];
+    encode_u32_uleb128(1, &mut vec_bytes);
+    vec_bytes.push(0x70);
+    vec_bytes.push(0x01);
+    encode_u32_uleb128(n_funs, &mut vec_bytes); // min
+    encode_u32_uleb128(n_funs, &mut vec_bytes); // max
+
+    buf.push(4);
+    encode_u32_uleb128(vec_bytes.len() as u32, buf);
+    buf.extend_from_slice(&vec_bytes);
+}
+
 pub fn encode_global_section(buf: &mut Vec<u8>) {
     // section(vec(global))
     let mut section_bytes = vec![];
@@ -80,6 +101,23 @@ pub fn encode_start_section(start: FunIdx, buf: &mut Vec<u8>) {
 
     let mut section_bytes = vec![];
     encode_u32_uleb128(start.0, &mut section_bytes);
+
+    encode_u32_uleb128(section_bytes.len() as u32, buf);
+    buf.extend_from_slice(&section_bytes);
+}
+
+pub fn encode_element_section(n_funs: u32, buf: &mut Vec<u8>) {
+    buf.push(9);
+
+    let mut section_bytes = vec![];
+
+    encode_u32_uleb128(1, &mut section_bytes); // vec size
+    section_bytes.push(0); // tableidx
+    instr::i32_const(0, &mut section_bytes); // offset
+    section_bytes.push(0x0B); // end of offset expression
+    for i in 0..n_funs {
+        encode_u32_uleb128(i, &mut section_bytes);
+    }
 
     encode_u32_uleb128(section_bytes.len() as u32, buf);
     buf.extend_from_slice(&section_bytes);

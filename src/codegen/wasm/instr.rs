@@ -1,8 +1,9 @@
 use super::encoding::{encode_i64_sleb128, encode_u32_uleb128};
-use super::types::{FunIdx, GlobalIdx, LocalIdx};
+use super::types::{FunIdx, GlobalIdx, LocalIdx, TypeIdx};
 
 pub fn i32_const(i: i32, buf: &mut Vec<u8>) {
-    todo!()
+    buf.push(0x41);
+    encode_u32_uleb128(i as u32, buf);
 }
 
 pub fn i64_const(i: i64, buf: &mut Vec<u8>) {
@@ -111,6 +112,12 @@ pub fn memory_grow(buf: &mut Vec<u8>) {
 pub fn call(idx: FunIdx, buf: &mut Vec<u8>) {
     buf.push(0x10);
     encode_u32_uleb128(idx.0, buf);
+}
+
+pub fn call_indirect(idx: TypeIdx, buf: &mut Vec<u8>) {
+    buf.push(0x11);
+    encode_u32_uleb128(idx.0, buf);
+    buf.push(0x00);
 }
 
 pub fn ret(buf: &mut Vec<u8>) {

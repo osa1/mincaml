@@ -1,7 +1,7 @@
 // NOTE: globals 'hp' and 'hp_lim' are initialized in `encoding::encode_function_section`
 
-use super::types::*;
 use super::instr::*;
+use super::types::*;
 
 pub const HP_IDX: GlobalIdx = GlobalIdx(0);
 pub const HP_LIM_IDX: GlobalIdx = GlobalIdx(1);
@@ -24,7 +24,7 @@ pub fn gen_alloc(n: u32, buf: &mut Vec<u8>) {
     memory_grow(buf);
 
     buf.push(0x05); // else
-    // Bump hp, return old value
+                    // Bump hp, return old value
     global_get(HP_IDX, buf); // old value
     global_get(HP_IDX, buf);
     i32_const(n as i32, buf);

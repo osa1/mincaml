@@ -25,13 +25,13 @@ pub fn codegen(ctx: &mut Ctx, funs: &[lower::Fun], main: VarId, _dump: bool) -> 
     // 1. type section
     // 2. import section: NA? or do we need to import RTS stuff?
     // 3. function section: Nth index here is the Nth function's (in 'code' section) type index
-    // 4. table section: NA
+    // 4. table section: initialize function table, size = number of functions in the module
     // 5. memory section: NA
     // 6. global section: variables 'hp' (heap pointer) and 'hp_lim' (heap limit). Both are u32
     //    values.
     // 7. export section: NA (no need to export start function)
     // 8. start section
-    // 9. element section: NA (I don't understand what this is for)
+    // 9. element section: initializes the function table. Nth element is index to Nth function.
     // 10. code section
     // 11. data section: NA
     //
@@ -41,11 +41,14 @@ pub fn codegen(ctx: &mut Ctx, funs: &[lower::Fun], main: VarId, _dump: bool) -> 
 
     encoding::encode_type_section(ctx.fun_tys.into_iter().collect(), &mut module_bytes);
     encoding::encode_function_section(&ctx.fun_ty_indices, &mut module_bytes);
+    encoding::encode_table_section(funs.len() as u32, &mut module_bytes);
     encoding::encode_global_section(&mut module_bytes);
 
     // start function is generated last, after all the MinCaml functions
     let start_fun_idx = FunIdx(funs.len() as u32);
     encoding::encode_start_section(start_fun_idx, &mut module_bytes);
+
+    encoding::encode_element_section(funs.len() as u32, &mut module_bytes);
 
     module_bytes.extend_from_slice(&code_section);
 
@@ -131,25 +134,18 @@ impl<'ctx> WasmCtx<'ctx> {
         }
     }
 
-    fn add_fun_ty(&mut self, fun_ty: FunTy) {
+    fn add_fun_ty(&mut self, fun_ty: FunTy) -> TypeIdx {
         match self.fun_tys.get(&fun_ty) {
             Some(ty_idx) => {
                 self.fun_ty_indices.push(*ty_idx);
+                *ty_idx
             }
             None => {
-                let idx = TypeIdx(self.fun_tys.len() as u32);
-                self.fun_tys.insert(fun_ty, idx);
-                self.fun_ty_indices.push(idx);
+                let ty_idx = TypeIdx(self.fun_tys.len() as u32);
+                self.fun_tys.insert(fun_ty, ty_idx);
+                self.fun_ty_indices.push(ty_idx);
+                ty_idx
             }
-        }
-    }
-
-    fn get_fun_idx(&self, fun: VarId) -> FunIdx {
-        match self.fun_indices.get(&fun) {
-            None => {
-                panic!("Function called before declared: {:?}", fun);
-            }
-            Some(fun_idx) => *fun_idx,
         }
     }
 }
@@ -182,23 +178,21 @@ fn cg_fun(ctx: &mut WasmCtx, fun: &lower::Fun) -> Vec<u8> {
 
     let mut fun_builder = FunBuilder::new();
 
-    // TODO: This will only work in 'blocks' is in dependency order
-    for (_block_idx, block) in blocks {
+    let mut block_idx = lower::BlockIdx::from_u32(0);
+    loop {
         let lower::Block {
             stmts,
             exit,
             loop_header,
             ..
-        } = match block {
+        } = match &blocks[block_idx] {
             lower::BlockData::NA => {
-                continue;
+                panic!("Block not available: {}", block_idx);
             }
             lower::BlockData::Block(block) => block,
         };
 
-        if *loop_header {
-            fun_builder.enter_loop();
-        }
+        assert!(!loop_header); // loops not handled yet
 
         for stmt in stmts {
             cg_stmt(ctx, &mut fun_builder, stmt);
@@ -208,6 +202,7 @@ fn cg_fun(ctx: &mut WasmCtx, fun: &lower::Fun) -> Vec<u8> {
             lower::Exit::Return(var) => {
                 fun_builder.local_get(*var);
                 fun_builder.ret();
+                break;
             }
             lower::Exit::Branch {
                 v1,
@@ -216,10 +211,10 @@ fn cg_fun(ctx: &mut WasmCtx, fun: &lower::Fun) -> Vec<u8> {
                 then_block,
                 else_block,
             } => todo!(),
-            lower::Exit::Jump(target) => todo!(),
+            lower::Exit::Jump(target) => {
+                block_idx = *target;
+            }
         }
-
-        // TODO: generate loop terminator
     }
 
     let (fun_bytes, fun_locals) = fun_builder.finish();
@@ -284,12 +279,22 @@ fn cg_expr(ctx: &mut WasmCtx, builder: &mut FunBuilder, stmt: &lower::Expr) {
             builder.local_get(*var);
             builder.f64_neg();
         }
-        lower::Expr::App(fun, args, _ret_ty) => {
-            let fun_idx = ctx.get_fun_idx(*fun);
+        lower::Expr::App(fun, args, ret_ty) => {
             for arg in args {
                 builder.local_get(*arg);
             }
-            builder.call(fun_idx);
+            builder.local_get(*fun);
+
+            let fun_ty = FunTy {
+                args: args
+                    .iter()
+                    .map(|arg| rep_type_to_wasm(ctx.ctx.var_rep_type(*arg)))
+                    .collect(),
+                ret: Some(rep_type_to_wasm(RepType::from(*ret_ty))),
+            };
+
+            let fun_ty_idx = ctx.add_fun_ty(fun_ty);
+            builder.call_indirect(fun_ty_idx);
         }
         lower::Expr::Tuple { len } => {
             let bytes = len * 8;
@@ -304,6 +309,10 @@ fn cg_expr(ctx: &mut WasmCtx, builder: &mut FunBuilder, stmt: &lower::Expr) {
             let tuple_ty = ctx.ctx.var_type(*tuple);
             let elem_ty = match &*tuple_ty {
                 crate::type_check::Type::Tuple(elem_tys) => &elem_tys[*idx],
+                crate::type_check::Type::Fun { .. } => {
+                    // See DISGUSTING HACK in codegen::native
+                    &crate::type_check::Type::Int
+                }
                 other => panic!("{:?} in tuple position", other),
             };
             match RepType::from(elem_ty) {

@@ -1,7 +1,6 @@
-use super::encoding::{encode_i64_sleb128, encode_u32_uleb128};
-use super::instr::*;
-use super::types::{FunIdx, LocalIdx};
 use super::alloc::gen_alloc;
+use super::instr::*;
+use super::types::{FunIdx, LocalIdx, TypeIdx};
 use crate::ctx::VarId;
 
 use fxhash::FxHashMap;
@@ -117,6 +116,10 @@ impl FunBuilder {
 
     pub fn call(&mut self, fun_idx: FunIdx) {
         call(fun_idx, &mut self.bytes);
+    }
+
+    pub fn call_indirect(&mut self, fun_ty_idx: TypeIdx) {
+        call_indirect(fun_ty_idx, &mut self.bytes);
     }
 
     pub fn ret(&mut self) {
