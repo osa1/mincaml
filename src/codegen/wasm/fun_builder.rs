@@ -108,7 +108,9 @@ impl FunBuilder {
         self.bytes.push(0x0F);
     }
 
-    pub fn finish(self) -> (Vec<u8>, Vec<VarId>) {
+    pub fn finish(mut self) -> (Vec<u8>, Vec<VarId>) {
+        self.bytes.push(0x0B); // end
+
         let mut locals: Vec<(VarId, LocalIdx)> = self.locals.into_iter().collect();
         locals.sort_by_key(|(_, idx)| *idx);
 
