@@ -50,11 +50,8 @@ pub fn encode_start_section(start: FunIdx, buf: &mut Vec<u8>) {
     let mut section_bytes = vec![];
     encode_u32_uleb128(start.0, &mut section_bytes);
 
+    encode_u32_uleb128(section_bytes.len() as u32, buf);
     buf.extend_from_slice(&section_bytes);
-}
-
-pub fn encode_code_section(buf: &mut Vec<u8>) {
-
 }
 
 pub fn encode_result_type(ty: &[Ty], buf: &mut Vec<u8>) {
