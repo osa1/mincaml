@@ -1,8 +1,45 @@
+use super::types::*;
+
 pub fn encode_vec<A>(stuff: &[A], encode: &mut dyn FnMut(&A, &mut Vec<u8>), buf: &mut Vec<u8>) {
     encode_u32_uleb128(stuff.len() as u32, buf);
     for stuff in stuff {
         encode(stuff, buf);
     }
+}
+
+pub fn encode_type_section(mut fun_tys: Vec<(FunTy, TypeIdx)>, buf: &mut Vec<u8>) {
+    fun_tys.sort_by_key(|(_fun_ty, type_idx)| *type_idx);
+    let fun_tys: Vec<FunTy> = fun_tys.into_iter().map(|(fun_ty, _)| fun_ty).collect();
+
+    let mut vec_bytes = vec![];
+    encode_vec(
+        &fun_tys,
+        &mut |fun_ty, buf| {
+            buf.push(0x60);
+            encode_result_type(&fun_ty.args, buf);
+            encode_result_type(&vec![fun_ty.ret], buf);
+        },
+        &mut vec_bytes,
+    );
+
+    let mut section_bytes = vec![];
+    section_bytes.push(1);
+    encode_u32_uleb128(vec_bytes.len() as u32, &mut section_bytes);
+    section_bytes.extend_from_slice(&vec_bytes);
+}
+
+pub fn encode_result_type(ty: &[Ty], buf: &mut Vec<u8>) {
+    encode_vec(ty, &mut |ty, buf| encode_ty(*ty, buf), buf);
+}
+
+pub fn encode_ty(ty: Ty, buf: &mut Vec<u8>) {
+    let byte = match ty {
+        Ty::I32 => 0x7F,
+        Ty::I64 => 0x7E,
+        Ty::F32 => 0x7D,
+        Ty::F64 => 0x7C,
+    };
+    buf.push(byte);
 }
 
 pub fn encode_u32_uleb128(mut value: u32, buf: &mut Vec<u8>) {

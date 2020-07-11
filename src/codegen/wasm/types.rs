@@ -1,4 +1,4 @@
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Ty {
     I32,
     I64,
@@ -15,7 +15,7 @@ pub struct FunTy {
 #[derive(Debug, Clone, Copy)]
 pub struct FunIdx(pub u32);
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TypeIdx(pub u32);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

@@ -36,6 +36,11 @@ pub fn codegen(ctx: &mut Ctx, funs: &[lower::Fun], main: VarId, dump: bool) -> V
 
     let fun_section = cg_fun_section(&mut ctx, funs);
 
+    // Get function types for the types section
+    let mut fun_tys: Vec<(FunTy, TypeIdx)> = ctx.fun_tys.into_iter().collect();
+    fun_tys.sort_by_key(|(_fun_ty, type_idx)| *type_idx);
+    let fun_tys: Vec<FunTy> = fun_tys.into_iter().map(|(fun_ty, _)| fun_ty).collect();
+
     todo!()
 }
 
@@ -153,12 +158,7 @@ fn cg_fun(ctx: &mut WasmCtx, fun: &lower::Fun) -> Vec<u8> {
         &fun_locals,
         &mut |local, buf| {
             encoding::encode_u32_uleb128(1, buf);
-            buf.push(match rep_type_to_wasm(ctx.ctx.var_rep_type(*local)) {
-                Ty::I32 => 0x7F,
-                Ty::I64 => 0x7E,
-                Ty::F32 => 0x7D,
-                Ty::F64 => 0x7C,
-            });
+            encoding::encode_ty(rep_type_to_wasm(ctx.ctx.var_rep_type(*local)), buf);
         },
         &mut locals_bytes,
     );
