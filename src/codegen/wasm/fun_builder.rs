@@ -1,5 +1,7 @@
 use super::encoding::{encode_i64_sleb128, encode_u32_uleb128};
+use super::instr::*;
 use super::types::{FunIdx, LocalIdx};
+use super::alloc::gen_alloc;
 use crate::ctx::VarId;
 
 use fxhash::FxHashMap;
@@ -9,16 +11,6 @@ pub struct FunBuilder {
     // Encoding of the function body
     bytes: Vec<u8>,
 }
-
-/*
-#[derive(Debug, Clone, Copy)]
-pub enum Const {
-    I32(i32),
-    I64(i64),
-    F32(f32),
-    F64(f64),
-}
-*/
 
 impl FunBuilder {
     pub fn new() -> Self {
@@ -49,63 +41,90 @@ impl FunBuilder {
         }
     }
 
+    pub fn i32_const(&mut self, i: i32) {
+        i32_const(i, &mut self.bytes);
+    }
+
     pub fn i64_const(&mut self, i: i64) {
-        self.bytes.push(0x42);
-        encode_i64_sleb128(i, &mut self.bytes);
+        i64_const(i, &mut self.bytes);
     }
 
     pub fn f64_const(&mut self, f: f64) {
-        self.bytes.push(0x44);
-        self.bytes.extend_from_slice(&f.to_le_bytes());
+        f64_const(f, &mut self.bytes);
     }
 
     pub fn local_get(&mut self, var: VarId) {
-        self.bytes.push(0x20);
         let local_idx = self.local_idx(var);
-        encode_u32_uleb128(local_idx.0, &mut self.bytes);
+        local_get(local_idx, &mut self.bytes);
     }
 
     pub fn local_set(&mut self, var: VarId) {
-        self.bytes.push(0x21);
         let local_idx = self.local_idx(var);
-        encode_u32_uleb128(local_idx.0, &mut self.bytes);
+        local_set(local_idx, &mut self.bytes);
+    }
+
+    pub fn i32_add(&mut self) {
+        i32_add(&mut self.bytes);
+    }
+
+    pub fn i32_mul(&mut self) {
+        i32_mul(&mut self.bytes);
+    }
+
+    pub fn i64_store(&mut self) {
+        i64_store(&mut self.bytes);
+    }
+
+    pub fn i64_load(&mut self) {
+        i64_load(&mut self.bytes);
     }
 
     pub fn i64_add(&mut self) {
-        self.bytes.push(0x6A);
+        i64_add(&mut self.bytes);
     }
 
     pub fn i64_sub(&mut self) {
-        self.bytes.push(0x6B);
+        i64_sub(&mut self.bytes);
+    }
+
+    pub fn f64_store(&mut self) {
+        f64_store(&mut self.bytes);
+    }
+
+    pub fn f64_load(&mut self) {
+        f64_store(&mut self.bytes);
     }
 
     pub fn f64_add(&mut self) {
-        self.bytes.push(0xA0);
+        f64_add(&mut self.bytes);
     }
 
     pub fn f64_sub(&mut self) {
-        self.bytes.push(0xA1);
+        f64_sub(&mut self.bytes);
     }
 
     pub fn f64_mul(&mut self) {
-        self.bytes.push(0xA2);
+        f64_mul(&mut self.bytes);
     }
 
     pub fn f64_div(&mut self) {
-        self.bytes.push(0xA3);
+        f64_div(&mut self.bytes);
     }
 
     pub fn f64_neg(&mut self) {
-        self.bytes.push(0x9A);
+        f64_neg(&mut self.bytes);
     }
 
     pub fn call(&mut self, fun_idx: FunIdx) {
-        self.bytes.push(0x10);
-        encode_u32_uleb128(fun_idx.0, &mut self.bytes);
+        call(fun_idx, &mut self.bytes);
     }
 
     pub fn ret(&mut self) {
-        self.bytes.push(0x0F);
+        ret(&mut self.bytes);
+    }
+
+    pub fn alloc(&mut self, n: u32) {
+        gen_alloc(n, &mut self.bytes);
     }
 
     pub fn finish(mut self) -> (Vec<u8>, Vec<VarId>) {

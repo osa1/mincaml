@@ -1,5 +1,7 @@
+mod alloc;
 mod encoding;
 mod fun_builder;
+mod instr;
 mod types;
 
 use fun_builder::*;
@@ -25,8 +27,9 @@ pub fn codegen(ctx: &mut Ctx, funs: &[lower::Fun], main: VarId, _dump: bool) -> 
     // 3. function section: Nth index here is the Nth function's (in 'code' section) type index
     // 4. table section: NA
     // 5. memory section: NA
-    // 6. global section: NA
-    // 7. export section: do we need to export main? TODO
+    // 6. global section: variables 'hp' (heap pointer) and 'hp_lim' (heap limit). Both are u32
+    //    values.
+    // 7. export section: NA (no need to export start function)
     // 8. start section
     // 9. element section: NA (I don't understand what this is for)
     // 10. code section
@@ -38,6 +41,7 @@ pub fn codegen(ctx: &mut Ctx, funs: &[lower::Fun], main: VarId, _dump: bool) -> 
 
     encoding::encode_type_section(ctx.fun_tys.into_iter().collect(), &mut module_bytes);
     encoding::encode_function_section(&ctx.fun_ty_indices, &mut module_bytes);
+    encoding::encode_global_section(&mut module_bytes);
 
     // start function is generated last, after all the MinCaml functions
     let start_fun_idx = FunIdx(funs.len() as u32);
@@ -287,9 +291,48 @@ fn cg_expr(ctx: &mut WasmCtx, builder: &mut FunBuilder, stmt: &lower::Expr) {
             }
             builder.call(fun_idx);
         }
-        lower::Expr::Tuple { len: _ } => todo!(),
-        lower::Expr::TupleGet(_, _) => todo!(),
-        lower::Expr::TuplePut(_, _, _) => todo!(),
+        lower::Expr::Tuple { len } => {
+            let bytes = len * 8;
+            builder.alloc(bytes as u32);
+        }
+        lower::Expr::TupleGet(tuple, idx) => {
+            builder.i32_const(*idx as i32);
+            builder.i32_const(8);
+            builder.i32_mul(); // offset
+            builder.local_get(*tuple); // base
+            builder.i32_add(); // address = base + offset
+            let tuple_ty = ctx.ctx.var_type(*tuple);
+            let elem_ty = match &*tuple_ty {
+                crate::type_check::Type::Tuple(elem_tys) => &elem_tys[*idx],
+                other => panic!("Non-tuple in tuple position"),
+            };
+            match RepType::from(elem_ty) {
+                RepType::Word => {
+                    builder.i64_load();
+                }
+                RepType::Float => {
+                    builder.f64_load();
+                }
+            }
+        }
+        lower::Expr::TuplePut(tuple, idx, elem) => {
+            // value, address, store
+            builder.local_get(*elem); // value
+            builder.i32_const(*idx as i32);
+            builder.i32_const(8);
+            builder.i32_mul(); // offset
+            builder.local_get(*tuple); // base
+            builder.i32_add(); // address = base + offset
+            let elem_ty = ctx.ctx.var_rep_type(*elem);
+            match elem_ty {
+                RepType::Word => {
+                    builder.i64_store();
+                }
+                RepType::Float => {
+                    builder.i64_store();
+                }
+            }
+        }
         lower::Expr::ArrayAlloc { len: _ } => todo!(),
         lower::Expr::ArrayGet(_, _) => todo!(),
         lower::Expr::ArrayPut(_, _, _) => todo!(),

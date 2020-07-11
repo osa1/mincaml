@@ -20,3 +20,6 @@ pub struct TypeIdx(pub u32);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct LocalIdx(pub u32);
+
+#[derive(Debug, Clone, Copy)]
+pub struct GlobalIdx(pub u32);

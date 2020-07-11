@@ -47,6 +47,34 @@ pub fn encode_function_section(ty_indices: &[TypeIdx], buf: &mut Vec<u8>) {
     buf.extend_from_slice(&vec_bytes);
 }
 
+pub fn encode_global_section(buf: &mut Vec<u8>) {
+    // section(vec(global))
+    let mut section_bytes = vec![];
+    // 2 variables: hp and hp_lim
+    encode_u32_uleb128(2, &mut section_bytes);
+
+    // NB. Global 0 is hp, 1 is hp_lim. This needs to be in sync with the indices in the `alloc`
+    // module
+
+    // hp
+    section_bytes.push(0x7F); // int32
+    section_bytes.push(0x1); // mutable
+    section_bytes.push(0x41); // i32.const
+    section_bytes.push(0); // the constant '0' in leb128
+    section_bytes.push(0x0B); // end of expression
+
+    // hp_lim
+    section_bytes.push(0x7F); // int32
+    section_bytes.push(0x1); // mutable
+    section_bytes.push(0x41); // i32.const
+    section_bytes.push(0); // the constant '0' in leb128
+    section_bytes.push(0x0B); // end of expression
+
+    buf.push(6);
+    encode_u32_uleb128(section_bytes.len() as u32, buf);
+    buf.extend_from_slice(&section_bytes);
+}
+
 pub fn encode_start_section(start: FunIdx, buf: &mut Vec<u8>) {
     buf.push(8);
 
