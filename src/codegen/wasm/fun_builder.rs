@@ -104,7 +104,7 @@ impl FunBuilder {
         encode_u32_uleb128(fun_idx.0, &mut self.bytes);
     }
 
-    pub fn ret(mut self) {
+    pub fn ret(&mut self) {
         self.bytes.push(0x0F);
     }
 

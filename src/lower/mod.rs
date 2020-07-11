@@ -110,7 +110,9 @@ impl<'ctx> CcCtx<'ctx> {
         });
     }
 
-    fn finish_block(&mut self, block: BlockBuilder, sequel: Sequel, value: Atom, loop_header: bool) {
+    fn finish_block(
+        &mut self, block: BlockBuilder, sequel: Sequel, value: Atom, loop_header: bool,
+    ) {
         let BlockBuilder {
             idx,
             mut stmts,

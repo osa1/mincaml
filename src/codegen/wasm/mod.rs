@@ -34,11 +34,15 @@ pub fn codegen(ctx: &mut Ctx, funs: &[lower::Fun], main: VarId, _dump: bool) -> 
     //
     // So we only generate (1), (3), (8), (10)
 
-    let code_section = cg_code_section(&mut ctx, funs);
+    let code_section = cg_code_section(&mut ctx, funs, main);
 
     encoding::encode_type_section(ctx.fun_tys.into_iter().collect(), &mut module_bytes);
     encoding::encode_function_section(&ctx.fun_ty_indices, &mut module_bytes);
-    encoding::encode_start_section(*ctx.fun_indices.get(&main).unwrap(), &mut module_bytes);
+
+    // start function is generated last, after all the MinCaml functions
+    let start_fun_idx = FunIdx(funs.len() as u32);
+    encoding::encode_start_section(start_fun_idx, &mut module_bytes);
+
     module_bytes.extend_from_slice(&code_section);
 
     module_bytes
@@ -55,7 +59,7 @@ struct WasmCtx<'ctx> {
     fun_indices: FxHashMap<VarId, FunIdx>,
 }
 
-fn cg_code_section(ctx: &mut WasmCtx, funs: &[lower::Fun]) -> Vec<u8> {
+fn cg_code_section(ctx: &mut WasmCtx, funs: &[lower::Fun], main: VarId) -> Vec<u8> {
     // section(vec(code))
     let mut section_bytes = vec![];
     section_bytes.push(10);
@@ -69,8 +73,13 @@ fn cg_code_section(ctx: &mut WasmCtx, funs: &[lower::Fun]) -> Vec<u8> {
         code.push(fun_code);
     }
 
+    let main_code = cg_main(ctx, main);
+    section_size += main_code.len();
+    code.push(main_code);
+
     let mut vec_size_encoding = vec![];
-    encoding::encode_u32_uleb128(funs.len() as u32, &mut vec_size_encoding);
+    // +1 for the start function (main_code above)
+    encoding::encode_u32_uleb128((funs.len() + 1) as u32, &mut vec_size_encoding);
     section_size += vec_size_encoding.len();
 
     encoding::encode_u32_uleb128(section_size as u32, &mut section_bytes);
@@ -80,6 +89,32 @@ fn cg_code_section(ctx: &mut WasmCtx, funs: &[lower::Fun]) -> Vec<u8> {
     }
 
     section_bytes
+}
+
+fn cg_main(ctx: &mut WasmCtx, main: VarId) -> Vec<u8> {
+    let fun_ty = FunTy {
+        args: vec![],
+        ret: None,
+    };
+    ctx.add_fun_ty(fun_ty);
+
+    let main_fun_idx = *ctx.fun_indices.get(&main).unwrap();
+
+    let mut fun_builder = FunBuilder::new();
+    fun_builder.call(main_fun_idx);
+    fun_builder.ret();
+
+    let fun_bytes = fun_builder.finish().0;
+
+    let mut locals_bytes = vec![];
+    encoding::encode_vec::<()>(&[], &mut |_, _| {}, &mut locals_bytes);
+
+    let code_size = (locals_bytes.len() + fun_bytes.len()) as u32;
+    let mut code = vec![];
+    encoding::encode_u32_uleb128(code_size, &mut code);
+    code.extend_from_slice(&locals_bytes);
+    code.extend_from_slice(&fun_bytes);
+    code
 }
 
 impl<'ctx> WasmCtx<'ctx> {
@@ -137,7 +172,7 @@ fn cg_fun(ctx: &mut WasmCtx, fun: &lower::Fun) -> Vec<u8> {
     let ret_ty = rep_type_to_wasm(*return_type);
     let fun_ty = FunTy {
         args: arg_tys,
-        ret: ret_ty,
+        ret: Some(ret_ty),
     };
     ctx.add_fun_ty(fun_ty);
 
@@ -145,24 +180,42 @@ fn cg_fun(ctx: &mut WasmCtx, fun: &lower::Fun) -> Vec<u8> {
 
     // TODO: This will only work in 'blocks' is in dependency order
     for (_block_idx, block) in blocks {
-        let block = match block {
+        let lower::Block {
+            stmts,
+            exit,
+            loop_header,
+            ..
+        } = match block {
             lower::BlockData::NA => {
                 continue;
             }
             lower::BlockData::Block(block) => block,
         };
 
-        if block.loop_header {
+        if *loop_header {
             fun_builder.enter_loop();
         }
 
-        for stmt in &block.stmts {
+        for stmt in stmts {
             cg_stmt(ctx, &mut fun_builder, stmt);
         }
 
-        if block.loop_header {
-            fun_builder.exit_loop();
+        match exit {
+            lower::Exit::Return(var) => {
+                fun_builder.local_get(*var);
+                fun_builder.ret();
+            }
+            lower::Exit::Branch {
+                v1,
+                v2,
+                cond,
+                then_block,
+                else_block,
+            } => todo!(),
+            lower::Exit::Jump(target) => todo!(),
         }
+
+        // TODO: generate loop terminator
     }
 
     let (fun_bytes, fun_locals) = fun_builder.finish();

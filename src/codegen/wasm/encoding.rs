@@ -19,7 +19,10 @@ pub fn encode_type_section(mut fun_tys: Vec<(FunTy, TypeIdx)>, buf: &mut Vec<u8>
         &mut |fun_ty, buf| {
             buf.push(0x60);
             encode_result_type(&fun_ty.args, buf);
-            encode_result_type(&vec![fun_ty.ret], buf);
+            match fun_ty.ret {
+                None => encode_result_type(&[], buf),
+                Some(ty) => encode_result_type(&[ty], buf),
+            }
         },
         &mut vec_bytes,
     );

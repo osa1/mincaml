@@ -9,7 +9,7 @@ pub enum Ty {
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FunTy {
     pub args: Vec<Ty>,
-    pub ret: Ty,
+    pub ret: Option<Ty>,
 }
 
 #[derive(Debug, Clone, Copy)]
