@@ -56,10 +56,11 @@ struct WasmCtx<'ctx> {
 }
 
 fn cg_code_section(ctx: &mut WasmCtx, funs: &[lower::Fun]) -> Vec<u8> {
+    // section(vec(code))
     let mut section_bytes = vec![];
     section_bytes.push(10);
 
-    let mut code = Vec::with_capacity(funs.len());
+    let mut code: Vec<Vec<u8>> = Vec::with_capacity(funs.len());
     let mut section_size = 0;
 
     for fun in funs {
@@ -68,7 +69,12 @@ fn cg_code_section(ctx: &mut WasmCtx, funs: &[lower::Fun]) -> Vec<u8> {
         code.push(fun_code);
     }
 
+    let mut vec_size_encoding = vec![];
+    encoding::encode_u32_uleb128(funs.len() as u32, &mut vec_size_encoding);
+    section_size += vec_size_encoding.len();
+
     encoding::encode_u32_uleb128(section_size as u32, &mut section_bytes);
+    section_bytes.extend_from_slice(&vec_size_encoding);
     for code in code {
         section_bytes.extend_from_slice(&code);
     }
