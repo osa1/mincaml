@@ -152,7 +152,7 @@ impl Ctx {
         }
     }
 
-    pub fn builtins(&self) -> impl Iterator<Item = &(VarId, TypeId)> {
+    pub fn builtins(&self) -> impl ExactSizeIterator<Item = &(VarId, TypeId)> {
         self.builtins.iter()
     }
 

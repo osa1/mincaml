@@ -1,12 +1,12 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Ty {
-    I32,
+    // I32, unused
     I64,
-    F32,
+    // F32, unused
     F64,
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FunTy {
     pub args: Vec<Ty>,
     pub ret: Option<Ty>,
@@ -23,3 +23,6 @@ pub struct LocalIdx(pub u32);
 
 #[derive(Debug, Clone, Copy)]
 pub struct GlobalIdx(pub u32);
+
+#[derive(Debug, Clone, Copy)]
+pub struct TableIdx(pub u32);

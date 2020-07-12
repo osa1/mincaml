@@ -16,14 +16,14 @@ use crate::lower::{Asgn, Fun, Stmt};
 use fxhash::FxHashMap;
 
 pub fn codegen(ctx: &mut Ctx, funs: &[lower::Fun], main: VarId, _dump: bool) -> Vec<u8> {
-    let mut ctx = WasmCtx::new(ctx);
+    let mut ctx = WasmCtx::new(ctx, funs);
 
     let mut module_bytes = vec![0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00];
 
     // Module structure:
     //
     // 1. type section
-    // 2. import section: NA? or do we need to import RTS stuff?
+    // 2. import section: import RTS stuff
     // 3. function section: Nth index here is the Nth function's (in 'code' section) type index
     // 4. table section: initialize function table, size = number of functions in the module
     // 5. memory section: NA
@@ -37,18 +37,35 @@ pub fn codegen(ctx: &mut Ctx, funs: &[lower::Fun], main: VarId, _dump: bool) -> 
     //
     // So we only generate (1), (3), (8), (10)
 
+    // Number of functions to be used in table and element sections. Does not include the generated
+    // 'main' function as that's never called by the program code.
+    let n_funs = (ctx.ctx.builtins().len() + funs.len()) as u32;
+
     let code_section = cg_code_section(&mut ctx, funs, main);
 
-    encoding::encode_type_section(ctx.fun_tys.into_iter().collect(), &mut module_bytes);
-    encoding::encode_function_section(&ctx.fun_ty_indices, &mut module_bytes);
-    encoding::encode_table_section(funs.len() as u32, &mut module_bytes);
+    encoding::encode_type_section(
+        ctx.fun_tys
+            .iter()
+            .map(|(x1, x2)| (x1.clone(), x2.clone()))
+            .collect(),
+        &mut module_bytes,
+    );
+    encoding::encode_import_section(&ctx, &mut module_bytes);
+
+    encoding::encode_function_section(
+        ctx.ctx.builtins().len(),
+        &ctx.fun_ty_indices,
+        &mut module_bytes,
+    );
+
+    encoding::encode_table_section(n_funs, &mut module_bytes);
     encoding::encode_global_section(&mut module_bytes);
 
     // start function is generated last, after all the MinCaml functions
-    let start_fun_idx = FunIdx(funs.len() as u32);
+    let start_fun_idx = FunIdx(n_funs);
     encoding::encode_start_section(start_fun_idx, &mut module_bytes);
 
-    encoding::encode_element_section(funs.len() as u32, &mut module_bytes);
+    encoding::encode_element_section(n_funs, &mut module_bytes);
 
     module_bytes.extend_from_slice(&code_section);
 
@@ -56,14 +73,122 @@ pub fn codegen(ctx: &mut Ctx, funs: &[lower::Fun], main: VarId, _dump: bool) -> 
 }
 
 struct WasmCtx<'ctx> {
-    ctx: &'ctx mut Ctx,
+    pub ctx: &'ctx mut Ctx,
     // Maps function types to their type indices in 'type' section
-    fun_tys: FxHashMap<FunTy, TypeIdx>,
+    pub fun_tys: FxHashMap<FunTy, TypeIdx>,
     // Maps functions to their types' indices in 'type' section. Used to generate 'function'
     // section which maps functions to their type indices. Nth element is Nth function's type
     // index.
     fun_ty_indices: Vec<TypeIdx>,
+    // Function indices of the functions in the current module. First function in the module has
+    // index N where N is the number of imports. We don't do direct function calls so the only
+    // place where we use is this is in generated 'main' function to call the program's entry.
     fun_indices: FxHashMap<VarId, FunIdx>,
+    // Globals in the module mapped to their table indices
+    globals: FxHashMap<VarId, TableIdx>,
+}
+
+impl<'ctx> WasmCtx<'ctx> {
+    fn new(ctx: &'ctx mut Ctx, funs: &[lower::Fun]) -> WasmCtx<'ctx> {
+        let mut ctx = WasmCtx {
+            ctx,
+            fun_tys: Default::default(),
+            fun_ty_indices: vec![],
+            fun_indices: Default::default(),
+            globals: Default::default(),
+        };
+
+        let mut next_table_idx = 0;
+
+        // Imports get the first slots in global index space
+        for (builtin_var, builtin_ty) in ctx.ctx.builtins() {
+            let fun_ty = match &*ctx.ctx.get_type(*builtin_ty) {
+                crate::type_check::Type::Fun { args, ret } => {
+                    let args = args
+                        .iter()
+                        .map(|arg| rep_type_to_wasm(RepType::from(arg)))
+                        .collect();
+                    let ret = Some(rep_type_to_wasm(RepType::from(&**ret)));
+                    FunTy { args, ret }
+                }
+                other => panic!("Non-function builtin: {:?} : {:?}", builtin_var, other),
+            };
+
+            match ctx.fun_tys.get(&fun_ty) {
+                Some(ty_idx) => {
+                    ctx.fun_ty_indices.push(*ty_idx);
+                }
+                None => {
+                    let ty_idx = TypeIdx(ctx.fun_tys.len() as u32);
+                    ctx.fun_tys.insert(fun_ty, ty_idx);
+                    ctx.fun_ty_indices.push(ty_idx);
+                }
+            };
+
+            ctx.globals.insert(*builtin_var, TableIdx(next_table_idx));
+            next_table_idx += 1;
+        }
+
+        let n_imports = ctx.ctx.builtins().len();
+
+        // Next are functions in the current module
+        for (
+            i,
+            Fun {
+                name,
+                args,
+                blocks: _,
+                return_type,
+            },
+        ) in funs.iter().enumerate()
+        {
+            let fun_idx = FunIdx((i + n_imports) as u32);
+            ctx.fun_indices.insert(*name, fun_idx);
+
+            let fun_ty = {
+                let args = args
+                    .iter()
+                    .map(|arg| rep_type_to_wasm(RepType::from(&*ctx.ctx.var_type(*arg))))
+                    .collect();
+                let ret = Some(rep_type_to_wasm(*return_type));
+                FunTy { args, ret }
+            };
+
+            match ctx.fun_tys.get(&fun_ty) {
+                Some(ty_idx) => {
+                    ctx.fun_ty_indices.push(*ty_idx);
+                }
+                None => {
+                    let ty_idx = TypeIdx(ctx.fun_tys.len() as u32);
+                    ctx.fun_tys.insert(fun_ty, ty_idx);
+                    ctx.fun_ty_indices.push(ty_idx);
+                }
+            };
+
+            ctx.globals.insert(*name, TableIdx(next_table_idx));
+            next_table_idx += 1;
+        }
+
+        // Add main
+        let main_fun_ty = FunTy {
+            args: vec![],
+            ret: None,
+        };
+        match ctx.fun_tys.get(&main_fun_ty) {
+            Some(ty_idx) => {
+                ctx.fun_ty_indices.push(*ty_idx);
+            }
+            None => {
+                let ty_idx = TypeIdx(ctx.fun_tys.len() as u32);
+                ctx.fun_tys.insert(main_fun_ty, ty_idx);
+                ctx.fun_ty_indices.push(ty_idx);
+            }
+        };
+
+        println!("globals: {:#?}", ctx.globals);
+
+        ctx
+    }
 }
 
 fn cg_code_section(ctx: &mut WasmCtx, funs: &[lower::Fun], main: VarId) -> Vec<u8> {
@@ -99,12 +224,6 @@ fn cg_code_section(ctx: &mut WasmCtx, funs: &[lower::Fun], main: VarId) -> Vec<u
 }
 
 fn cg_main(ctx: &mut WasmCtx, main: VarId) -> Vec<u8> {
-    let fun_ty = FunTy {
-        args: vec![],
-        ret: None,
-    };
-    ctx.add_fun_ty(fun_ty);
-
     let main_fun_idx = *ctx.fun_indices.get(&main).unwrap();
 
     let mut fun_builder = FunBuilder::new();
@@ -124,57 +243,13 @@ fn cg_main(ctx: &mut WasmCtx, main: VarId) -> Vec<u8> {
     code
 }
 
-impl<'ctx> WasmCtx<'ctx> {
-    fn new(ctx: &mut Ctx) -> WasmCtx {
-        WasmCtx {
-            ctx,
-            fun_tys: Default::default(),
-            fun_ty_indices: vec![],
-            fun_indices: Default::default(),
-        }
-    }
-
-    fn add_fun_ty(&mut self, fun_ty: FunTy) -> TypeIdx {
-        match self.fun_tys.get(&fun_ty) {
-            Some(ty_idx) => {
-                self.fun_ty_indices.push(*ty_idx);
-                *ty_idx
-            }
-            None => {
-                let ty_idx = TypeIdx(self.fun_tys.len() as u32);
-                self.fun_tys.insert(fun_ty, ty_idx);
-                self.fun_ty_indices.push(ty_idx);
-                ty_idx
-            }
-        }
-    }
-}
-
 fn cg_fun(ctx: &mut WasmCtx, fun: &lower::Fun) -> Vec<u8> {
     let Fun {
         name,
-        args,
+        args: _,
         blocks,
-        return_type,
+        return_type: _,
     } = fun;
-
-    // Index of the current function
-    let fun_idx = FunIdx(ctx.fun_indices.len() as u32);
-
-    // Add index to the map now, to be able to handle recursive calls
-    ctx.fun_indices.insert(*name, fun_idx);
-
-    // Get function type idx
-    let arg_tys: Vec<Ty> = args
-        .iter()
-        .map(|arg| rep_type_to_wasm(ctx.ctx.var_rep_type(*arg)))
-        .collect();
-    let ret_ty = rep_type_to_wasm(*return_type);
-    let fun_ty = FunTy {
-        args: arg_tys,
-        ret: Some(ret_ty),
-    };
-    ctx.add_fun_ty(fun_ty);
 
     let mut fun_builder = FunBuilder::new();
 
@@ -237,7 +312,7 @@ fn cg_fun(ctx: &mut WasmCtx, fun: &lower::Fun) -> Vec<u8> {
     code
 }
 
-fn rep_type_to_wasm(ty: RepType) -> Ty {
+pub fn rep_type_to_wasm(ty: RepType) -> Ty {
     match ty {
         RepType::Word => Ty::I64,
         RepType::Float => Ty::F64,
@@ -258,7 +333,7 @@ fn cg_stmt(ctx: &mut WasmCtx, builder: &mut FunBuilder, stmt: &lower::Stmt) {
 
 fn cg_expr(ctx: &mut WasmCtx, builder: &mut FunBuilder, stmt: &lower::Expr) {
     match stmt {
-        lower::Expr::Atom(atom) => cg_atom(builder, atom),
+        lower::Expr::Atom(atom) => cg_atom(ctx, builder, atom),
         lower::Expr::IBinOp(BinOp { op, arg1, arg2 }) => {
             builder.local_get(*arg1);
             builder.local_get(*arg2);
@@ -293,8 +368,8 @@ fn cg_expr(ctx: &mut WasmCtx, builder: &mut FunBuilder, stmt: &lower::Expr) {
                 ret: Some(rep_type_to_wasm(RepType::from(*ret_ty))),
             };
 
-            let fun_ty_idx = ctx.add_fun_ty(fun_ty);
-            builder.call_indirect(fun_ty_idx);
+            let fun_ty_idx = ctx.fun_tys.get(&fun_ty).unwrap();
+            builder.call_indirect(*fun_ty_idx);
         }
         lower::Expr::Tuple { len } => {
             let bytes = len * 8;
@@ -348,12 +423,21 @@ fn cg_expr(ctx: &mut WasmCtx, builder: &mut FunBuilder, stmt: &lower::Expr) {
     }
 }
 
-fn cg_atom(builder: &mut FunBuilder, atom: &lower::Atom) {
+fn cg_atom(ctx: &mut WasmCtx, builder: &mut FunBuilder, atom: &lower::Atom) {
     match atom {
         lower::Atom::Unit => builder.i64_const(0),
         lower::Atom::Int(i) => builder.i64_const(*i),
         lower::Atom::Float(f) => builder.f64_const(*f),
-        lower::Atom::Var(var) => builder.local_get(*var),
+        lower::Atom::Var(var_id) => {
+            // The variable can be global or local. If global then it's a statically known table
+            // index to a function so we generate a `const`. If local then we do `local.get`.
+            let var = ctx.ctx.get_var(*var_id);
+            if var.is_builtin() {
+                todo!()
+            } else {
+                builder.local_get(*var_id)
+            }
+        }
     }
 }
 

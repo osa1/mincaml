@@ -1,6 +1,6 @@
 use super::alloc::gen_alloc;
 use super::instr::*;
-use super::types::{FunIdx, LocalIdx, TypeIdx};
+use super::types::{FunIdx, GlobalIdx, LocalIdx, TypeIdx};
 use crate::ctx::VarId;
 
 use fxhash::FxHashMap;
@@ -50,6 +50,10 @@ impl FunBuilder {
 
     pub fn f64_const(&mut self, f: f64) {
         f64_const(f, &mut self.bytes);
+    }
+
+    pub fn global_get(&mut self, idx: GlobalIdx) {
+        global_get(idx, &mut self.bytes);
     }
 
     pub fn local_get(&mut self, var: VarId) {

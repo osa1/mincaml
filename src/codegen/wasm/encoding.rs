@@ -1,5 +1,9 @@
 use super::instr;
-use super::types::*;
+use super::{rep_type_to_wasm, types::*, WasmCtx};
+use crate::{
+    cg_types::RepType,
+    ctx::{Ctx, TypeId, VarId},
+};
 
 pub fn encode_vec<A>(stuff: &[A], encode: &mut dyn FnMut(&A, &mut Vec<u8>), buf: &mut Vec<u8>) {
     encode_u32_uleb128(stuff.len() as u32, buf);
@@ -33,8 +37,40 @@ pub fn encode_type_section(mut fun_tys: Vec<(FunTy, TypeIdx)>, buf: &mut Vec<u8>
     buf.extend_from_slice(&vec_bytes);
 }
 
-pub fn encode_function_section(ty_indices: &[TypeIdx], buf: &mut Vec<u8>) {
+pub(super) fn encode_import_section(ctx: &WasmCtx, buf: &mut Vec<u8>) {
     let mut vec_bytes = vec![];
+    encode_u32_uleb128(ctx.ctx.builtins().len() as u32, &mut vec_bytes);
+
+    for (builtin_var, builtin_ty) in ctx.ctx.builtins() {
+        encode_name("rts", &mut vec_bytes);
+        let var = ctx.ctx.get_var(*builtin_var);
+        encode_name(&*var.symbol_name(), &mut vec_bytes);
+        vec_bytes.push(0x00); // function import
+
+        let fun_ty = match &*ctx.ctx.get_type(*builtin_ty) {
+            crate::type_check::Type::Fun { args, ret } => {
+                let args = args
+                    .iter()
+                    .map(|arg| rep_type_to_wasm(RepType::from(arg)))
+                    .collect();
+                let ret = Some(rep_type_to_wasm(RepType::from(&**ret)));
+                FunTy { args, ret }
+            }
+            other => panic!("Non-function builtin: {:?} : {:?}", builtin_var, other),
+        };
+
+        let ty_idx = ctx.fun_tys.get(&fun_ty).unwrap();
+        encode_u32_uleb128(ty_idx.0, &mut vec_bytes);
+    }
+
+    buf.push(2);
+    encode_u32_uleb128(vec_bytes.len() as u32, buf);
+    buf.extend_from_slice(&vec_bytes);
+}
+
+pub fn encode_function_section(n_imported: usize, ty_indices: &[TypeIdx], buf: &mut Vec<u8>) {
+    let mut vec_bytes = vec![];
+    let ty_indices = &ty_indices[n_imported..]; // skip imported functions
     encode_vec(
         ty_indices,
         &mut |ty, buf| {
@@ -107,18 +143,19 @@ pub fn encode_start_section(start: FunIdx, buf: &mut Vec<u8>) {
 }
 
 pub fn encode_element_section(n_funs: u32, buf: &mut Vec<u8>) {
-    buf.push(9);
-
     let mut section_bytes = vec![];
 
     encode_u32_uleb128(1, &mut section_bytes); // vec size
     section_bytes.push(0); // tableidx
     instr::i32_const(0, &mut section_bytes); // offset
     section_bytes.push(0x0B); // end of offset expression
+
+    encode_u32_uleb128(n_funs, &mut section_bytes);
     for i in 0..n_funs {
         encode_u32_uleb128(i, &mut section_bytes);
     }
 
+    buf.push(9);
     encode_u32_uleb128(section_bytes.len() as u32, buf);
     buf.extend_from_slice(&section_bytes);
 }
@@ -129,12 +166,17 @@ pub fn encode_result_type(ty: &[Ty], buf: &mut Vec<u8>) {
 
 pub fn encode_ty(ty: Ty, buf: &mut Vec<u8>) {
     let byte = match ty {
-        Ty::I32 => 0x7F,
+        // Ty::I32 => 0x7F,
         Ty::I64 => 0x7E,
-        Ty::F32 => 0x7D,
+        // Ty::F32 => 0x7D,
         Ty::F64 => 0x7C,
     };
     buf.push(byte);
+}
+
+pub fn encode_name(name: &str, buf: &mut Vec<u8>) {
+    encode_u32_uleb128(name.len() as u32, buf);
+    buf.extend_from_slice(name.as_bytes());
 }
 
 pub fn encode_u32_uleb128(mut value: u32, buf: &mut Vec<u8>) {
