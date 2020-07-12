@@ -104,10 +104,11 @@ impl<'ctx> WasmCtx<'ctx> {
         for (builtin_var, builtin_ty) in ctx.ctx.builtins() {
             let fun_ty = match &*ctx.ctx.get_type(*builtin_ty) {
                 crate::type_check::Type::Fun { args, ret } => {
-                    let args = args
+                    let mut args: Vec<Ty> = args
                         .iter()
                         .map(|arg| rep_type_to_wasm(RepType::from(arg)))
                         .collect();
+                    args.insert(0, Ty::I64); // closure argument
                     let ret = Some(rep_type_to_wasm(RepType::from(&**ret)));
                     FunTy { args, ret }
                 }
@@ -146,10 +147,11 @@ impl<'ctx> WasmCtx<'ctx> {
             ctx.fun_indices.insert(*name, fun_idx);
 
             let fun_ty = {
-                let args = args
+                let mut args: Vec<Ty> = args
                     .iter()
                     .map(|arg| rep_type_to_wasm(RepType::from(&*ctx.ctx.var_type(*arg))))
                     .collect();
+                args.insert(0, Ty::I64); // closure argument
                 let ret = Some(rep_type_to_wasm(*return_type));
                 FunTy { args, ret }
             };
@@ -186,6 +188,7 @@ impl<'ctx> WasmCtx<'ctx> {
         };
 
         println!("globals: {:#?}", ctx.globals);
+        println!("types: {:#?}", ctx.fun_tys);
 
         ctx
     }
@@ -227,6 +230,7 @@ fn cg_main(ctx: &mut WasmCtx, main: VarId) -> Vec<u8> {
     let main_fun_idx = *ctx.fun_indices.get(&main).unwrap();
 
     let mut fun_builder = FunBuilder::new();
+    fun_builder.i64_const(0); // dummy closure argument
     fun_builder.call(main_fun_idx);
     fun_builder.ret();
 
@@ -368,7 +372,10 @@ fn cg_expr(ctx: &mut WasmCtx, builder: &mut FunBuilder, stmt: &lower::Expr) {
                 ret: Some(rep_type_to_wasm(RepType::from(*ret_ty))),
             };
 
-            let fun_ty_idx = ctx.fun_tys.get(&fun_ty).unwrap();
+            let fun_ty_idx = ctx
+                .fun_tys
+                .get(&fun_ty)
+                .expect(&format!("Can't find function type: {:?}", fun_ty));
             builder.call_indirect(*fun_ty_idx);
         }
         lower::Expr::Tuple { len } => {

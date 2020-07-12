@@ -49,10 +49,11 @@ pub(super) fn encode_import_section(ctx: &WasmCtx, buf: &mut Vec<u8>) {
 
         let fun_ty = match &*ctx.ctx.get_type(*builtin_ty) {
             crate::type_check::Type::Fun { args, ret } => {
-                let args = args
+                let mut args: Vec<Ty> = args
                     .iter()
                     .map(|arg| rep_type_to_wasm(RepType::from(arg)))
                     .collect();
+                args.insert(0, Ty::I64); // closure argument
                 let ret = Some(rep_type_to_wasm(RepType::from(&**ret)));
                 FunTy { args, ret }
             }
