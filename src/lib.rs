@@ -98,31 +98,31 @@ fn compile_expr(
 
     // println!("Type-checked expr: {:#?}", expr);
 
-/*
-    let expr = record_pass_stats(&mut pass_stats, "anormal", || anormal(&mut ctx, expr));
+    /*
+        let expr = record_pass_stats(&mut pass_stats, "anormal", || anormal(&mut ctx, expr));
 
-    // println!("K normalized:");
-    // println!("{:?}", expr);
+        // println!("K normalized:");
+        // println!("{:?}", expr);
 
-    let (funs, main) = record_pass_stats(&mut pass_stats, "closure convert", || {
-        lower_pgm(&mut ctx, expr)
-    });
+        let (funs, main) = record_pass_stats(&mut pass_stats, "closure convert", || {
+            lower_pgm(&mut ctx, expr)
+        });
 
-    if dump_cc {
-        println!("### Closure conversion:\n");
+        if dump_cc {
+            println!("### Closure conversion:\n");
 
-        let mut s = String::new();
-        for fun in &funs {
-            fun.pp(&ctx, &mut s).unwrap();
+            let mut s = String::new();
+            for fun in &funs {
+                fun.pp(&ctx, &mut s).unwrap();
+            }
+
+            println!("{}", s);
         }
 
-        println!("{}", s);
-    }
-
-    if dump_cg {
-        println!("### Code generation:\n");
-    }
-*/
+        if dump_cg {
+            println!("### Code generation:\n");
+        }
+    */
 
     let object_code = record_pass_stats(&mut pass_stats, "codegen", || {
         codegen_module(&mut ctx, &expr)

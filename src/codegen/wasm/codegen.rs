@@ -236,7 +236,9 @@ pub fn codegen_module(ctx: &mut Ctx, expr: &Expr) -> Vec<u8> {
     // 4. table section: initialize function table, size = number of functions in the module
     //
 
-    let n_funs = module_ctx.fun_tys.len() as u32;
+    // Number of functions to be used in table and element sections. Does not include the generated
+    // 'main' function as that's never called by the program code.
+    let n_funs = (ctx.builtins().len() + module_ctx.funs.len()) as u32;
     encoding::encode_table_section(n_funs, &mut module_bytes);
 
     // 5. memory section: NA
@@ -265,8 +267,12 @@ pub fn codegen_module(ctx: &mut Ctx, expr: &Expr) -> Vec<u8> {
     //
     // 10. code section
     //
-    
-    let mut funs = module_ctx.funs.into_iter().map(|(_, v)| v).collect::<Vec<_>>();
+
+    let mut funs = module_ctx
+        .funs
+        .into_iter()
+        .map(|(_, v)| v)
+        .collect::<Vec<_>>();
     funs.sort_by_key(|fun| fun.fun_idx);
 
     encoding::encode_code_section(&funs, &mut module_bytes);
