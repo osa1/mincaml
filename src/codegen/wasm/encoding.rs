@@ -157,11 +157,13 @@ pub fn encode_code_section(funs: &[WasmFun], buf: &mut Vec<u8>) {
     // TODO: lots of reudundant copying below, fix later
 
     // section(vec(code))
-    let mut section_bytes = vec![];
-    section_bytes.push(10);
 
     let mut code_: Vec<Vec<u8>> = Vec::with_capacity(funs.len());
     let mut section_size = 0;
+
+    let mut vec_encoding: Vec<u8> = vec![];
+    encode_u32_uleb128(funs.len() as u32, &mut vec_encoding);
+    section_size += vec_encoding.len();
 
     for fun in funs {
         // vec(locals)
@@ -186,8 +188,9 @@ pub fn encode_code_section(funs: &[WasmFun], buf: &mut Vec<u8>) {
         code_.push(code);
     }
 
+    buf.push(10);
     encode_u32_uleb128(section_size as u32, buf);
-    encode_u32_uleb128(code_.len() as u32, buf);
+    buf.extend_from_slice(&vec_encoding);
     for code in code_ {
         buf.extend_from_slice(&code);
     }

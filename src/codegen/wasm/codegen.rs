@@ -114,8 +114,10 @@ impl ModuleCtx {
         let FunCtx {
             locals,
             n_locals: _,
-            bytes,
+            mut bytes,
         } = replace(&mut self.fun_ctx, current_fun_ctx);
+
+        bytes.push(0x0B);
 
         let mut locals = locals.into_iter().collect::<Vec<_>>();
         locals.sort_by_key(|(var, idx)| *idx);
@@ -199,7 +201,7 @@ pub fn codegen_module(ctx: &mut Ctx, expr: &Expr) -> Vec<u8> {
     // Generate the module
     //
 
-    let mut module_bytes = vec![];
+    let mut module_bytes = vec![0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00];
 
     //
     // 1. type section
