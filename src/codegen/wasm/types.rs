@@ -24,5 +24,7 @@ pub struct LocalIdx(pub u32);
 #[derive(Debug, Clone, Copy)]
 pub struct GlobalIdx(pub u32);
 
+// FIXME: The name is misleading, in the spec "tableidx" is for the index of a table, not for index
+// of a table element. Perhaps call this "ElementIdx"?
 #[derive(Debug, Clone, Copy)]
 pub struct TableIdx(pub u32);

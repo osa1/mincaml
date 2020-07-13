@@ -25,7 +25,7 @@ pub fn gen_alloc(n: u32, buf: &mut Vec<u8>) {
 
     buf.push(0x05); // else
                     // Bump hp, return old value
-    global_get(HP_IDX, buf); // old value
+    global_get(HP_IDX, buf); // old value, will be left on stack
     global_get(HP_IDX, buf);
     i32_const(n as i32, buf);
     i32_add(buf);

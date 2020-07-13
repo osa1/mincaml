@@ -1,4 +1,5 @@
 mod alloc;
+mod codegen;
 mod encoding;
 mod fun_builder;
 mod instr;

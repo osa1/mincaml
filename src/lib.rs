@@ -1,4 +1,4 @@
-#![feature(or_patterns, box_patterns, backtrace)]
+#![feature(or_patterns, box_patterns, backtrace,entry_insert)]
 
 mod anormal;
 mod cg_types;
