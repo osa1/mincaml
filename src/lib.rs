@@ -1,4 +1,4 @@
-#![feature(or_patterns, box_patterns, backtrace,entry_insert)]
+#![feature(or_patterns, box_patterns, backtrace, entry_insert)]
 
 mod anormal;
 mod cg_types;
@@ -17,16 +17,16 @@ mod var;
 
 use anormal::anormal;
 // use codegen::native::codegen;
-use codegen::wasm::codegen;
+use codegen::wasm::codegen::codegen_module;
 use lexer::{tokenize, Token};
-use lower::lower_pgm;
+// use lower::lower_pgm;
 use parser::parse;
 use type_check::type_check_pgm;
 
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
-use std::process::Command;
+// use std::process::Command;
 use std::time::{Duration, Instant};
 
 #[cfg(debug_assertions)]
@@ -98,6 +98,7 @@ fn compile_expr(
 
     // println!("Type-checked expr: {:#?}", expr);
 
+/*
     let expr = record_pass_stats(&mut pass_stats, "anormal", || anormal(&mut ctx, expr));
 
     // println!("K normalized:");
@@ -121,9 +122,10 @@ fn compile_expr(
     if dump_cg {
         println!("### Code generation:\n");
     }
+*/
 
     let object_code = record_pass_stats(&mut pass_stats, "codegen", || {
-        codegen(&mut ctx, &funs, main, dump_cg)
+        codegen_module(&mut ctx, &expr)
     });
 
     if show_pass_stats {

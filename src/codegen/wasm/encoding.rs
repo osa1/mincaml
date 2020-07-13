@@ -1,9 +1,10 @@
 use super::instr;
-use super::{rep_type_to_wasm, types::*, WasmCtx};
+use super::{codegen::WasmFun, rep_type_to_wasm, types::*, WasmCtx};
 use crate::{
     cg_types::RepType,
     ctx::{Ctx, TypeId, VarId},
 };
+use fxhash::FxHashMap;
 
 pub fn encode_vec<A>(stuff: &[A], encode: &mut dyn FnMut(&A, &mut Vec<u8>), buf: &mut Vec<u8>) {
     encode_u32_uleb128(stuff.len() as u32, buf);
@@ -37,30 +38,21 @@ pub fn encode_type_section(mut fun_tys: Vec<(FunTy, TypeIdx)>, buf: &mut Vec<u8>
     buf.extend_from_slice(&vec_bytes);
 }
 
-pub(super) fn encode_import_section(ctx: &WasmCtx, buf: &mut Vec<u8>) {
+pub(super) fn encode_import_section(
+    ctx: &Ctx, fun_tys: &FxHashMap<FunTy, TypeIdx>, buf: &mut Vec<u8>,
+) {
     let mut vec_bytes = vec![];
-    encode_u32_uleb128(ctx.ctx.builtins().len() as u32, &mut vec_bytes);
+    encode_u32_uleb128(ctx.builtins().len() as u32, &mut vec_bytes);
 
-    for (builtin_var, builtin_ty) in ctx.ctx.builtins() {
+    for (builtin_var, builtin_ty) in ctx.builtins() {
         encode_name("rts", &mut vec_bytes);
-        let var = ctx.ctx.get_var(*builtin_var);
+        let var = ctx.get_var(*builtin_var);
         encode_name(&*var.symbol_name(), &mut vec_bytes);
         vec_bytes.push(0x00); // function import
 
-        let fun_ty = match &*ctx.ctx.get_type(*builtin_ty) {
-            crate::type_check::Type::Fun { args, ret } => {
-                let mut args: Vec<Ty> = args
-                    .iter()
-                    .map(|arg| rep_type_to_wasm(RepType::from(arg)))
-                    .collect();
-                args.insert(0, Ty::I64); // closure argument
-                let ret = Some(rep_type_to_wasm(RepType::from(&**ret)));
-                FunTy { args, ret }
-            }
-            other => panic!("Non-function builtin: {:?} : {:?}", builtin_var, other),
-        };
+        let fun_ty = type_to_closure_type(ctx, *builtin_var, *builtin_ty);
 
-        let ty_idx = ctx.fun_tys.get(&fun_ty).unwrap();
+        let ty_idx = fun_tys.get(&fun_ty).unwrap();
         encode_u32_uleb128(ty_idx.0, &mut vec_bytes);
     }
 
@@ -159,6 +151,46 @@ pub fn encode_element_section(n_funs: u32, buf: &mut Vec<u8>) {
     buf.push(9);
     encode_u32_uleb128(section_bytes.len() as u32, buf);
     buf.extend_from_slice(&section_bytes);
+}
+
+pub fn encode_code_section(funs: &[WasmFun], buf: &mut Vec<u8>) {
+    // TODO: lots of reudundant copying below, fix later
+
+    // section(vec(code))
+    let mut section_bytes = vec![];
+    section_bytes.push(10);
+
+    let mut code_: Vec<Vec<u8>> = Vec::with_capacity(funs.len());
+    let mut section_size = 0;
+
+    for fun in funs {
+        // vec(locals)
+        let mut locals_bytes = vec![];
+        encode_vec(
+            &fun.locals,
+            &mut |ty, buf| {
+                encode_u32_uleb128(1, buf);
+                encode_ty(*ty, buf);
+            },
+            &mut locals_bytes,
+        );
+
+        let code_size = (locals_bytes.len() + fun.code.len()) as u32;
+
+        let mut code = vec![];
+        encode_u32_uleb128(code_size, &mut code);
+        code.extend_from_slice(&locals_bytes);
+        code.extend_from_slice(&fun.code);
+
+        section_size += code.len();
+        code_.push(code);
+    }
+
+    encode_u32_uleb128(section_size as u32, buf);
+    encode_u32_uleb128(code_.len() as u32, buf);
+    for code in code_ {
+        buf.extend_from_slice(&code);
+    }
 }
 
 pub fn encode_result_type(ty: &[Ty], buf: &mut Vec<u8>) {

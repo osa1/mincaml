@@ -8,10 +8,10 @@ use super::encoding;
 use super::instr::*;
 use super::{
     rep_type_to_wasm,
-    types::{FunIdx, GlobalIdx, LocalIdx, Ty},
+    types::{type_to_closure_type, FunIdx, FunTy, GlobalIdx, LocalIdx, Ty, TypeIdx},
 };
 use crate::ctx::{Ctx, VarId};
-use crate::parser::Expr;
+use crate::{cg_types::RepType, parser::Expr};
 
 use fxhash::{FxHashMap, FxHashSet};
 
@@ -27,17 +27,27 @@ struct ModuleCtx {
     // Index of the next function to be generated. We don't use `funs.len()` here as we allocate
     // function indices before inserting them to `funs`.
     next_fun_idx: FunIdx,
+    // Maps function types to type indices, for the 'type' section
+    fun_tys: FxHashMap<FunTy, TypeIdx>,
+    // Maps functions to their types' indices in 'type' section. Used to generate 'function'
+    // section which maps functions to their type indices. Nth element is Nth function's type
+    // index.
+    fun_ty_indices: Vec<TypeIdx>,
 }
 
-struct WasmFun {
+pub struct WasmFun {
     // Variable name of the function
-    var: VarId,
+    pub var: VarId,
+    // Types of locals. Nth local has type locals[N].
+    pub locals: Vec<Ty>,
     // Function code
-    code: Vec<u8>,
+    pub code: Vec<u8>,
     // Index of the function
-    fun_idx: FunIdx,
+    pub fun_idx: FunIdx,
+    // Type index of the function
+    pub fun_ty_idx: TypeIdx,
     // Index of the function in the module's table
-    fun_tbl_idx: u32,
+    pub fun_tbl_idx: u32,
 }
 
 struct FunCtx {
@@ -66,7 +76,8 @@ impl FunCtx {
 impl ModuleCtx {
     // Generates code for a function and returns the function's index in the module table.
     fn new_closure(
-        &mut self, ctx: &mut Ctx, fun_bndr: VarId, fvs: &[VarId], args: &[VarId], body: &Expr,
+        &mut self, ctx: &mut Ctx, ty_idx: TypeIdx, fun_bndr: VarId, fvs: &[VarId], args: &[VarId],
+        body: &Expr,
     ) -> u32 {
         // Locals will be [self (bndr), arg1, arg2, ...]
         let locals: FxHashMap<VarId, LocalIdx> = ::std::iter::once(fun_bndr)
@@ -101,18 +112,27 @@ impl ModuleCtx {
         cg_expr(ctx, self, body);
 
         let FunCtx {
-            locals: _,
+            locals,
             n_locals: _,
             bytes,
         } = replace(&mut self.fun_ctx, current_fun_ctx);
+
+        let mut locals = locals.into_iter().collect::<Vec<_>>();
+        locals.sort_by_key(|(var, idx)| *idx);
+        let locals = locals
+            .into_iter()
+            .map(|(var, _)| rep_type_to_wasm(RepType::from(&*ctx.var_type(var))))
+            .collect::<Vec<_>>();
 
         self.funs.insert(
             fun_bndr,
             WasmFun {
                 var: fun_bndr,
+                locals,
                 code: bytes,
                 fun_idx,
                 fun_tbl_idx: fun_idx.0,
+                fun_ty_idx: ty_idx,
             },
         );
 
@@ -122,16 +142,31 @@ impl ModuleCtx {
     }
 }
 
-pub fn codegen(ctx: &mut Ctx, expr: &Expr) {
+/// Compile given program into a Wasm module
+pub fn codegen_module(ctx: &mut Ctx, expr: &Expr) -> Vec<u8> {
     // We don't need to make a pass to collect function binders as functions are always defined
     // before used (using LetRec syntax), so we just add the imported stuff to globals.
+
+    let mut fun_tys: FxHashMap<FunTy, TypeIdx> = Default::default();
+    let mut fun_ty_indices: Vec<TypeIdx> = vec![];
 
     let globals = {
         let mut globals: FxHashMap<VarId, GlobalIdx> = Default::default();
         let mut next_global_idx = 0;
-        for (builtin_id, _builtin_ty) in ctx.builtins() {
-            globals.insert(*builtin_id, GlobalIdx(next_global_idx));
+        for (builtin_var, builtin_ty) in ctx.builtins() {
+            // Allocate global index
+            globals.insert(*builtin_var, GlobalIdx(next_global_idx));
             next_global_idx += 1;
+
+            // Allocate type index
+            let fun_ty = type_to_closure_type(ctx, *builtin_var, *builtin_ty);
+
+            let ty_idx = match fun_tys.get(&fun_ty) {
+                Some(ty_idx) => *ty_idx,
+                None => TypeIdx(fun_tys.len() as u32),
+            };
+            fun_tys.insert(fun_ty, ty_idx);
+            fun_ty_indices.push(ty_idx);
         }
         globals
     };
@@ -148,9 +183,99 @@ pub fn codegen(ctx: &mut Ctx, expr: &Expr) {
         fvs: Default::default(),
         funs: Default::default(),
         next_fun_idx: FunIdx(0),
+        fun_tys,
+        fun_ty_indices,
     };
 
     cg_expr(ctx, &mut module_ctx, expr);
+
+    let FunCtx {
+        locals,
+        n_locals,
+        bytes,
+    } = module_ctx.fun_ctx;
+
+    //
+    // Generate the module
+    //
+
+    let mut module_bytes = vec![];
+
+    //
+    // 1. type section
+    //
+
+    encoding::encode_type_section(
+        module_ctx
+            .fun_tys
+            .iter()
+            .map(|(x1, x2)| (x1.clone(), x2.clone()))
+            .collect(),
+        &mut module_bytes,
+    );
+
+    //
+    // 2. import section: import RTS stuff
+    //
+
+    encoding::encode_import_section(ctx, &module_ctx.fun_tys, &mut module_bytes);
+
+    //
+    // 3. function section: Nth index here is the Ntf function's (in 'code' section) type index
+    //
+
+    encoding::encode_function_section(
+        ctx.builtins().len(),
+        &module_ctx.fun_ty_indices,
+        &mut module_bytes,
+    );
+
+    //
+    // 4. table section: initialize function table, size = number of functions in the module
+    //
+
+    let n_funs = module_ctx.fun_tys.len() as u32;
+    encoding::encode_table_section(n_funs, &mut module_bytes);
+
+    // 5. memory section: NA
+
+    //
+    // 6. global section: variables 'hp' (heap pointer) and 'hp_lim' (heap limit). Both are u32
+    //    values.
+    //
+
+    encoding::encode_global_section(&mut module_bytes);
+
+    // 7. export section: NA (no need to export start function)
+
+    //
+    // 8. start section
+    //
+
+    // TODO
+
+    //
+    // 9. element section: initializes the function table. Nth element is index to Nth function.
+    //
+
+    encoding::encode_element_section(n_funs, &mut module_bytes);
+
+    //
+    // 10. code section
+    //
+    
+    let mut funs = module_ctx.funs.into_iter().map(|(_, v)| v).collect::<Vec<_>>();
+    funs.sort_by_key(|fun| fun.fun_idx);
+
+    encoding::encode_code_section(&funs, &mut module_bytes);
+
+    // 11. data section: NA
+
+    //
+    // All done
+    //
+
+    module_bytes
 }
 
 fn cg_expr(ctx: &mut Ctx, module_ctx: &mut ModuleCtx, expr: &Expr) {
@@ -218,6 +343,18 @@ fn cg_expr(ctx: &mut Ctx, module_ctx: &mut ModuleCtx, expr: &Expr) {
             rhs,
             body,
         } => {
+            // Allocate function type
+            let fun_ty = type_to_closure_type(ctx, *bndr, ctx.var_type_id(*bndr));
+            let type_idx = match module_ctx.fun_tys.get(&fun_ty) {
+                Some(type_idx) => *type_idx,
+                None => {
+                    let type_idx = TypeIdx(module_ctx.fun_tys.len() as u32);
+                    module_ctx.fun_tys.insert(fun_ty, type_idx);
+                    type_idx
+                }
+            };
+            module_ctx.fun_ty_indices.push(type_idx);
+
             // Collect function's free variables. TODO: redundant clone below to avoid borrowchk
             // issues
             let fvs = match module_ctx.fvs.get(bndr) {
@@ -231,7 +368,7 @@ fn cg_expr(ctx: &mut Ctx, module_ctx: &mut ModuleCtx, expr: &Expr) {
             };
 
             let fvs_vec = fvs.iter().copied().collect::<Vec<_>>();
-            let fun_tbl_idx = module_ctx.new_closure(ctx, *bndr, &fvs_vec, args, rhs);
+            let fun_tbl_idx = module_ctx.new_closure(ctx, type_idx, *bndr, &fvs_vec, args, rhs);
 
             let bndr_idx = module_ctx.fun_ctx.add_local(*bndr);
 

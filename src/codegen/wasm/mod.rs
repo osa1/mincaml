@@ -1,5 +1,5 @@
 mod alloc;
-mod codegen;
+pub mod codegen;
 mod encoding;
 mod fun_builder;
 mod instr;
@@ -51,7 +51,7 @@ pub fn codegen(ctx: &mut Ctx, funs: &[lower::Fun], main: VarId, _dump: bool) -> 
             .collect(),
         &mut module_bytes,
     );
-    encoding::encode_import_section(&ctx, &mut module_bytes);
+    encoding::encode_import_section(&ctx.ctx, &ctx.fun_tys, &mut module_bytes);
 
     encoding::encode_function_section(
         ctx.ctx.builtins().len(),
