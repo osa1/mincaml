@@ -444,6 +444,26 @@ fn cg_expr(ctx: &mut Ctx, module_ctx: &mut ModuleCtx, expr: &Expr) {
         }
 
         Expr::App { fun, args } => {
+            // f.0(f, ..args);
+
+            // Compile and bind closure
+            cg_expr(ctx, module_ctx, fun);
+            let closure_local = module_ctx.fun_ctx.fresh_local();
+            local_set(closure_local, &mut module_ctx.fun_ctx.bytes);
+
+            // Push closure arg
+            local_get(closure_local, &mut module_ctx.fun_ctx.bytes);
+
+            // Compile args. No need to bind them as we'll use each arg only once
+            for arg in args {
+                cg_expr(ctx, module_ctx, arg);
+            }
+
+            // Get function from the closure
+            local_get(closure_local, &mut module_ctx.fun_ctx.bytes);
+            field_read(closure_local, 0, Ty::I64, &mut module_ctx.fun_ctx.bytes);
+
+            // Get function type
             todo!()
         }
 
