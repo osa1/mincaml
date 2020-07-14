@@ -1,8 +1,6 @@
 // Wasm high-level enough, we don't need even a-normalization. Here we directly generate Wasm from
 // parsed expressions.
 
-#![allow(dead_code, unused_variables)]
-
 use super::alloc::gen_alloc;
 use super::encoding;
 use super::instr::*;
@@ -11,6 +9,7 @@ use super::{
     types::{type_to_closure_type, FunIdx, FunTy, GlobalIdx, LocalIdx, Ty, TypeIdx},
 };
 use crate::ctx::{Ctx, VarId};
+use crate::var::CompilerPhase;
 use crate::{cg_types::RepType, parser::Expr};
 
 use fxhash::{FxHashMap, FxHashSet};
@@ -120,7 +119,7 @@ impl ModuleCtx {
         bytes.push(0x0B);
 
         let mut locals = locals.into_iter().collect::<Vec<_>>();
-        locals.sort_by_key(|(var, idx)| *idx);
+        locals.sort_by_key(|(_, idx)| *idx);
         let locals = locals
             .into_iter()
             .map(|(var, _)| rep_type_to_wasm(RepType::from(&*ctx.var_type(var))))
@@ -192,10 +191,54 @@ pub fn codegen_module(ctx: &mut Ctx, expr: &Expr) -> Vec<u8> {
     cg_expr(ctx, &mut module_ctx, expr);
 
     let FunCtx {
-        locals,
-        n_locals,
-        bytes,
+        locals: main_locals,
+        n_locals: _,
+        bytes: mut main_bytes,
     } = module_ctx.fun_ctx;
+
+    // Register 'main' function
+
+    let main_wasm_fun = {
+
+        main_bytes.push(0x0F); // return
+        main_bytes.push(0x0B); // end of expression
+
+        let main_ty = FunTy {
+            args: vec![],
+            ret: None,
+        };
+        let main_ty_idx = match module_ctx.fun_tys.get(&main_ty) {
+            Some(ty_idx) => *ty_idx,
+            None => {
+                let type_idx = TypeIdx(module_ctx.fun_tys.len() as u32);
+                module_ctx.fun_tys.insert(main_ty, type_idx); // no need for this as we're done with code gen
+                type_idx
+            }
+        };
+        module_ctx.fun_ty_indices.push(main_ty_idx);
+
+        let main_fun_idx = module_ctx.next_fun_idx;
+
+        let mut main_locals = main_locals.into_iter().collect::<Vec<_>>();
+        main_locals.sort_by_key(|(_, idx)| *idx);
+        let main_locals = main_locals
+            .into_iter()
+            .map(|(var, _)| rep_type_to_wasm(RepType::from(&*ctx.var_type(var))))
+            .collect::<Vec<_>>();
+
+        let main_var = ctx.fresh_codegen_var(CompilerPhase::ClosureConvert, RepType::Word);
+
+        WasmFun {
+            var: main_var,
+            locals: main_locals,
+            code: main_bytes,
+            fun_idx: main_fun_idx,
+            fun_ty_idx: main_ty_idx,
+            fun_tbl_idx: main_fun_idx.0,
+        }
+    };
+
+    module_ctx.funs.insert(main_wasm_fun.var, main_wasm_fun);
 
     //
     // Generate the module
@@ -400,13 +443,25 @@ fn cg_expr(ctx: &mut Ctx, module_ctx: &mut ModuleCtx, expr: &Expr) {
             cg_expr(ctx, module_ctx, body);
         }
 
-        Expr::App { fun, args } => {}
+        Expr::App { fun, args } => {
+            todo!()
+        }
 
-        Expr::Tuple(_) => {}
-        Expr::LetTuple { bndrs, rhs, body } => {}
-        Expr::Array { len, elem } => {}
-        Expr::Get(_, _) => {}
-        Expr::Put(_, _, _) => {}
+        Expr::Tuple(_) => {
+            todo!()
+        }
+        Expr::LetTuple { bndrs, rhs, body } => {
+            todo!()
+        }
+        Expr::Array { len, elem } => {
+            todo!()
+        }
+        Expr::Get(_, _) => {
+            todo!()
+        }
+        Expr::Put(_, _, _) => {
+            todo!()
+        }
     }
 }
 
