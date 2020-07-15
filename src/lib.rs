@@ -1,33 +1,38 @@
 #![feature(or_patterns, box_patterns, backtrace, entry_insert)]
 
-mod anormal;
+// mod anormal;
+mod ast;
 mod cg_types;
-mod codegen;
+// mod codegen;
 mod common;
 mod ctx;
 mod interner;
 mod lexer;
 mod locals;
-mod lower;
+// mod lower;
 mod parser;
 mod perf;
 mod type_check;
 mod utils;
+mod type_arena;
 mod var;
 
-use anormal::anormal;
+// use anormal::anormal;
 // use codegen::native::codegen;
-use codegen::wasm::codegen::codegen_module;
+// use codegen::wasm::codegen::codegen_module;
 use lexer::{tokenize, Token};
 // use lower::lower_pgm;
+use ast::ExprIdx;
 use parser::parse;
-use type_check::type_check_pgm;
+use type_check::{type_check_pgm, Type};
 
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 // use std::process::Command;
 use std::time::{Duration, Instant};
+
+use cranelift_entity::{PrimaryMap, SecondaryMap};
 
 #[cfg(debug_assertions)]
 #[global_allocator]
@@ -76,7 +81,10 @@ fn compile_expr(
 
     let mut ctx = Default::default();
 
-    let mut expr = match record_pass_stats(&mut pass_stats, "parse", || parse(&mut ctx, &tokens)) {
+    let mut exprs = PrimaryMap::new();
+    let mut expr = match record_pass_stats(&mut pass_stats, "parse", || {
+        parse(&mut ctx, &tokens, &mut exprs)
+    }) {
         Err(err) => {
             println!("Parser error: {:#?}", err);
             return None;
@@ -86,8 +94,9 @@ fn compile_expr(
 
     // println!("Expr: {:#?}", expr);
 
+    let mut expr_tys: SecondaryMap<ExprIdx, Option<Type>> = SecondaryMap::new();
     match record_pass_stats(&mut pass_stats, "type check", || {
-        type_check_pgm(&mut ctx, &mut expr)
+        type_check_pgm(&mut ctx, expr, &mut exprs, &mut expr_tys)
     }) {
         Err(err) => {
             println!("Type error: {:#?}", err);
@@ -124,15 +133,18 @@ fn compile_expr(
         }
     */
 
+    /*
     let object_code = record_pass_stats(&mut pass_stats, "codegen", || {
         codegen_module(&mut ctx, &expr)
     });
+    */
 
     if show_pass_stats {
         report_pass_stats(&pass_stats);
     }
 
-    Some(object_code)
+    // Some(object_code)
+    None
 }
 
 fn report_pass_stats(pass_stats: &[PassStats]) {

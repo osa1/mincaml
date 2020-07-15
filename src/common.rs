@@ -1,5 +1,7 @@
 use crate::ctx::VarId;
 
+use std::fmt;
+
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Cmp {
     Equal,
@@ -8,6 +10,21 @@ pub enum Cmp {
     LessThanOrEqual,
     GreaterThan,
     GreaterThanOrEqual,
+}
+
+impl fmt::Display for Cmp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use Cmp::*;
+        let s = match self {
+            Equal => "=",
+            NotEqual => "<>",
+            LessThan => "<",
+            LessThanOrEqual => "<=",
+            GreaterThan => ">",
+            GreaterThanOrEqual => ">=",
+        };
+        s.fmt(f)
+    }
 }
 
 #[derive(Debug, Clone)]

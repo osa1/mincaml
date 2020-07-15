@@ -1,89 +1,12 @@
+use crate::ast::*;
 use crate::common::*;
 use crate::ctx::{Ctx, VarId};
 use crate::lexer::Token;
 use crate::var::CompilerPhase;
 
-use std::fmt;
-
-#[derive(Debug)]
-pub enum Expr {
-    // ()
-    Unit,
-    // true, false
-    Bool(bool),
-    Int(i64),
-    Float(f64),
-    // not <expr>
-    Not(Box<Expr>),
-    // - <expr>
-    Neg(Box<Expr>),
-    // '<expr> + <expr>' or '<expr> - <expr>'
-    IntBinOp(Box<Expr>, IntBinOp, Box<Expr>),
-    // -. <expr>
-    FNeg(Box<Expr>),
-    // A float binary operation, e.g. '<expr> +. <expr>'
-    FloatBinOp(Box<Expr>, FloatBinOp, Box<Expr>),
-    // Comparison, e.g. <expr> <= <expr>
-    Cmp(Box<Expr>, Cmp, Box<Expr>),
-    // if <expr> then <expr> else <expr>
-    If(Box<Expr>, Box<Expr>, Box<Expr>),
-    // let <ident> = <expr> in <expr>
-    Let {
-        bndr: VarId,
-        rhs: Box<Expr>,
-        body: Box<Expr>,
-    },
-    // <ident>
-    Var(VarId),
-    // let rec <ident> <ident>+ = <expr> in <expr>
-    LetRec {
-        bndr: VarId,
-        args: Vec<VarId>,
-        rhs: Box<Expr>,
-        body: Box<Expr>,
-    },
-    // <expr> <expr>+
-    App {
-        fun: Box<Expr>,
-        args: Vec<Expr>,
-    },
-    // <expr> (, <expr>)+
-    Tuple(Vec<Expr>),
-    // let ( <ident> (, <ident>)+ ) = <expr> in <expr>
-    LetTuple {
-        bndrs: Vec<VarId>,
-        rhs: Box<Expr>,
-        body: Box<Expr>,
-    },
-    // Array.create <expr> <expr>
-    Array {
-        len: Box<Expr>,
-        elem: Box<Expr>,
-    },
-    // <expr> . ( <expr> )
-    Get(Box<Expr>, Box<Expr>),
-    // <expr> . ( <expr> ) <- <expr>
-    Put(Box<Expr>, Box<Expr>, Box<Expr>),
-}
-
-impl fmt::Display for Cmp {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use Cmp::*;
-        let s = match self {
-            Equal => "=",
-            NotEqual => "<>",
-            LessThan => "<",
-            LessThanOrEqual => "<=",
-            GreaterThan => ">",
-            GreaterThanOrEqual => ">=",
-        };
-        s.fmt(f)
-    }
-}
-
-pub fn parse(ctx: &mut Ctx, tokens: &[Token]) -> Result<Expr, ParseErr> {
+pub fn parse(ctx: &mut Ctx, tokens: &[Token], arena: &mut ExprArena) -> Result<ExprIdx, ParseErr> {
     let mut parser = Parser::new(tokens);
-    let expr = parser.expr(ctx)?;
+    let expr = parser.expr(ctx, arena)?;
     Ok(expr)
 }
 
@@ -124,7 +47,9 @@ impl<'a> Parser<'a> {
         Parser { tokens, tok_idx: 0 }
     }
 
-    pub fn expr0(&mut self, ctx: &mut Ctx, prec: usize) -> Result<Expr, ParseErr> {
+    pub fn expr0(
+        &mut self, ctx: &mut Ctx, arena: &mut ExprArena, prec: usize,
+    ) -> Result<ExprIdx, ParseErr> {
         match self.next_token()? {
             //
             // Single-token expressions
@@ -132,22 +57,22 @@ impl<'a> Parser<'a> {
             Token::Bool(bool) => {
                 let b = *bool;
                 self.consume();
-                Ok(Expr::Bool(b))
+                Ok(Expr::bool(b, arena))
             }
             Token::Int(int) => {
                 let i = *int;
                 self.consume();
-                Ok(Expr::Int(i))
+                Ok(Expr::int(i, arena))
             }
             Token::Float(float) => {
                 let f = *float;
                 self.consume();
-                Ok(Expr::Float(f))
+                Ok(Expr::float(f, arena))
             }
             Token::Id(id) => {
                 let var = ctx.fresh_user_var(id);
                 self.consume();
-                Ok(Expr::Var(var))
+                Ok(Expr::var(var, arena))
             }
 
             //
@@ -158,11 +83,11 @@ impl<'a> Parser<'a> {
                 match self.next_token()? {
                     Token::RParen => {
                         self.consume();
-                        Ok(Expr::Unit)
+                        Ok(Expr::unit(arena))
                     }
                     _ => {
                         // Parse everything until ')'
-                        let expr = self.expr1(ctx, INIT_PREC)?;
+                        let expr = self.expr1(ctx, arena, INIT_PREC)?;
                         self.expect(Token::RParen, "')'")?;
                         Ok(expr)
                     }
@@ -170,32 +95,27 @@ impl<'a> Parser<'a> {
             }
             Token::Not if prec <= APP_PREC => {
                 self.consume();
-                Ok(Expr::Not(Box::new(self.expr1(ctx, APP_PREC)?)))
+                Ok(Expr::not(self.expr1(ctx, arena, APP_PREC)?, arena))
             }
             Token::Minus if prec <= UNARY_MINUS_PREC => {
                 self.consume();
-                let expr = self.expr1(ctx, UNARY_MINUS_PREC)?;
-                match expr {
-                    Expr::Float(_) =>
-                    // Hacky, but this is how the original min-caml parses this as well.
-                    {
-                        Ok(Expr::FNeg(Box::new(expr)))
-                    }
-                    _ => Ok(Expr::Neg(Box::new(expr))),
+                let expr = self.expr1(ctx, arena, UNARY_MINUS_PREC)?;
+                // Hacky, but this is how the original min-caml parses this as well.
+                if let ExprKind::Float(_) = arena[expr].kind {
+                    Ok(Expr::fneg(expr, arena))
+                } else {
+                    Ok(Expr::neg(expr, arena))
                 }
             }
             Token::MinusDot if prec <= UNARY_MINUS_PREC => {
                 self.consume();
-                Ok(Expr::FNeg(Box::new(self.expr1(ctx, PLUS_MINUS_PREC)?)))
+                Ok(Expr::fneg(self.expr1(ctx, arena, PLUS_MINUS_PREC)?, arena))
             }
             Token::ArrayCreate if prec <= APP_PREC => {
                 self.consume();
-                let expr1 = self.expr0(ctx, APP_PREC)?;
-                let expr2 = self.expr0(ctx, APP_PREC)?;
-                Ok(Expr::Array {
-                    len: Box::new(expr1),
-                    elem: Box::new(expr2),
-                })
+                let expr1 = self.expr0(ctx, arena, APP_PREC)?;
+                let expr2 = self.expr0(ctx, arena, APP_PREC)?;
+                Ok(Expr::array(expr1, expr2, arena))
             }
             Token::Let => {
                 self.consume();
@@ -228,15 +148,10 @@ impl<'a> Parser<'a> {
                         }
                         self.expect(Token::Equal, "'='")?;
                         // Parse everything until 'in'
-                        let rhs = Box::new(self.expr1(ctx, INIT_PREC)?);
+                        let rhs = self.expr1(ctx, arena, INIT_PREC)?;
                         self.expect(Token::In, "'in'")?;
-                        let body = Box::new(self.expr1(ctx, LET_PREC)?);
-                        Ok(Expr::LetRec {
-                            bndr,
-                            args,
-                            rhs,
-                            body,
-                        })
+                        let body = self.expr1(ctx, arena, LET_PREC)?;
+                        Ok(Expr::letrec(bndr, args, rhs, body, arena))
                     }
                     Token::LParen => {
                         self.consume();
@@ -255,24 +170,20 @@ impl<'a> Parser<'a> {
                         self.expect(Token::RParen, "')'")?;
                         self.expect(Token::Equal, "'='")?;
                         // Parse everything until '='
-                        let rhs = self.expr1(ctx, INIT_PREC)?;
+                        let rhs = self.expr1(ctx, arena, INIT_PREC)?;
                         self.expect(Token::In, "in")?;
-                        let body = self.expr1(ctx, IN_PREC)?;
-                        Ok(Expr::LetTuple {
-                            bndrs,
-                            rhs: Box::new(rhs),
-                            body: Box::new(body),
-                        })
+                        let body = self.expr1(ctx, arena, IN_PREC)?;
+                        Ok(Expr::let_tuple(bndrs, rhs, body, arena))
                     }
                     Token::Id(var) => {
                         let bndr = ctx.fresh_user_var(var);
                         self.consume();
                         self.expect(Token::Equal, "'='")?;
                         // Parse everything until 'in'
-                        let rhs = Box::new(self.expr1(ctx, INIT_PREC)?);
+                        let rhs = self.expr1(ctx, arena, INIT_PREC)?;
                         self.expect(Token::In, "'in'")?;
-                        let body = Box::new(self.expr1(ctx, IN_PREC)?);
-                        Ok(Expr::Let { bndr, rhs, body })
+                        let body = self.expr1(ctx, arena, IN_PREC)?;
+                        Ok(Expr::let_(bndr, rhs, body, arena))
                     }
                     other => {
                         Err(ParseErr::Unexpected {
@@ -286,13 +197,13 @@ impl<'a> Parser<'a> {
             Token::If if prec <= IF_PREC => {
                 self.consume();
                 // Parse evertying until 'then'
-                let e1 = self.expr1(ctx, INIT_PREC)?;
+                let e1 = self.expr1(ctx, arena, INIT_PREC)?;
                 self.expect(Token::Then, "'then'")?;
                 // Parse everything until 'else'
-                let e2 = self.expr1(ctx, INIT_PREC)?;
+                let e2 = self.expr1(ctx, arena, INIT_PREC)?;
                 self.expect(Token::Else, "'else'")?;
-                let e3 = self.expr1(ctx, IF_PREC)?;
-                Ok(Expr::If(Box::new(e1), Box::new(e2), Box::new(e3)))
+                let e3 = self.expr1(ctx, arena, IF_PREC)?;
+                Ok(Expr::if_(e1, e2, e3, arena))
             }
             other => Err(ParseErr::Unexpected {
                 seen: other.clone(),
@@ -301,90 +212,91 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn expr1(&mut self, ctx: &mut Ctx, prec: usize) -> Result<Expr, ParseErr> {
-        let mut expr = self.expr0(ctx, prec)?;
+    pub fn expr1(
+        &mut self, ctx: &mut Ctx, arena: &mut ExprArena, prec: usize,
+    ) -> Result<ExprIdx, ParseErr> {
+        let mut expr = self.expr0(ctx, arena, prec)?;
         let mut parsing_app = false;
         loop {
             match self.next_token() {
                 Ok(Token::Semicolon) if prec <= SEMICOLON_PREC => {
                     self.consume();
                     let sym = ctx.fresh_generated_var(CompilerPhase::Parser);
-                    let expr2 = self.expr1(ctx, prec)?;
-                    expr = Expr::Let {
-                        bndr: sym,
-                        rhs: Box::new(expr),
-                        body: Box::new(expr2),
-                    };
+                    let expr2 = self.expr1(ctx, arena, prec)?;
+                    expr = Expr::let_(sym, expr, expr2, arena);
                 }
                 Ok(Token::Plus) if prec < PLUS_MINUS_PREC => {
                     self.consume();
-                    let expr2 = self.expr1(ctx, PLUS_MINUS_PREC)?;
-                    expr = Expr::IntBinOp(Box::new(expr), IntBinOp::Add, Box::new(expr2));
+                    let expr2 = self.expr1(ctx, arena, PLUS_MINUS_PREC)?;
+                    expr = Expr::int_binop(expr, IntBinOp::Add, expr2, arena);
                 }
                 Ok(Token::Minus) if prec < PLUS_MINUS_PREC => {
                     self.consume();
-                    let expr2 = self.expr1(ctx, PLUS_MINUS_PREC)?;
-                    expr = Expr::IntBinOp(Box::new(expr), IntBinOp::Sub, Box::new(expr2));
+                    let expr2 = self.expr1(ctx, arena, PLUS_MINUS_PREC)?;
+                    expr = Expr::int_binop(expr, IntBinOp::Sub, expr2, arena);
                 }
                 Ok(Token::PlusDot) if prec < PLUS_MINUS_PREC => {
                     self.consume();
-                    let expr2 = self.expr1(ctx, PLUS_MINUS_PREC)?;
-                    expr = Expr::FloatBinOp(Box::new(expr), FloatBinOp::Add, Box::new(expr2));
+                    let expr2 = self.expr1(ctx, arena, PLUS_MINUS_PREC)?;
+                    expr = Expr::float_binop(expr, FloatBinOp::Add, expr2, arena);
                 }
                 Ok(Token::MinusDot) if prec < PLUS_MINUS_PREC => {
                     self.consume();
-                    let expr2 = self.expr1(ctx, PLUS_MINUS_PREC)?;
-                    expr = Expr::FloatBinOp(Box::new(expr), FloatBinOp::Sub, Box::new(expr2));
+                    let expr2 = self.expr1(ctx, arena, PLUS_MINUS_PREC)?;
+                    expr = Expr::float_binop(expr, FloatBinOp::Sub, expr2, arena);
                 }
                 Ok(Token::AstDot) if prec < DIV_MULT_PREC => {
                     self.consume();
-                    let expr2 = self.expr1(ctx, DIV_MULT_PREC)?;
-                    expr = Expr::FloatBinOp(Box::new(expr), FloatBinOp::Mul, Box::new(expr2));
+                    let expr2 = self.expr1(ctx, arena, DIV_MULT_PREC)?;
+                    expr = Expr::float_binop(expr, FloatBinOp::Mul, expr2, arena);
                 }
                 Ok(Token::SlashDot) if prec < DIV_MULT_PREC => {
                     self.consume();
-                    let expr2 = self.expr1(ctx, DIV_MULT_PREC)?;
-                    expr = Expr::FloatBinOp(Box::new(expr), FloatBinOp::Div, Box::new(expr2));
+                    let expr2 = self.expr1(ctx, arena, DIV_MULT_PREC)?;
+                    expr = Expr::float_binop(expr, FloatBinOp::Div, expr2, arena);
                 }
                 Ok(Token::Equal) if prec < CMP_PREC => {
                     self.consume();
-                    let expr2 = self.expr1(ctx, CMP_PREC)?;
-                    expr = Expr::Cmp(Box::new(expr), Cmp::Equal, Box::new(expr2));
+                    let expr2 = self.expr1(ctx, arena, CMP_PREC)?;
+                    expr = Expr::cmp(expr, Cmp::Equal, expr2, arena);
                 }
                 Ok(Token::LessGreater) if prec < CMP_PREC => {
                     self.consume();
-                    let expr2 = self.expr1(ctx, CMP_PREC)?;
-                    expr = Expr::Cmp(Box::new(expr), Cmp::NotEqual, Box::new(expr2));
+                    let expr2 = self.expr1(ctx, arena, CMP_PREC)?;
+                    expr = Expr::cmp(expr, Cmp::NotEqual, expr2, arena);
                 }
                 Ok(Token::Less) if prec < CMP_PREC => {
                     self.consume();
-                    let expr2 = self.expr1(ctx, CMP_PREC)?;
-                    expr = Expr::Cmp(Box::new(expr), Cmp::LessThan, Box::new(expr2));
+                    let expr2 = self.expr1(ctx, arena, CMP_PREC)?;
+                    expr = Expr::cmp(expr, Cmp::LessThan, expr2, arena);
                 }
                 Ok(Token::LessEqual) if prec < CMP_PREC => {
                     self.consume();
-                    let expr2 = self.expr1(ctx, CMP_PREC)?;
-                    expr = Expr::Cmp(Box::new(expr), Cmp::LessThanOrEqual, Box::new(expr2));
+                    let expr2 = self.expr1(ctx, arena, CMP_PREC)?;
+                    expr = Expr::cmp(expr, Cmp::LessThanOrEqual, expr2, arena);
                 }
                 Ok(Token::Greater) if prec <= CMP_PREC => {
                     self.consume();
-                    let expr2 = self.expr1(ctx, CMP_PREC)?;
-                    expr = Expr::Cmp(Box::new(expr), Cmp::GreaterThan, Box::new(expr2));
+                    let expr2 = self.expr1(ctx, arena, CMP_PREC)?;
+                    expr = Expr::cmp(expr, Cmp::GreaterThan, expr2, arena);
                 }
                 Ok(Token::GreaterEqual) if prec <= CMP_PREC => {
                     self.consume();
-                    let expr2 = self.expr1(ctx, CMP_PREC)?;
-                    expr = Expr::Cmp(Box::new(expr), Cmp::GreaterThanOrEqual, Box::new(expr2));
+                    let expr2 = self.expr1(ctx, arena, CMP_PREC)?;
+                    expr = Expr::cmp(expr, Cmp::GreaterThanOrEqual, expr2, arena);
                 }
                 Ok(Token::Comma) if prec <= TUPLE_PREC => {
                     self.consume();
-                    let expr2 = self.expr1(ctx, COMMA_PREC)?;
-                    match expr {
-                        Expr::Tuple(ref mut vec) => {
-                            vec.push(expr2);
+                    let expr2 = self.expr1(ctx, arena, COMMA_PREC)?;
+                    match &mut arena[expr] {
+                        Expr {
+                            kind: ExprKind::Tuple,
+                            ref mut children,
+                        } => {
+                            children.push(expr2);
                         }
                         _ => {
-                            expr = Expr::Tuple(vec![expr, expr2]);
+                            expr = Expr::tuple(vec![expr, expr2], arena);
                         }
                     }
                 }
@@ -392,58 +304,59 @@ impl<'a> Parser<'a> {
                     self.consume();
                     self.expect(Token::LParen, "'('")?;
                     // Parse everything until ')'
-                    let expr1 = self.expr1(ctx, INIT_PREC)?;
+                    let expr1 = self.expr1(ctx, arena, INIT_PREC)?;
                     self.expect(Token::RParen, "')'")?;
                     match self.next_token() {
                         Ok(Token::LessMinus) => {
                             self.consume();
-                            let expr2 = self.expr1(ctx, LESS_MINUS_PREC)?;
-                            match expr {
-                                Expr::App { mut args, fun } if parsing_app => {
-                                    let arg = args.pop().unwrap();
-                                    expr = Expr::App {
+                            let expr2 = self.expr1(ctx, arena, LESS_MINUS_PREC)?;
+                            match &mut arena[expr] {
+                                Expr {
+                                    kind: ExprKind::App,
+                                    ref mut children,
+                                } if parsing_app => {
+                                    let arg = children.pop().unwrap();
+                                    let fun = children.pop().unwrap();
+                                    expr = Expr::app(
                                         fun,
-                                        args: vec![Expr::Put(
-                                            Box::new(arg),
-                                            Box::new(expr1),
-                                            Box::new(expr2),
-                                        )],
-                                    };
+                                        vec![Expr::put(arg, expr1, expr2, arena)],
+                                        arena,
+                                    );
                                 }
                                 _ => {
-                                    expr =
-                                        Expr::Put(Box::new(expr), Box::new(expr1), Box::new(expr2));
+                                    expr = Expr::put(expr, expr1, expr2, arena);
                                 }
                             }
                         }
-                        _ => match expr {
-                            Expr::App { mut args, fun } if parsing_app => {
-                                let arg = args.pop().unwrap();
-                                expr = Expr::App {
-                                    fun,
-                                    args: vec![Expr::Get(Box::new(arg), Box::new(expr1))],
-                                };
+                        _ => match &mut arena[expr] {
+                            Expr {
+                                kind: ExprKind::App,
+                                ref mut children,
+                            } if parsing_app => {
+                                let arg = children.pop().unwrap();
+                                let fun = children.pop().unwrap();
+                                expr = Expr::app(fun, vec![Expr::get(arg, expr1, arena)], arena);
                             }
                             _ => {
-                                expr = Expr::Get(Box::new(expr), Box::new(expr1));
+                                expr = Expr::get(expr, expr1, arena);
                             }
                         },
                     }
                 }
-                Ok(_) if prec <= APP_PREC => match self.expr0(ctx, APP_PREC) {
+                Ok(_) if prec <= APP_PREC => match self.expr0(ctx, arena, APP_PREC) {
                     Err(_) => {
                         break;
                     }
-                    Ok(expr_) => match expr {
-                        Expr::App { ref mut args, .. } if parsing_app => {
-                            args.push(expr_);
+                    Ok(expr_) => match &mut arena[expr] {
+                        Expr {
+                            kind: ExprKind::App,
+                            ref mut children,
+                        } if parsing_app => {
+                            children.push(expr_);
                         }
                         _ => {
                             parsing_app = true;
-                            expr = Expr::App {
-                                fun: Box::new(expr),
-                                args: vec![expr_],
-                            };
+                            expr = Expr::app(expr, vec![expr_], arena);
                         }
                     },
                 },
@@ -457,8 +370,8 @@ impl<'a> Parser<'a> {
     }
 
     // Entry point for parsing
-    pub fn expr(&mut self, ctx: &mut Ctx) -> Result<Expr, ParseErr> {
-        let ret = self.expr1(ctx, INIT_PREC)?;
+    pub fn expr(&mut self, ctx: &mut Ctx, arena: &mut ExprArena) -> Result<ExprIdx, ParseErr> {
+        let ret = self.expr1(ctx, arena, INIT_PREC)?;
         match self.next_token() {
             Err(_) => Ok(ret),
             Ok(next) => Err(ParseErr::Unexpected {

@@ -10,7 +10,8 @@ use super::{
 };
 use crate::ctx::{Ctx, VarId};
 use crate::var::CompilerPhase;
-use crate::{cg_types::RepType, parser::Expr};
+use crate::cg_types::RepType;
+use crate::ast::*;
 
 use fxhash::{FxHashMap, FxHashSet};
 
@@ -199,7 +200,6 @@ pub fn codegen_module(ctx: &mut Ctx, expr: &Expr) -> Vec<u8> {
     // Register 'main' function
 
     let main_wasm_fun = {
-
         main_bytes.push(0x0F); // return
         main_bytes.push(0x0B); // end of expression
 
@@ -467,21 +467,11 @@ fn cg_expr(ctx: &mut Ctx, module_ctx: &mut ModuleCtx, expr: &Expr) {
             todo!()
         }
 
-        Expr::Tuple(_) => {
-            todo!()
-        }
-        Expr::LetTuple { bndrs, rhs, body } => {
-            todo!()
-        }
-        Expr::Array { len, elem } => {
-            todo!()
-        }
-        Expr::Get(_, _) => {
-            todo!()
-        }
-        Expr::Put(_, _, _) => {
-            todo!()
-        }
+        Expr::Tuple(_) => todo!(),
+        Expr::LetTuple { bndrs, rhs, body } => todo!(),
+        Expr::Array { len, elem } => todo!(),
+        Expr::Get(_, _) => todo!(),
+        Expr::Put(_, _, _) => todo!(),
     }
 }
 
