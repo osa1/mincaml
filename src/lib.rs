@@ -14,7 +14,6 @@ mod parser;
 mod perf;
 mod type_check;
 mod utils;
-mod type_arena;
 mod var;
 
 // use anormal::anormal;
@@ -24,7 +23,7 @@ use lexer::{tokenize, Token};
 // use lower::lower_pgm;
 use ast::ExprIdx;
 use parser::parse;
-use type_check::{type_check_pgm, Type};
+use type_check::{type_check_pgm, TypeArena, TypeIdx};
 
 use std::fs::File;
 use std::io::Write;
@@ -81,9 +80,9 @@ fn compile_expr(
 
     let mut ctx = Default::default();
 
-    let mut exprs = PrimaryMap::new();
+    let mut expr_arena = PrimaryMap::new();
     let mut expr = match record_pass_stats(&mut pass_stats, "parse", || {
-        parse(&mut ctx, &tokens, &mut exprs)
+        parse(&mut ctx, &tokens, &mut expr_arena)
     }) {
         Err(err) => {
             println!("Parser error: {:#?}", err);
@@ -94,9 +93,10 @@ fn compile_expr(
 
     // println!("Expr: {:#?}", expr);
 
-    let mut expr_tys: SecondaryMap<ExprIdx, Option<Type>> = SecondaryMap::new();
+    // let mut expr_tys: SecondaryMap<ExprIdx, Option<TypeIdx>> = SecondaryMap::new();
+    let mut type_arena = TypeArena::new();
     match record_pass_stats(&mut pass_stats, "type check", || {
-        type_check_pgm(&mut ctx, expr, &mut exprs, &mut expr_tys)
+        type_check_pgm(&mut ctx, expr, &mut expr_arena, &mut type_arena)
     }) {
         Err(err) => {
             println!("Type error: {:#?}", err);

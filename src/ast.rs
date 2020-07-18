@@ -15,7 +15,7 @@ pub struct Expr {
     pub children: Vec<ExprIdx>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ExprKind {
     // (), no children
     Unit,
@@ -63,6 +63,7 @@ pub enum ExprKind {
 // location (and type, when we introduce polymorphism)
 pub type ExprArena = PrimaryMap<ExprIdx, Expr>;
 
+// TODO: Maybe these should be `ExprArena` methods?
 impl Expr {
     pub fn unit(arena: &mut ExprArena) -> ExprIdx {
         arena.push(Expr {
