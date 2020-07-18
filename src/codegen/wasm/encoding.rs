@@ -1,9 +1,8 @@
+use super::codegen::WasmFun;
 use super::instr;
-use super::{codegen::WasmFun, rep_type_to_wasm, types::*, WasmCtx};
-use crate::{
-    cg_types::RepType,
-    ctx::{Ctx, TypeId, VarId},
-};
+use super::types::*;
+use crate::ctx::Ctx;
+
 use fxhash::FxHashMap;
 
 pub fn encode_vec<A>(stuff: &[A], encode: &mut dyn FnMut(&A, &mut Vec<u8>), buf: &mut Vec<u8>) {
@@ -50,7 +49,7 @@ pub(super) fn encode_import_section(
         encode_name(&*var.symbol_name(), &mut vec_bytes);
         vec_bytes.push(0x00); // function import
 
-        let fun_ty = type_to_closure_type(ctx, *builtin_var, *builtin_ty);
+        let fun_ty = type_to_closure_type(ctx, *builtin_ty);
 
         let ty_idx = fun_tys.get(&fun_ty).unwrap();
         encode_u32_uleb128(ty_idx.0, &mut vec_bytes);

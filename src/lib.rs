@@ -3,7 +3,7 @@
 // mod anormal;
 mod ast;
 mod cg_types;
-// mod codegen;
+mod codegen;
 mod common;
 mod ctx;
 mod interner;
@@ -18,17 +18,17 @@ mod var;
 
 // use anormal::anormal;
 // use codegen::native::codegen;
-// use codegen::wasm::codegen::codegen_module;
+use codegen::wasm::codegen::codegen_module;
 use lexer::{tokenize, Token};
 // use lower::lower_pgm;
 use ast::ExprIdx;
 use parser::parse;
-use type_check::{type_check_pgm, TypeArena, TypeIdx};
+use type_check::{type_check_pgm, TypeIdx};
 
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
-// use std::process::Command;
+use std::process::Command;
 use std::time::{Duration, Instant};
 
 use cranelift_entity::{PrimaryMap, SecondaryMap};
@@ -60,7 +60,6 @@ fn record_pass_stats<A, F: FnOnce() -> A>(
     ret
 }
 
-/*
 type ObjectCode = Vec<u8>;
 
 fn compile_expr(
@@ -82,7 +81,7 @@ fn compile_expr(
     let mut ctx = Default::default();
 
     let mut expr_arena = PrimaryMap::new();
-    let mut expr = match record_pass_stats(&mut pass_stats, "parse", || {
+    let expr = match record_pass_stats(&mut pass_stats, "parse", || {
         parse(&mut ctx, &tokens, &mut expr_arena)
     }) {
         Err(err) => {
@@ -94,10 +93,9 @@ fn compile_expr(
 
     // println!("Expr: {:#?}", expr);
 
-    // let mut expr_tys: SecondaryMap<ExprIdx, Option<TypeIdx>> = SecondaryMap::new();
-    let mut type_arena = TypeArena::new();
+    let mut expr_tys: SecondaryMap<ExprIdx, Option<TypeIdx>> = SecondaryMap::new();
     match record_pass_stats(&mut pass_stats, "type check", || {
-        type_check_pgm(&mut ctx, expr, &mut expr_arena, &mut type_arena)
+        type_check_pgm(&mut ctx, expr, &mut expr_arena, &mut expr_tys)
     }) {
         Err(err) => {
             println!("Type error: {:#?}", err);
@@ -107,47 +105,16 @@ fn compile_expr(
     };
 
     // println!("Type-checked expr: {:#?}", expr);
-
-    /*
-        let expr = record_pass_stats(&mut pass_stats, "anormal", || anormal(&mut ctx, expr));
-
-        // println!("K normalized:");
-        // println!("{:?}", expr);
-
-        let (funs, main) = record_pass_stats(&mut pass_stats, "closure convert", || {
-            lower_pgm(&mut ctx, expr)
-        });
-
-        if dump_cc {
-            println!("### Closure conversion:\n");
-
-            let mut s = String::new();
-            for fun in &funs {
-                fun.pp(&ctx, &mut s).unwrap();
-            }
-
-            println!("{}", s);
-        }
-
-        if dump_cg {
-            println!("### Code generation:\n");
-        }
-    */
-
-    /*
     let object_code = record_pass_stats(&mut pass_stats, "codegen", || {
-        codegen_module(&mut ctx, &expr)
+        codegen_module(&mut ctx, &expr_arena, &expr_tys, expr)
     });
-    */
 
     if show_pass_stats {
         report_pass_stats(&pass_stats);
     }
 
-    // Some(object_code)
-    None
+    Some(object_code)
 }
-*/
 
 fn report_pass_stats(pass_stats: &[PassStats]) {
     // TODO: align columns
@@ -220,7 +187,6 @@ pub fn typecheck_file(path: &str, show_pass_stats: bool) {
     }
 }
 
-/*
 pub fn compile_file(
     path: &str, out_dir: Option<&str>, dump_cc: bool, dump_cg: bool, show_pass_stats: bool,
 ) -> i32 {
@@ -242,33 +208,32 @@ fn link(path: &str, out_dir: Option<&str>, object_code: ObjectCode) -> i32 {
         .write_all(&object_code)
         .unwrap();
 
-        // Build RTS
-        let output = Command::new("gcc")
-            .args(&["rts.c", "-c", "-o", &format!("{}/rts.o", out_dir)])
-            .spawn()
-            .unwrap()
-            .wait_with_output()
-            .unwrap();
+    // Build RTS
+    let output = Command::new("gcc")
+        .args(&["rts.c", "-c", "-o", &format!("{}/rts.o", out_dir)])
+        .spawn()
+        .unwrap()
+        .wait_with_output()
+        .unwrap();
 
-        assert!(output.status.success());
+    assert!(output.status.success());
 
-        // Link
-        let output = Command::new("gcc")
-            .args(&[
-                &o_file_name,
-                "rts.o",
-                "-o",
-                file_stem,
-                "-lm", // link math library
-            ])
-            .current_dir(out_dir)
-            .spawn()
-            .unwrap()
-            .wait_with_output()
-            .unwrap();
+    // Link
+    let output = Command::new("gcc")
+        .args(&[
+            &o_file_name,
+            "rts.o",
+            "-o",
+            file_stem,
+            "-lm", // link math library
+        ])
+        .current_dir(out_dir)
+        .spawn()
+        .unwrap()
+        .wait_with_output()
+        .unwrap();
 
-        assert!(output.status.success());
+    assert!(output.status.success());
 
     0
 }
-*/

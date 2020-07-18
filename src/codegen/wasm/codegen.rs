@@ -4,18 +4,21 @@
 use super::alloc::gen_alloc;
 use super::encoding;
 use super::instr::*;
-use super::{
-    rep_type_to_wasm,
-    types::{type_to_closure_type, FunIdx, FunTy, GlobalIdx, LocalIdx, Ty, TypeIdx},
+use super::types::{
+    rep_type_to_wasm, type_to_closure_type, FunIdx, FunTy, GlobalIdx, LocalIdx, Ty, TypeIdx,
 };
-use crate::ctx::{Ctx, VarId};
-use crate::var::CompilerPhase;
-use crate::cg_types::RepType;
 use crate::ast::*;
+use crate::cg_types::RepType;
+use crate::ctx::{Ctx, VarId};
+use crate::type_check;
+use crate::var::CompilerPhase;
 
+use cranelift_entity::SecondaryMap;
 use fxhash::{FxHashMap, FxHashSet};
 
 use std::mem::replace;
+
+type ExprTys = SecondaryMap<ExprIdx, Option<type_check::TypeIdx>>;
 
 struct ModuleCtx {
     globals: FxHashMap<VarId, GlobalIdx>,
@@ -77,7 +80,7 @@ impl ModuleCtx {
     // Generates code for a function and returns the function's index in the module table.
     fn new_closure(
         &mut self, ctx: &mut Ctx, ty_idx: TypeIdx, fun_bndr: VarId, fvs: &[VarId], args: &[VarId],
-        body: &Expr,
+        expr_arena: &ExprArena, expr_tys: &ExprTys, body: ExprIdx,
     ) -> u32 {
         // Locals will be [self (bndr), arg1, arg2, ...]
         let locals: FxHashMap<VarId, LocalIdx> = ::std::iter::once(fun_bndr)
@@ -109,7 +112,7 @@ impl ModuleCtx {
         let fun_idx = self.next_fun_idx;
         self.next_fun_idx = FunIdx(self.next_fun_idx.0 + 1);
 
-        cg_expr(ctx, self, body);
+        cg_expr(ctx, self, expr_arena, expr_tys, body);
 
         let FunCtx {
             locals,
@@ -123,7 +126,7 @@ impl ModuleCtx {
         locals.sort_by_key(|(_, idx)| *idx);
         let locals = locals
             .into_iter()
-            .map(|(var, _)| rep_type_to_wasm(RepType::from(&*ctx.var_type(var))))
+            .map(|(var, _)| rep_type_to_wasm(ctx.var_rep_type(var)))
             .collect::<Vec<_>>();
 
         self.funs.insert(
@@ -145,7 +148,9 @@ impl ModuleCtx {
 }
 
 /// Compile given program into a Wasm module
-pub fn codegen_module(ctx: &mut Ctx, expr: &Expr) -> Vec<u8> {
+pub fn codegen_module(
+    ctx: &mut Ctx, expr_arena: &ExprArena, expr_tys: &ExprTys, expr: ExprIdx,
+) -> Vec<u8> {
     // We don't need to make a pass to collect function binders as functions are always defined
     // before used (using LetRec syntax), so we just add the imported stuff to globals.
 
@@ -161,7 +166,7 @@ pub fn codegen_module(ctx: &mut Ctx, expr: &Expr) -> Vec<u8> {
             next_global_idx += 1;
 
             // Allocate type index
-            let fun_ty = type_to_closure_type(ctx, *builtin_var, *builtin_ty);
+            let fun_ty = type_to_closure_type(ctx, *builtin_ty);
 
             let ty_idx = match fun_tys.get(&fun_ty) {
                 Some(ty_idx) => *ty_idx,
@@ -189,7 +194,7 @@ pub fn codegen_module(ctx: &mut Ctx, expr: &Expr) -> Vec<u8> {
         fun_ty_indices,
     };
 
-    cg_expr(ctx, &mut module_ctx, expr);
+    cg_expr(ctx, &mut module_ctx, expr_arena, expr_tys, expr);
 
     let FunCtx {
         locals: main_locals,
@@ -223,7 +228,7 @@ pub fn codegen_module(ctx: &mut Ctx, expr: &Expr) -> Vec<u8> {
         main_locals.sort_by_key(|(_, idx)| *idx);
         let main_locals = main_locals
             .into_iter()
-            .map(|(var, _)| rep_type_to_wasm(RepType::from(&*ctx.var_type(var))))
+            .map(|(var, _)| rep_type_to_wasm(ctx.var_rep_type(var)))
             .collect::<Vec<_>>();
 
         let main_var = ctx.fresh_codegen_var(CompilerPhase::ClosureConvert, RepType::Word);
@@ -329,58 +334,75 @@ pub fn codegen_module(ctx: &mut Ctx, expr: &Expr) -> Vec<u8> {
     module_bytes
 }
 
-fn cg_expr(ctx: &mut Ctx, module_ctx: &mut ModuleCtx, expr: &Expr) {
-    match expr {
-        Expr::Unit => {
+fn cg_expr(
+    ctx: &mut Ctx, module_ctx: &mut ModuleCtx, expr_arena: &ExprArena, expr_tys: &ExprTys,
+    expr: ExprIdx,
+) {
+    let expr_kind = expr_arena[expr].kind.clone();
+    match expr_kind {
+        ExprKind::Unit => {
             i64_const(0, &mut module_ctx.fun_ctx.bytes);
         }
 
-        Expr::Bool(b) => {
-            i64_const(if *b { 1 } else { 0 }, &mut module_ctx.fun_ctx.bytes);
+        ExprKind::Bool(b) => {
+            i64_const(if b { 1 } else { 0 }, &mut module_ctx.fun_ctx.bytes);
         }
 
-        Expr::Int(i) => {
-            i64_const(*i, &mut module_ctx.fun_ctx.bytes);
+        ExprKind::Int(i) => {
+            i64_const(i, &mut module_ctx.fun_ctx.bytes);
         }
 
-        Expr::Float(f) => {
-            f64_const(*f, &mut module_ctx.fun_ctx.bytes);
+        ExprKind::Float(f) => {
+            f64_const(f, &mut module_ctx.fun_ctx.bytes);
         }
 
-        Expr::Not(b) => todo!(),
+        ExprKind::Not => todo!(),
 
-        Expr::Neg(_) => {}
+        ExprKind::Neg => todo!(),
 
-        Expr::IntBinOp(_, _, _) => {}
+        ExprKind::IntBinOp(_) => todo!(),
 
-        Expr::FNeg(_) => {}
+        ExprKind::FNeg => todo!(),
 
-        Expr::FloatBinOp(_, _, _) => {}
+        ExprKind::FloatBinOp(_) => todo!(),
 
-        Expr::Cmp(_, _, _) => {}
+        ExprKind::Cmp(_) => todo!(),
 
-        Expr::If(_, _, _) => {}
+        ExprKind::If => todo!(),
 
-        Expr::Let { bndr, rhs, body } => {
-            cg_expr(ctx, module_ctx, rhs);
-            let local_idx = module_ctx.fun_ctx.add_local(*bndr);
+        ExprKind::Let { bndr } => {
+            cg_expr(
+                ctx,
+                module_ctx,
+                expr_arena,
+                expr_tys,
+                expr_arena[expr].children[0],
+            );
+            let local_idx = module_ctx.fun_ctx.add_local(bndr);
             local_set(local_idx, &mut module_ctx.fun_ctx.bytes);
+            cg_expr(
+                ctx,
+                module_ctx,
+                expr_arena,
+                expr_tys,
+                expr_arena[expr].children[1],
+            );
         }
 
-        Expr::Var(var) => match module_ctx.fun_ctx.locals.get(var) {
+        ExprKind::Var(var) => match module_ctx.fun_ctx.locals.get(&var) {
             Some(local_idx) => {
                 local_get(*local_idx, &mut module_ctx.fun_ctx.bytes);
             }
-            None => match module_ctx.globals.get(var) {
+            None => match module_ctx.globals.get(&var) {
                 Some(global_idx) => {
                     global_get(*global_idx, &mut module_ctx.fun_ctx.bytes);
                 }
                 None => {
                     panic!(
                         "Unbound variable: {}\n\
-                         Locals: {:?}\n\
-                         Globals: {:?}",
-                        ctx.get_var(*var),
+                                           Locals: {:?}\n\
+                                           Globals: {:?}",
+                        ctx.get_var(var),
                         module_ctx.fun_ctx.locals,
                         module_ctx.globals
                     );
@@ -388,14 +410,12 @@ fn cg_expr(ctx: &mut Ctx, module_ctx: &mut ModuleCtx, expr: &Expr) {
             },
         },
 
-        Expr::LetRec {
-            bndr,
-            args,
-            rhs,
-            body,
-        } => {
+        ExprKind::LetRec { bndr, args } => {
+            let rhs = expr_arena[expr].children[0];
+            let body = expr_arena[expr].children[1];
+
             // Allocate function type
-            let fun_ty = type_to_closure_type(ctx, *bndr, ctx.var_type_id(*bndr));
+            let fun_ty = type_to_closure_type(ctx, ctx.var_type_id(bndr));
             let type_idx = match module_ctx.fun_tys.get(&fun_ty) {
                 Some(type_idx) => *type_idx,
                 None => {
@@ -408,20 +428,22 @@ fn cg_expr(ctx: &mut Ctx, module_ctx: &mut ModuleCtx, expr: &Expr) {
 
             // Collect function's free variables. TODO: redundant clone below to avoid borrowchk
             // issues
-            let fvs = match module_ctx.fvs.get(bndr) {
+            let fvs = match module_ctx.fvs.get(&bndr) {
                 None => {
                     let mut fvs_: FxHashSet<VarId> = Default::default();
-                    fvs(rhs, &mut fvs_);
-                    module_ctx.fvs.insert(*bndr, fvs_);
-                    module_ctx.fvs.get(bndr).unwrap().clone()
+                    fvs(expr_arena, rhs, &mut fvs_);
+                    module_ctx.fvs.insert(bndr, fvs_);
+                    module_ctx.fvs.get(&bndr).unwrap().clone()
                 }
                 Some(fvs) => fvs.clone(),
             };
 
             let fvs_vec = fvs.iter().copied().collect::<Vec<_>>();
-            let fun_tbl_idx = module_ctx.new_closure(ctx, type_idx, *bndr, &fvs_vec, args, rhs);
+            let fun_tbl_idx = module_ctx.new_closure(
+                ctx, type_idx, bndr, &fvs_vec, &args, expr_arena, expr_tys, rhs,
+            );
 
-            let bndr_idx = module_ctx.fun_ctx.add_local(*bndr);
+            let bndr_idx = module_ctx.fun_ctx.add_local(bndr);
 
             // Allocate the closure
             gen_alloc(((fvs.len() + 1) * 8) as u32, &mut module_ctx.fun_ctx.bytes);
@@ -440,14 +462,16 @@ fn cg_expr(ctx: &mut Ctx, module_ctx: &mut ModuleCtx, expr: &Expr) {
                 field_store(bndr_idx, fv_idx.0 + 1, *fv_idx, ty, bytes);
             }
 
-            cg_expr(ctx, module_ctx, body);
+            cg_expr(ctx, module_ctx, expr_arena, expr_tys, body);
         }
 
-        Expr::App { fun, args } => {
+        ExprKind::App => {
             // f.0(f, ..args);
+            let fun = expr_arena[expr].children[0];
+            let args = &expr_arena[expr].children[1..];
 
             // Compile and bind closure
-            cg_expr(ctx, module_ctx, fun);
+            cg_expr(ctx, module_ctx, expr_arena, expr_tys, fun);
             let closure_local = module_ctx.fun_ctx.fresh_local();
             local_set(closure_local, &mut module_ctx.fun_ctx.bytes);
 
@@ -456,7 +480,7 @@ fn cg_expr(ctx: &mut Ctx, module_ctx: &mut ModuleCtx, expr: &Expr) {
 
             // Compile args. No need to bind them as we'll use each arg only once
             for arg in args {
-                cg_expr(ctx, module_ctx, arg);
+                cg_expr(ctx, module_ctx, expr_arena, expr_tys, *arg);
             }
 
             // Get function from the closure
@@ -464,78 +488,73 @@ fn cg_expr(ctx: &mut Ctx, module_ctx: &mut ModuleCtx, expr: &Expr) {
             field_read(closure_local, 0, Ty::I64, &mut module_ctx.fun_ctx.bytes);
 
             // Get function type
-            todo!()
+            let fun_ty = type_to_closure_type(ctx, expr_tys[fun].unwrap());
+            let fun_ty_idx = module_ctx.fun_tys.get(&fun_ty).unwrap();
+            call_indirect(*fun_ty_idx, &mut module_ctx.fun_ctx.bytes);
         }
 
-        Expr::Tuple(_) => todo!(),
-        Expr::LetTuple { bndrs, rhs, body } => todo!(),
-        Expr::Array { len, elem } => todo!(),
-        Expr::Get(_, _) => todo!(),
-        Expr::Put(_, _, _) => todo!(),
+        ExprKind::Tuple => todo!(),
+        ExprKind::LetTuple { bndrs: _ } => todo!(),
+        ExprKind::Array => todo!(),
+        ExprKind::Get => todo!(),
+        ExprKind::Put => todo!(),
     }
 }
 
-fn fvs(expr: &Expr, acc: &mut FxHashSet<VarId>) {
-    match expr {
-        Expr::Unit | Expr::Bool(_) | Expr::Int(_) | Expr::Float(_) => {}
-        Expr::Not(e) | Expr::Neg(e) | Expr::FNeg(e) => fvs(e, acc),
-        Expr::Cmp(e1, _, e2) => {}
-        Expr::FloatBinOp(e1, _, e2) | Expr::Put(e1, _, e2) | Expr::IntBinOp(e1, _, e2) => {
-            fvs(e1, acc);
-            fvs(e2, acc);
+fn fvs(expr_arena: &ExprArena, expr: ExprIdx, acc: &mut FxHashSet<VarId>) {
+    match &expr_arena[expr].kind {
+        ExprKind::Unit | ExprKind::Bool(_) | ExprKind::Int(_) | ExprKind::Float(_) => {}
+        ExprKind::Not | ExprKind::Neg | ExprKind::FNeg => {
+            fvs(expr_arena, expr_arena[expr].children[0], acc)
         }
-        Expr::If(e1, e2, e3) => {
-            fvs(e1, acc);
-            fvs(e2, acc);
-            fvs(e3, acc);
+        ExprKind::FloatBinOp(_)
+        | ExprKind::IntBinOp(_)
+        | ExprKind::Get
+        | ExprKind::Array
+        | ExprKind::Cmp(_) => {
+            fvs(expr_arena, expr_arena[expr].children[0], acc);
+            fvs(expr_arena, expr_arena[expr].children[1], acc);
         }
-        Expr::Let { bndr, rhs, body } => {
+        ExprKind::If | ExprKind::Put => {
+            fvs(expr_arena, expr_arena[expr].children[0], acc);
+            fvs(expr_arena, expr_arena[expr].children[1], acc);
+            fvs(expr_arena, expr_arena[expr].children[2], acc);
+        }
+        ExprKind::Let { bndr } => {
             // Order doesn't matter as we don't have shadowing
-            fvs(rhs, acc);
-            fvs(body, acc);
-            acc.remove(bndr);
+            fvs(expr_arena, expr_arena[expr].children[0], acc);
+            fvs(expr_arena, expr_arena[expr].children[1], acc);
+            acc.remove(&bndr);
         }
-        Expr::Var(var) => {
+        ExprKind::Var(var) => {
             acc.insert(*var);
         }
-        Expr::LetRec {
-            bndr,
-            args,
-            rhs,
-            body,
-        } => {
+        ExprKind::LetRec { bndr, args } => {
             // Order doesn't matter as we don't have shadowing
-            fvs(rhs, acc);
-            fvs(body, acc);
-            acc.remove(bndr);
+            fvs(expr_arena, expr_arena[expr].children[0], acc);
+            fvs(expr_arena, expr_arena[expr].children[1], acc);
+            acc.remove(&bndr);
             for arg in args {
-                acc.remove(arg);
+                acc.remove(&arg);
             }
         }
-        Expr::App { fun, args } => {
-            fvs(fun, acc);
-            for arg in args {
-                fvs(arg, acc);
+        ExprKind::App => {
+            fvs(expr_arena, expr_arena[expr].children[0], acc);
+            for arg in &expr_arena[expr].children[1..] {
+                fvs(expr_arena, *arg, acc);
             }
         }
-        Expr::Tuple(es) => {
-            for e in es {
-                fvs(e, acc);
+        ExprKind::Tuple => {
+            for e in &expr_arena[expr].children {
+                fvs(expr_arena, *e, acc);
             }
         }
-        Expr::LetTuple { bndrs, rhs, body } => {
-            fvs(rhs, acc);
-            fvs(body, acc);
+        ExprKind::LetTuple { bndrs } => {
+            fvs(expr_arena, expr_arena[expr].children[0], acc);
+            fvs(expr_arena, expr_arena[expr].children[1], acc);
             for bndr in bndrs {
-                acc.remove(bndr);
+                acc.remove(&bndr);
             }
-        }
-        Expr::Array { len, elem } => {
-            fvs(len, acc);
-            fvs(elem, acc);
-        }
-        Expr::Get(e, _) => {
-            fvs(e, acc);
         }
     }
 }

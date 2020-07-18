@@ -18,6 +18,7 @@ pub type TypeEnv = FxHashMap<VarId, TypeIdx>;
 pub struct TypeIdx(u32);
 entity_impl!(TypeIdx, "ty");
 
+// TODO: Make this a entity, use a TyVar arena
 pub type TyVar = Uniq;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

@@ -5,74 +5,7 @@ mod fun_builder;
 mod instr;
 mod types;
 
-use fun_builder::*;
-use types::*;
-
-use crate::cg_types::RepType;
-use crate::common::*;
-use crate::ctx::{Ctx, VarId};
-use crate::lower;
-use crate::lower::{Asgn, Fun, Stmt};
-
-use fxhash::FxHashMap;
-
-pub fn codegen(ctx: &mut Ctx, funs: &[lower::Fun], main: VarId, _dump: bool) -> Vec<u8> {
-    let mut ctx = WasmCtx::new(ctx, funs);
-
-    let mut module_bytes = vec![0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00];
-
-    // Module structure:
-    //
-    // 1. type section
-    // 2. import section: import RTS stuff
-    // 3. function section: Nth index here is the Nth function's (in 'code' section) type index
-    // 4. table section: initialize function table, size = number of functions in the module
-    // 5. memory section: NA
-    // 6. global section: variables 'hp' (heap pointer) and 'hp_lim' (heap limit). Both are u32
-    //    values.
-    // 7. export section: NA (no need to export start function)
-    // 8. start section
-    // 9. element section: initializes the function table. Nth element is index to Nth function.
-    // 10. code section
-    // 11. data section: NA
-    //
-    // So we only generate (1), (3), (8), (10)
-
-    // Number of functions to be used in table and element sections. Does not include the generated
-    // 'main' function as that's never called by the program code.
-    let n_funs = (ctx.ctx.builtins().len() + funs.len()) as u32;
-
-    let code_section = cg_code_section(&mut ctx, funs, main);
-
-    encoding::encode_type_section(
-        ctx.fun_tys
-            .iter()
-            .map(|(x1, x2)| (x1.clone(), x2.clone()))
-            .collect(),
-        &mut module_bytes,
-    );
-    encoding::encode_import_section(&ctx.ctx, &ctx.fun_tys, &mut module_bytes);
-
-    encoding::encode_function_section(
-        ctx.ctx.builtins().len(),
-        &ctx.fun_ty_indices,
-        &mut module_bytes,
-    );
-
-    encoding::encode_table_section(n_funs, &mut module_bytes);
-    encoding::encode_global_section(&mut module_bytes);
-
-    // start function is generated last, after all the MinCaml functions
-    let start_fun_idx = FunIdx(n_funs);
-    encoding::encode_start_section(start_fun_idx, &mut module_bytes);
-
-    encoding::encode_element_section(n_funs, &mut module_bytes);
-
-    module_bytes.extend_from_slice(&code_section);
-
-    module_bytes
-}
-
+/*
 struct WasmCtx<'ctx> {
     pub ctx: &'ctx mut Ctx,
     // Maps function types to their type indices in 'type' section
@@ -193,6 +126,66 @@ impl<'ctx> WasmCtx<'ctx> {
 
         ctx
     }
+}
+*/
+
+
+/*
+pub fn codegen(ctx: &mut Ctx, funs: &[lower::Fun], main: VarId, _dump: bool) -> Vec<u8> {
+    let mut ctx = WasmCtx::new(ctx, funs);
+
+    let mut module_bytes = vec![0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00];
+
+    // Module structure:
+    //
+    // 1. type section
+    // 2. import section: import RTS stuff
+    // 3. function section: Nth index here is the Nth function's (in 'code' section) type index
+    // 4. table section: initialize function table, size = number of functions in the module
+    // 5. memory section: NA
+    // 6. global section: variables 'hp' (heap pointer) and 'hp_lim' (heap limit). Both are u32
+    //    values.
+    // 7. export section: NA (no need to export start function)
+    // 8. start section
+    // 9. element section: initializes the function table. Nth element is index to Nth function.
+    // 10. code section
+    // 11. data section: NA
+    //
+    // So we only generate (1), (3), (8), (10)
+
+    // Number of functions to be used in table and element sections. Does not include the generated
+    // 'main' function as that's never called by the program code.
+    let n_funs = (ctx.ctx.builtins().len() + funs.len()) as u32;
+
+    let code_section = cg_code_section(&mut ctx, funs, main);
+
+    encoding::encode_type_section(
+        ctx.fun_tys
+            .iter()
+            .map(|(x1, x2)| (x1.clone(), x2.clone()))
+            .collect(),
+        &mut module_bytes,
+    );
+    encoding::encode_import_section(&ctx.ctx, &ctx.fun_tys, &mut module_bytes);
+
+    encoding::encode_function_section(
+        ctx.ctx.builtins().len(),
+        &ctx.fun_ty_indices,
+        &mut module_bytes,
+    );
+
+    encoding::encode_table_section(n_funs, &mut module_bytes);
+    encoding::encode_global_section(&mut module_bytes);
+
+    // start function is generated last, after all the MinCaml functions
+    let start_fun_idx = FunIdx(n_funs);
+    encoding::encode_start_section(start_fun_idx, &mut module_bytes);
+
+    encoding::encode_element_section(n_funs, &mut module_bytes);
+
+    module_bytes.extend_from_slice(&code_section);
+
+    module_bytes
 }
 
 fn cg_code_section(ctx: &mut WasmCtx, funs: &[lower::Fun], main: VarId) -> Vec<u8> {
@@ -315,13 +308,6 @@ fn cg_fun(ctx: &mut WasmCtx, fun: &lower::Fun) -> Vec<u8> {
     code.extend_from_slice(&locals_bytes);
     code.extend_from_slice(&fun_bytes);
     code
-}
-
-pub fn rep_type_to_wasm(ty: RepType) -> Ty {
-    match ty {
-        RepType::Word => Ty::I64,
-        RepType::Float => Ty::F64,
-    }
 }
 
 fn cg_stmt(ctx: &mut WasmCtx, builder: &mut FunBuilder, stmt: &lower::Stmt) {
@@ -464,3 +450,4 @@ fn cg_float_binop(builder: &mut FunBuilder, op: FloatBinOp) {
         FloatBinOp::Div => builder.f64_div(),
     }
 }
+*/

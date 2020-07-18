@@ -1,7 +1,7 @@
-use super::rep_type_to_wasm;
 use crate::{
     cg_types::RepType,
-    ctx::{Ctx, TypeId, VarId},
+    ctx::{Ctx, VarId},
+    type_check,
     type_check::Type,
 };
 
@@ -40,21 +40,27 @@ pub struct TableIdx(pub u32);
 // Converting front-end types to Wasm types
 //
 
-pub fn type_to_closure_type(ctx: &Ctx, var: VarId, ty_id: TypeId) -> FunTy {
-    match &*ctx.get_type(ty_id) {
+pub fn type_to_closure_type(ctx: &Ctx, ty_id: type_check::TypeIdx) -> FunTy {
+    match ctx.get_type(ty_id) {
         Type::Fun { args, ret } => {
             let mut args: Vec<Ty> = args
                 .iter()
-                .map(|arg| rep_type_to_wasm(RepType::from(arg)))
+                .map(|arg| rep_type_to_wasm(RepType::from(&ctx.get_type(*arg))))
                 .collect();
             args.insert(0, Ty::I64); // closure argument
-            let ret = Some(rep_type_to_wasm(RepType::from(&**ret)));
+            let ret = Some(rep_type_to_wasm(RepType::from(&ctx.get_type(ret))));
             FunTy { args, ret }
         }
         _ => panic!(
-            "Variable doesn't have function type: {} : {:?}",
-            ctx.get_var(var),
+            "Non-function in function position: {:?}",
             ctx.get_type(ty_id)
         ),
+    }
+}
+
+pub fn rep_type_to_wasm(ty: RepType) -> Ty {
+    match ty {
+        RepType::Word => Ty::I64,
+        RepType::Float => Ty::F64,
     }
 }
