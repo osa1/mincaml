@@ -96,6 +96,18 @@ pub fn encode_table_section(n_funs: u32, buf: &mut Vec<u8>) {
     buf.extend_from_slice(&vec_bytes);
 }
 
+pub fn encode_memory_section(buf: &mut Vec<u8>) {
+    let mut section_bytes = vec![];
+
+    encode_u32_uleb128(1, &mut section_bytes); // vec len
+    section_bytes.push(0x00); // no max limit
+    encode_u32_uleb128(1, &mut section_bytes); // min = 1 page
+
+    buf.push(5);
+    encode_u32_uleb128(section_bytes.len() as u32, buf);
+    buf.extend_from_slice(&section_bytes);
+}
+
 pub fn encode_global_section(buf: &mut Vec<u8>) {
     // section(vec(global))
     let mut section_bytes = vec![];

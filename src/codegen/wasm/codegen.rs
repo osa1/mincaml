@@ -283,7 +283,9 @@ pub fn codegen_module(
     let n_funs = (ctx.builtins().len() + module_ctx.funs.len()) as u32;
     encoding::encode_table_section(n_funs, &mut module_bytes);
 
-    // 5. memory section: NA
+    // 5. memory section: we can have at most one memory so we declare just one
+
+    encoding::encode_memory_section(&mut module_bytes);
 
     //
     // 6. global section: variables 'hp' (heap pointer) and 'hp_lim' (heap limit). Both are u32
