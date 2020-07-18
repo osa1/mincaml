@@ -198,7 +198,7 @@ impl Expr {
 
     pub fn get(array: ExprIdx, idx: ExprIdx, arena: &mut ExprArena) -> ExprIdx {
         arena.push(Expr {
-            kind: ExprKind::Array,
+            kind: ExprKind::Get,
             children: vec![array, idx],
         })
     }

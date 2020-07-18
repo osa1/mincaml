@@ -21,7 +21,7 @@ pub struct Ctx {
     /// RepTypes. Those variables are mapped to their RepTypes via this map.
     rep_ty_env: FxHashMap<VarId, RepType>,
     /// Where types live
-    ty_arena: TypeArena,
+    pub ty_arena: TypeArena,
     /// Built-in (RTS) variables mapped to their types
     builtins: Vec<(VarId, TypeIdx)>,
 }

@@ -60,6 +60,7 @@ fn record_pass_stats<A, F: FnOnce() -> A>(
     ret
 }
 
+/*
 type ObjectCode = Vec<u8>;
 
 fn compile_expr(
@@ -146,6 +147,7 @@ fn compile_expr(
     // Some(object_code)
     None
 }
+*/
 
 fn report_pass_stats(pass_stats: &[PassStats]) {
     // TODO: align columns
@@ -173,6 +175,52 @@ fn report_pass_stats(pass_stats: &[PassStats]) {
     println!("--------------------------------------------------------");
 }
 
+pub fn typecheck_file(path: &str, show_pass_stats: bool) {
+    let contents = std::fs::read_to_string(path).unwrap();
+    let mut pass_stats: Vec<PassStats> = Vec::with_capacity(10);
+
+    let tokens: Vec<Token> =
+        match record_pass_stats(&mut pass_stats, "tokenize", || tokenize(&contents)) {
+            Err(err) => {
+                println!("Lexer error: {:#?}", err);
+                return;
+            }
+            Ok(tokens) => tokens,
+        };
+
+    // println!("{:#?}", tokens);
+
+    let mut ctx = Default::default();
+
+    let mut expr_arena = PrimaryMap::new();
+    let expr = match record_pass_stats(&mut pass_stats, "parse", || {
+        parse(&mut ctx, &tokens, &mut expr_arena)
+    }) {
+        Err(err) => {
+            println!("Parser error: {:#?}", err);
+            return;
+        }
+        Ok(expr) => expr,
+    };
+
+    // println!("Expr: {:#?}", expr);
+
+    // let mut expr_tys: SecondaryMap<ExprIdx, Option<TypeIdx>> = SecondaryMap::new();
+    match record_pass_stats(&mut pass_stats, "type check", || {
+        type_check_pgm(&mut ctx, expr, &mut expr_arena)
+    }) {
+        Err(err) => {
+            println!("Type error: {:#?}", err);
+        }
+        Ok(()) => {}
+    };
+
+    if show_pass_stats {
+        report_pass_stats(&pass_stats);
+    }
+}
+
+/*
 pub fn compile_file(
     path: &str, out_dir: Option<&str>, dump_cc: bool, dump_cg: bool, show_pass_stats: bool,
 ) -> i32 {
@@ -194,7 +242,6 @@ fn link(path: &str, out_dir: Option<&str>, object_code: ObjectCode) -> i32 {
         .write_all(&object_code)
         .unwrap();
 
-    /*
         // Build RTS
         let output = Command::new("gcc")
             .args(&["rts.c", "-c", "-o", &format!("{}/rts.o", out_dir)])
@@ -221,7 +268,7 @@ fn link(path: &str, out_dir: Option<&str>, object_code: ObjectCode) -> i32 {
             .unwrap();
 
         assert!(output.status.success());
-    */
 
     0
 }
+*/
