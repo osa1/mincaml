@@ -1,6 +1,6 @@
 use crate::ast::*;
 use crate::common::*;
-use crate::ctx::{Ctx, VarId};
+use crate::ctx::Ctx;
 use crate::lexer::Token;
 use crate::var::CompilerPhase;
 

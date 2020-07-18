@@ -1,9 +1,7 @@
-use crate::{
-    cg_types::RepType,
-    ctx::{Ctx, VarId},
-    type_check,
-    type_check::Type,
-};
+use crate::cg_types::RepType;
+use crate::ctx::Ctx;
+use crate::type_check;
+use crate::type_check::Type;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Ty {

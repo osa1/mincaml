@@ -123,7 +123,7 @@ impl ModuleCtx {
         cg_expr(ctx, self, expr_arena, expr_tys, body);
 
         let FunCtx {
-            locals,
+            locals: _,
             local_tys,
             mut bytes,
         } = replace(&mut self.fun_ctx, current_fun_ctx);

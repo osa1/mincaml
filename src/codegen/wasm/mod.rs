@@ -1,7 +1,7 @@
 mod alloc;
 pub mod codegen;
 mod encoding;
-mod fun_builder;
+// mod fun_builder;
 mod instr;
 mod types;
 
