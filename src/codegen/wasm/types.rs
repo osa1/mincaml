@@ -45,7 +45,7 @@ pub fn type_to_closure_type(ctx: &Ctx, ty_id: type_check::TypeIdx) -> FunTy {
                 .iter()
                 .map(|arg| rep_type_to_wasm(RepType::from(&ctx.get_type(*arg))))
                 .collect();
-            args.insert(0, Ty::I64); // closure argument
+            args.insert(0, rep_type_to_wasm(RepType::Ptr)); // closure argument
             let ret = Some(rep_type_to_wasm(RepType::from(&ctx.get_type(ret))));
             FunTy { args, ret }
         }
@@ -58,6 +58,7 @@ pub fn type_to_closure_type(ctx: &Ctx, ty_id: type_check::TypeIdx) -> FunTy {
 
 pub fn rep_type_to_wasm(ty: RepType) -> Ty {
     match ty {
+        RepType::Ptr => Ty::I32,
         RepType::Word => Ty::I64,
         RepType::Float => Ty::F64,
     }

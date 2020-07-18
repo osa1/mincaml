@@ -482,8 +482,12 @@ fn cg_expr(
             }
 
             // Get function from the closure
-            local_get(closure_local, &mut module_ctx.fun_ctx.bytes);
-            field_read(closure_local, 0, Ty::I64, &mut module_ctx.fun_ctx.bytes);
+            field_read(
+                closure_local,
+                0,
+                rep_type_to_wasm(RepType::Ptr),
+                &mut module_ctx.fun_ctx.bytes,
+            );
 
             // Get function type
             let fun_ty = type_to_closure_type(ctx, expr_tys[fun].unwrap());

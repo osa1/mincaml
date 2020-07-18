@@ -43,8 +43,11 @@ pub fn i32_store(buf: &mut Vec<u8>) {
     buf.push(0); // offset
 }
 
+// memarg = {0, 0}
 pub fn i32_load(buf: &mut Vec<u8>) {
     buf.push(0x28);
+    buf.push(0); // align
+    buf.push(0); // offset
 }
 
 pub fn i32_add(buf: &mut Vec<u8>) {
