@@ -36,6 +36,17 @@ pub fn global_set(idx: GlobalIdx, buf: &mut Vec<u8>) {
     encode_u32_uleb128(idx.0, buf);
 }
 
+// memarg = {0, 0}
+pub fn i32_store(buf: &mut Vec<u8>) {
+    buf.push(0x36);
+    buf.push(0); // align
+    buf.push(0); // offset
+}
+
+pub fn i32_load(buf: &mut Vec<u8>) {
+    buf.push(0x28);
+}
+
 pub fn i32_add(buf: &mut Vec<u8>) {
     buf.push(0x6A);
 }

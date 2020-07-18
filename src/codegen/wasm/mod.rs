@@ -129,7 +129,6 @@ impl<'ctx> WasmCtx<'ctx> {
 }
 */
 
-
 /*
 pub fn codegen(ctx: &mut Ctx, funs: &[lower::Fun], main: VarId, _dump: bool) -> Vec<u8> {
     let mut ctx = WasmCtx::new(ctx, funs);

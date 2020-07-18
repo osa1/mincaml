@@ -39,39 +39,41 @@ struct ModuleCtx {
 }
 
 pub struct WasmFun {
-    // Variable name of the function
+    /// Variable name of the function
     pub var: VarId,
-    // Types of locals. Nth local has type locals[N].
+    /// Types of locals. Nth local has type locals[N].
     pub locals: Vec<Ty>,
-    // Function code
+    /// Function code (TODO: Does this include locals?)
     pub code: Vec<u8>,
-    // Index of the function
+    /// Index of the function
     pub fun_idx: FunIdx,
-    // Type index of the function
+    /// Type index of the function
     pub fun_ty_idx: TypeIdx,
-    // Index of the function in the module's table
+    /// Index of the function in the module's table
     pub fun_tbl_idx: u32,
 }
 
 struct FunCtx {
     // Named locals mapped to their indices
     locals: FxHashMap<VarId, LocalIdx>,
-    // Used to generate fresh unnamed locals
-    n_locals: LocalIdx,
+    // Locals generated so far. Includes arguments.
+    local_tys: Vec<Ty>,
+    // Function code, encoded. Does not include locals.
     bytes: Vec<u8>,
 }
 
 impl FunCtx {
-    fn add_local(&mut self, var: VarId) -> LocalIdx {
+    fn add_local(&mut self, var: VarId, ty: Ty) -> LocalIdx {
         assert!(!self.locals.contains_key(&var));
-        let local_idx = LocalIdx(self.locals.len() as u32);
+        let local_idx = LocalIdx(self.local_tys.len() as u32);
         self.locals.insert(var, local_idx);
+        self.local_tys.push(ty);
         local_idx
     }
 
-    fn fresh_local(&mut self) -> LocalIdx {
-        let local_idx = self.n_locals;
-        self.n_locals.0 += 1;
+    fn fresh_local(&mut self, ty: Ty) -> LocalIdx {
+        let local_idx = LocalIdx(self.local_tys.len() as u32);
+        self.local_tys.push(ty);
         local_idx
     }
 }
@@ -83,11 +85,17 @@ impl ModuleCtx {
         expr_arena: &ExprArena, expr_tys: &ExprTys, body: ExprIdx,
     ) -> u32 {
         // Locals will be [self (bndr), arg1, arg2, ...]
-        let locals: FxHashMap<VarId, LocalIdx> = ::std::iter::once(fun_bndr)
-            .chain(args.iter().copied())
-            .enumerate()
-            .map(|(i, v)| (v, LocalIdx(i as u32)))
-            .collect();
+        let mut local_tys: Vec<Ty> = Vec::with_capacity(args.len() + 1);
+        let mut locals: FxHashMap<VarId, LocalIdx> = Default::default();
+
+        local_tys.push(Ty::I32); // self
+        locals.insert(fun_bndr, LocalIdx(0)); // self
+
+        for (arg_i, arg) in args.iter().enumerate() {
+            let arg_ty = rep_type_to_wasm(ctx.var_rep_type(*arg));
+            local_tys.push(arg_ty);
+            locals.insert(*arg, LocalIdx(arg_i as u32 + 1));
+        }
 
         // In the function body we'll bind free variables as first thing
         let mut code = vec![];
@@ -104,7 +112,7 @@ impl ModuleCtx {
             &mut self.fun_ctx,
             FunCtx {
                 locals,
-                n_locals: LocalIdx((args.len() + 1) as u32),
+                local_tys,
                 bytes: code,
             },
         );
@@ -116,24 +124,17 @@ impl ModuleCtx {
 
         let FunCtx {
             locals,
-            n_locals: _,
+            local_tys,
             mut bytes,
         } = replace(&mut self.fun_ctx, current_fun_ctx);
 
         bytes.push(0x0B);
 
-        let mut locals = locals.into_iter().collect::<Vec<_>>();
-        locals.sort_by_key(|(_, idx)| *idx);
-        let locals = locals
-            .into_iter()
-            .map(|(var, _)| rep_type_to_wasm(ctx.var_rep_type(var)))
-            .collect::<Vec<_>>();
-
         self.funs.insert(
             fun_bndr,
             WasmFun {
                 var: fun_bndr,
-                locals,
+                locals: local_tys,
                 code: bytes,
                 fun_idx,
                 fun_tbl_idx: fun_idx.0,
@@ -180,7 +181,7 @@ pub fn codegen_module(
 
     let fun_ctx = FunCtx {
         locals: Default::default(),
-        n_locals: LocalIdx(0),
+        local_tys: vec![],
         bytes: vec![],
     };
 
@@ -197,8 +198,8 @@ pub fn codegen_module(
     cg_expr(ctx, &mut module_ctx, expr_arena, expr_tys, expr);
 
     let FunCtx {
-        locals: main_locals,
-        n_locals: _,
+        locals: _,
+        local_tys: main_locals,
         bytes: mut main_bytes,
     } = module_ctx.fun_ctx;
 
@@ -223,13 +224,6 @@ pub fn codegen_module(
         module_ctx.fun_ty_indices.push(main_ty_idx);
 
         let main_fun_idx = module_ctx.next_fun_idx;
-
-        let mut main_locals = main_locals.into_iter().collect::<Vec<_>>();
-        main_locals.sort_by_key(|(_, idx)| *idx);
-        let main_locals = main_locals
-            .into_iter()
-            .map(|(var, _)| rep_type_to_wasm(ctx.var_rep_type(var)))
-            .collect::<Vec<_>>();
 
         let main_var = ctx.fresh_codegen_var(CompilerPhase::ClosureConvert, RepType::Word);
 
@@ -378,7 +372,8 @@ fn cg_expr(
                 expr_tys,
                 expr_arena[expr].children[0],
             );
-            let local_idx = module_ctx.fun_ctx.add_local(bndr);
+            let bndr_ty = rep_type_to_wasm(ctx.var_rep_type(bndr));
+            let local_idx = module_ctx.fun_ctx.add_local(bndr, bndr_ty);
             local_set(local_idx, &mut module_ctx.fun_ctx.bytes);
             cg_expr(
                 ctx,
@@ -443,7 +438,8 @@ fn cg_expr(
                 ctx, type_idx, bndr, &fvs_vec, &args, expr_arena, expr_tys, rhs,
             );
 
-            let bndr_idx = module_ctx.fun_ctx.add_local(bndr);
+            let bndr_ty = rep_type_to_wasm(ctx.var_rep_type(bndr));
+            let bndr_idx = module_ctx.fun_ctx.add_local(bndr, bndr_ty);
 
             // Allocate the closure
             gen_alloc(((fvs.len() + 1) * 8) as u32, &mut module_ctx.fun_ctx.bytes);
@@ -472,7 +468,7 @@ fn cg_expr(
 
             // Compile and bind closure
             cg_expr(ctx, module_ctx, expr_arena, expr_tys, fun);
-            let closure_local = module_ctx.fun_ctx.fresh_local();
+            let closure_local = module_ctx.fun_ctx.fresh_local(Ty::I32);
             local_set(closure_local, &mut module_ctx.fun_ctx.bytes);
 
             // Push closure arg
@@ -566,6 +562,9 @@ fn field_read(base: LocalIdx, offset: u32, ty: Ty, bytes: &mut Vec<u8>) {
     local_get(base, bytes); // base
     i32_add(bytes); // address = base + offset
     match ty {
+        Ty::I32 => {
+            i32_load(bytes);
+        }
         Ty::I64 => {
             i64_load(bytes);
         }
@@ -583,6 +582,9 @@ fn field_store(base: LocalIdx, offset: u32, value: LocalIdx, ty: Ty, bytes: &mut
     i32_add(bytes); // address = base + offset
     local_get(value, bytes); // value
     match ty {
+        Ty::I32 => {
+            i32_store(bytes);
+        }
         Ty::I64 => {
             i64_store(bytes);
         }

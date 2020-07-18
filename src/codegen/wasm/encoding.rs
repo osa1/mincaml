@@ -201,7 +201,7 @@ pub fn encode_result_type(ty: &[Ty], buf: &mut Vec<u8>) {
 
 pub fn encode_ty(ty: Ty, buf: &mut Vec<u8>) {
     let byte = match ty {
-        // Ty::I32 => 0x7F,
+        Ty::I32 => 0x7F,
         Ty::I64 => 0x7E,
         // Ty::F32 => 0x7D,
         Ty::F64 => 0x7C,

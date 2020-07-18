@@ -7,7 +7,7 @@ use crate::{
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Ty {
-    // I32, unused
+    I32,
     I64,
     // F32, unused
     F64,

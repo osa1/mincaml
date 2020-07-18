@@ -208,32 +208,35 @@ fn link(path: &str, out_dir: Option<&str>, object_code: ObjectCode) -> i32 {
         .write_all(&object_code)
         .unwrap();
 
-    // Build RTS
-    let output = Command::new("gcc")
-        .args(&["rts.c", "-c", "-o", &format!("{}/rts.o", out_dir)])
-        .spawn()
-        .unwrap()
-        .wait_with_output()
-        .unwrap();
-
-    assert!(output.status.success());
-
-    // Link
-    let output = Command::new("gcc")
-        .args(&[
-            &o_file_name,
-            "rts.o",
-            "-o",
-            file_stem,
-            "-lm", // link math library
-        ])
-        .current_dir(out_dir)
-        .spawn()
-        .unwrap()
-        .wait_with_output()
-        .unwrap();
-
-    assert!(output.status.success());
-
     0
+    /*
+        // Build RTS
+        let output = Command::new("gcc")
+            .args(&["rts.c", "-c", "-o", &format!("{}/rts.o", out_dir)])
+            .spawn()
+            .unwrap()
+            .wait_with_output()
+            .unwrap();
+
+        assert!(output.status.success());
+
+        // Link
+        let output = Command::new("gcc")
+            .args(&[
+                &o_file_name,
+                "rts.o",
+                "-o",
+                file_stem,
+                "-lm", // link math library
+            ])
+            .current_dir(out_dir)
+            .spawn()
+            .unwrap()
+            .wait_with_output()
+            .unwrap();
+
+        assert!(output.status.success());
+
+        0
+    */
 }
