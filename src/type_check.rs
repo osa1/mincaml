@@ -3,10 +3,9 @@
 use crate::ast::*;
 use crate::ctx::{Ctx, VarId};
 use crate::locals::Locals;
-use crate::utils::take;
 use crate::var::Uniq;
 
-use cranelift_entity::{entity_impl, PrimaryMap};
+use cranelift_entity::{entity_impl, PrimaryMap, SecondaryMap};
 
 use std::ops::{Index, IndexMut};
 use std::rc::Rc;
@@ -73,22 +72,6 @@ impl TypeArena {
         TypeArena { arena }
     }
 
-    pub fn unit(&self) -> TypeIdx {
-        UNIT_IDX
-    }
-
-    pub fn bool(&self) -> TypeIdx {
-        BOOL_IDX
-    }
-
-    pub fn int(&self) -> TypeIdx {
-        INT_IDX
-    }
-
-    pub fn float(&self) -> TypeIdx {
-        FLOAT_IDX
-    }
-
     pub fn fun(&mut self, args: Vec<TypeIdx>, ret: TypeIdx) -> TypeIdx {
         self.arena.push(Type::Fun { args, ret })
     }
@@ -127,10 +110,8 @@ struct Binder {
 type Scope = Locals<Rc<str>, Binder>;
 
 pub fn type_check_pgm(
-    ctx: &mut Ctx,
-    expr: ExprIdx,
-    expr_arena: &mut ExprArena,
-    // expr_tys: &mut SecondaryMap<ExprIdx, Option<TypeIdx>>,
+    ctx: &mut Ctx, expr: ExprIdx, expr_arena: &mut ExprArena,
+    expr_tys: &mut SecondaryMap<ExprIdx, Option<TypeIdx>>,
 ) -> Result<(), TypeErr> {
     let mut global_scope: FxHashMap<Rc<str>, Binder> = Default::default();
 
@@ -151,6 +132,7 @@ pub fn type_check_pgm(
     let mut ty_env: TypeEnv = Default::default();
     let ty = type_check(
         ctx,
+        expr_tys,
         &mut ty_env,
         &mut subst_env,
         &mut scope,
@@ -204,76 +186,76 @@ fn norm_ty(ty_arena: &mut TypeArena, substs: &SubstEnv, ty_idx: TypeIdx) {
 }
 
 fn type_check(
-    ctx: &mut Ctx, ty_env: &mut TypeEnv, subst_env: &mut SubstEnv, scope: &mut Scope,
-    expr_arena: &mut ExprArena, expr: ExprIdx,
+    ctx: &mut Ctx, expr_tys: &mut SecondaryMap<ExprIdx, Option<TypeIdx>>, ty_env: &mut TypeEnv,
+    subst_env: &mut SubstEnv, scope: &mut Scope, expr_arena: &mut ExprArena, expr: ExprIdx,
 ) -> Result<TypeIdx, TypeErr> {
     let expr_kind = expr_arena[expr].kind.clone();
-    match expr_kind {
-        ExprKind::Unit => Ok(UNIT_IDX),
-        ExprKind::Bool(_) => Ok(BOOL_IDX),
-        ExprKind::Int(_) => Ok(INT_IDX),
-        ExprKind::Float(_) => Ok(FLOAT_IDX),
+    let ty = match expr_kind {
+        ExprKind::Unit => UNIT_IDX,
+        ExprKind::Bool(_) => BOOL_IDX,
+        ExprKind::Int(_) => INT_IDX,
+        ExprKind::Float(_) => FLOAT_IDX,
 
         ExprKind::Not => {
             let e = expr_arena[expr].children[0];
-            let e_ty = type_check(ctx, ty_env, subst_env, scope, expr_arena, e)?;
+            let e_ty = type_check(ctx, expr_tys, ty_env, subst_env, scope, expr_arena, e)?;
             unify(&mut ctx.ty_arena, subst_env, BOOL_IDX, e_ty)?;
-            Ok(BOOL_IDX)
+            BOOL_IDX
         }
 
         ExprKind::Neg => {
             let e = expr_arena[expr].children[0];
-            let e_ty = type_check(ctx, ty_env, subst_env, scope, expr_arena, e)?;
+            let e_ty = type_check(ctx, expr_tys, ty_env, subst_env, scope, expr_arena, e)?;
             unify(&mut ctx.ty_arena, subst_env, INT_IDX, e_ty)?;
-            Ok(INT_IDX)
+            INT_IDX
         }
 
         ExprKind::IntBinOp(_op) => {
             let e1 = expr_arena[expr].children[0];
             let e2 = expr_arena[expr].children[1];
-            let e1_ty = type_check(ctx, ty_env, subst_env, scope, expr_arena, e1)?;
-            let e2_ty = type_check(ctx, ty_env, subst_env, scope, expr_arena, e2)?;
+            let e1_ty = type_check(ctx, expr_tys, ty_env, subst_env, scope, expr_arena, e1)?;
+            let e2_ty = type_check(ctx, expr_tys, ty_env, subst_env, scope, expr_arena, e2)?;
             unify(&mut ctx.ty_arena, subst_env, INT_IDX, e1_ty)?;
             unify(&mut ctx.ty_arena, subst_env, INT_IDX, e2_ty)?;
-            Ok(INT_IDX)
+            INT_IDX
         }
 
         ExprKind::FNeg => {
             let e = expr_arena[expr].children[0];
-            let e_ty = type_check(ctx, ty_env, subst_env, scope, expr_arena, e)?;
+            let e_ty = type_check(ctx, expr_tys, ty_env, subst_env, scope, expr_arena, e)?;
             unify(&mut ctx.ty_arena, subst_env, FLOAT_IDX, e_ty)?;
-            Ok(FLOAT_IDX)
+            FLOAT_IDX
         }
 
         ExprKind::FloatBinOp(_op) => {
             let e1 = expr_arena[expr].children[0];
             let e2 = expr_arena[expr].children[1];
-            let e1_ty = type_check(ctx, ty_env, subst_env, scope, expr_arena, e1)?;
-            let e2_ty = type_check(ctx, ty_env, subst_env, scope, expr_arena, e2)?;
+            let e1_ty = type_check(ctx, expr_tys, ty_env, subst_env, scope, expr_arena, e1)?;
+            let e2_ty = type_check(ctx, expr_tys, ty_env, subst_env, scope, expr_arena, e2)?;
             unify(&mut ctx.ty_arena, subst_env, FLOAT_IDX, e1_ty)?;
             unify(&mut ctx.ty_arena, subst_env, FLOAT_IDX, e2_ty)?;
-            Ok(FLOAT_IDX)
+            FLOAT_IDX
         }
 
         ExprKind::Cmp(_op) => {
             let e1 = expr_arena[expr].children[0];
             let e2 = expr_arena[expr].children[1];
-            let e1_ty = type_check(ctx, ty_env, subst_env, scope, expr_arena, e1)?;
-            let e2_ty = type_check(ctx, ty_env, subst_env, scope, expr_arena, e2)?;
+            let e1_ty = type_check(ctx, expr_tys, ty_env, subst_env, scope, expr_arena, e1)?;
+            let e2_ty = type_check(ctx, expr_tys, ty_env, subst_env, scope, expr_arena, e2)?;
             unify(&mut ctx.ty_arena, subst_env, e1_ty, e2_ty)?;
-            Ok(BOOL_IDX)
+            BOOL_IDX
         }
 
         ExprKind::If => {
             let e1 = expr_arena[expr].children[0];
             let e2 = expr_arena[expr].children[1];
             let e3 = expr_arena[expr].children[2];
-            let e1_ty = type_check(ctx, ty_env, subst_env, scope, expr_arena, e1)?;
-            let e2_ty = type_check(ctx, ty_env, subst_env, scope, expr_arena, e2)?;
-            let e3_ty = type_check(ctx, ty_env, subst_env, scope, expr_arena, e3)?;
+            let e1_ty = type_check(ctx, expr_tys, ty_env, subst_env, scope, expr_arena, e1)?;
+            let e2_ty = type_check(ctx, expr_tys, ty_env, subst_env, scope, expr_arena, e2)?;
+            let e3_ty = type_check(ctx, expr_tys, ty_env, subst_env, scope, expr_arena, e3)?;
             unify(&mut ctx.ty_arena, subst_env, e1_ty, BOOL_IDX)?;
             unify(&mut ctx.ty_arena, subst_env, e2_ty, e3_ty)?;
-            Ok(e2_ty)
+            e2_ty
         }
 
         ExprKind::Let { bndr } => {
@@ -282,7 +264,7 @@ fn type_check(
             let bndr_var = ctx.fresh_tyvar();
             let bndr_ty = ctx.ty_arena.var(bndr_var);
             ty_env.insert(bndr, bndr_ty.clone());
-            let rhs_ty = type_check(ctx, ty_env, subst_env, scope, expr_arena, rhs)?;
+            let rhs_ty = type_check(ctx, expr_tys, ty_env, subst_env, scope, expr_arena, rhs)?;
             unify(&mut ctx.ty_arena, subst_env, bndr_ty, rhs_ty)?;
             scope.new_scope();
             scope.add(
@@ -292,17 +274,17 @@ fn type_check(
                     ty: bndr_ty,
                 },
             );
-            let ret = type_check(ctx, ty_env, subst_env, scope, expr_arena, body);
+            let ret = type_check(ctx, expr_tys, ty_env, subst_env, scope, expr_arena, body);
             scope.pop_scope();
-            ret
+            ret?
         }
 
         ExprKind::Var(var) => match scope.get(&ctx.var_name(var)) {
             Some(Binder { binder, ty }) => {
                 expr_arena[expr].kind = ExprKind::Var(*binder);
-                Ok(*ty)
+                *ty
             }
-            None => Err(TypeErr::UnboundVar(var)),
+            None => Err(TypeErr::UnboundVar(var))?,
         },
 
         ExprKind::LetRec { bndr, ref args } => {
@@ -349,14 +331,14 @@ fn type_check(
             }
 
             // Type check RHS with fun and args in scope
-            let rhs_ty_ = type_check(ctx, ty_env, subst_env, scope, expr_arena, rhs)?;
+            let rhs_ty_ = type_check(ctx, expr_tys, ty_env, subst_env, scope, expr_arena, rhs)?;
             unify(&mut ctx.ty_arena, subst_env, rhs_ty, rhs_ty_)?;
             // Type check body with just the fun in scope
             scope.pop_scope();
-            let ret = type_check(ctx, ty_env, subst_env, scope, expr_arena, body);
+            let ret = type_check(ctx, expr_tys, ty_env, subst_env, scope, expr_arena, body);
             // Reset environment
             scope.pop_scope();
-            ret
+            ret?
         }
 
         ExprKind::App => {
@@ -365,11 +347,14 @@ fn type_check(
             let ret_ty = ctx.ty_arena.var(ret_var);
             let mut arg_tys: Vec<TypeIdx> = Vec::with_capacity(children.len() - 1);
             for arg in &children[1..] {
-                arg_tys.push(type_check(ctx, ty_env, subst_env, scope, expr_arena, *arg)?);
+                arg_tys.push(type_check(
+                    ctx, expr_tys, ty_env, subst_env, scope, expr_arena, *arg,
+                )?);
             }
             let fun_ty = ctx.ty_arena.fun(arg_tys, ret_ty);
             let fun_ty_ = type_check(
                 ctx,
+                expr_tys,
                 ty_env,
                 subst_env,
                 scope,
@@ -377,16 +362,18 @@ fn type_check(
                 expr_arena[expr].children[0],
             )?;
             unify(&mut ctx.ty_arena, subst_env, fun_ty, fun_ty_)?;
-            Ok(ret_ty)
+            ret_ty
         }
 
         ExprKind::Tuple => {
             let args = expr_arena[expr].children.clone();
             let mut arg_tys: Vec<TypeIdx> = Vec::with_capacity(args.len());
             for arg in args {
-                arg_tys.push(type_check(ctx, ty_env, subst_env, scope, expr_arena, arg)?);
+                arg_tys.push(type_check(
+                    ctx, expr_tys, ty_env, subst_env, scope, expr_arena, arg,
+                )?);
             }
-            Ok(ctx.ty_arena.tuple(arg_tys))
+            ctx.ty_arena.tuple(arg_tys)
         }
 
         ExprKind::LetTuple { ref bndrs } => {
@@ -401,7 +388,7 @@ fn type_check(
                 arg_tys.push(bndr_ty);
             }
             let tuple_ty = ctx.ty_arena.tuple(arg_tys.clone());
-            let rhs_ty = type_check(ctx, ty_env, subst_env, scope, expr_arena, rhs)?;
+            let rhs_ty = type_check(ctx, expr_tys, ty_env, subst_env, scope, expr_arena, rhs)?;
             unify(&mut ctx.ty_arena, subst_env, rhs_ty, tuple_ty)?;
             scope.new_scope();
             for (bndr, bndr_type) in bndrs.iter().zip(arg_tys.into_iter()) {
@@ -413,18 +400,18 @@ fn type_check(
                     },
                 );
             }
-            let ret = type_check(ctx, ty_env, subst_env, scope, expr_arena, body);
+            let ret = type_check(ctx, expr_tys, ty_env, subst_env, scope, expr_arena, body);
             scope.pop_scope();
-            ret
+            ret?
         }
 
         ExprKind::Array => {
             let len = expr_arena[expr].children[0];
             let elem = expr_arena[expr].children[1];
-            let len_ty = type_check(ctx, ty_env, subst_env, scope, expr_arena, len)?;
+            let len_ty = type_check(ctx, expr_tys, ty_env, subst_env, scope, expr_arena, len)?;
             unify(&mut ctx.ty_arena, subst_env, len_ty, INT_IDX)?;
-            let elem_ty = type_check(ctx, ty_env, subst_env, scope, expr_arena, elem)?;
-            Ok(ctx.ty_arena.array(elem_ty))
+            let elem_ty = type_check(ctx, expr_tys, ty_env, subst_env, scope, expr_arena, elem)?;
+            ctx.ty_arena.array(elem_ty)
         }
 
         ExprKind::Get => {
@@ -433,11 +420,11 @@ fn type_check(
             let array_elem_var = ctx.fresh_tyvar();
             let array_elem_ty = ctx.ty_arena.var(array_elem_var);
             let array_ty = ctx.ty_arena.array(array_elem_ty);
-            let e1_ty = type_check(ctx, ty_env, subst_env, scope, expr_arena, e1)?;
+            let e1_ty = type_check(ctx, expr_tys, ty_env, subst_env, scope, expr_arena, e1)?;
             unify(&mut ctx.ty_arena, subst_env, e1_ty, array_ty)?;
-            let e2_ty = type_check(ctx, ty_env, subst_env, scope, expr_arena, e2)?;
+            let e2_ty = type_check(ctx, expr_tys, ty_env, subst_env, scope, expr_arena, e2)?;
             unify(&mut ctx.ty_arena, subst_env, e2_ty, INT_IDX)?;
-            Ok(array_elem_ty)
+            array_elem_ty
         }
 
         ExprKind::Put => {
@@ -447,15 +434,18 @@ fn type_check(
             let array_elem_var = ctx.fresh_tyvar();
             let array_elem_ty = ctx.ty_arena.var(array_elem_var);
             let array_ty = ctx.ty_arena.array(array_elem_ty);
-            let e1_ty = type_check(ctx, ty_env, subst_env, scope, expr_arena, e1)?;
+            let e1_ty = type_check(ctx, expr_tys, ty_env, subst_env, scope, expr_arena, e1)?;
             unify(&mut ctx.ty_arena, subst_env, e1_ty, array_ty)?;
-            let e2_ty = type_check(ctx, ty_env, subst_env, scope, expr_arena, e2)?;
+            let e2_ty = type_check(ctx, expr_tys, ty_env, subst_env, scope, expr_arena, e2)?;
             unify(&mut ctx.ty_arena, subst_env, e2_ty, INT_IDX)?;
-            let e3_ty = type_check(ctx, ty_env, subst_env, scope, expr_arena, e3)?;
+            let e3_ty = type_check(ctx, expr_tys, ty_env, subst_env, scope, expr_arena, e3)?;
             unify(&mut ctx.ty_arena, subst_env, e3_ty, array_elem_ty)?;
-            Ok(UNIT_IDX)
+            UNIT_IDX
         }
-    }
+    };
+
+    expr_tys[expr] = Some(ty);
+    Ok(ty)
 }
 
 fn unify(

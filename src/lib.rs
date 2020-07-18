@@ -205,9 +205,9 @@ pub fn typecheck_file(path: &str, show_pass_stats: bool) {
 
     // println!("Expr: {:#?}", expr);
 
-    // let mut expr_tys: SecondaryMap<ExprIdx, Option<TypeIdx>> = SecondaryMap::new();
+    let mut expr_tys: SecondaryMap<ExprIdx, Option<TypeIdx>> = SecondaryMap::new();
     match record_pass_stats(&mut pass_stats, "type check", || {
-        type_check_pgm(&mut ctx, expr, &mut expr_arena)
+        type_check_pgm(&mut ctx, expr, &mut expr_arena, &mut expr_tys)
     }) {
         Err(err) => {
             println!("Type error: {:#?}", err);
