@@ -425,15 +425,22 @@ fn cg_expr(
 
             // Collect function's free variables. TODO: redundant clone below to avoid borrowchk
             // issues
-            let fvs = match module_ctx.fvs.get(&bndr) {
+            let mut fvs = match module_ctx.fvs.get(&bndr) {
                 None => {
                     let mut fvs_: FxHashSet<VarId> = Default::default();
-                    fvs(expr_arena, rhs, &mut fvs_);
+                    fvs(ctx, expr_arena, rhs, &mut fvs_);
                     module_ctx.fvs.insert(bndr, fvs_);
                     module_ctx.fvs.get(&bndr).unwrap().clone()
                 }
                 Some(fvs) => fvs.clone(),
             };
+
+            fvs.remove(&bndr);
+            for arg in &args {
+                fvs.remove(arg);
+            }
+
+            let fvs = fvs;
 
             let fvs_vec = fvs.iter().copied().collect::<Vec<_>>();
             let fun_tbl_idx = module_ctx.new_closure(
@@ -455,6 +462,7 @@ fn cg_expr(
 
             // Store free variables
             for fv in &fvs_vec {
+                println!("fv: {}", ctx.get_var(*fv));
                 let ty = rep_type_to_wasm(ctx.var_rep_type(*fv));
                 let fv_idx = module_ctx.fun_ctx.locals.get(fv).unwrap();
                 field_store(bndr_idx, fv_idx.0 + 1, *fv_idx, ty, bytes);
@@ -503,57 +511,59 @@ fn cg_expr(
     }
 }
 
-fn fvs(expr_arena: &ExprArena, expr: ExprIdx, acc: &mut FxHashSet<VarId>) {
+fn fvs(ctx: &Ctx, expr_arena: &ExprArena, expr: ExprIdx, acc: &mut FxHashSet<VarId>) {
     match &expr_arena[expr].kind {
         ExprKind::Unit | ExprKind::Bool(_) | ExprKind::Int(_) | ExprKind::Float(_) => {}
         ExprKind::Not | ExprKind::Neg | ExprKind::FNeg => {
-            fvs(expr_arena, expr_arena[expr].children[0], acc)
+            fvs(ctx, expr_arena, expr_arena[expr].children[0], acc)
         }
         ExprKind::FloatBinOp(_)
         | ExprKind::IntBinOp(_)
         | ExprKind::Get
         | ExprKind::Array
         | ExprKind::Cmp(_) => {
-            fvs(expr_arena, expr_arena[expr].children[0], acc);
-            fvs(expr_arena, expr_arena[expr].children[1], acc);
+            fvs(ctx, expr_arena, expr_arena[expr].children[0], acc);
+            fvs(ctx, expr_arena, expr_arena[expr].children[1], acc);
         }
         ExprKind::If | ExprKind::Put => {
-            fvs(expr_arena, expr_arena[expr].children[0], acc);
-            fvs(expr_arena, expr_arena[expr].children[1], acc);
-            fvs(expr_arena, expr_arena[expr].children[2], acc);
+            fvs(ctx, expr_arena, expr_arena[expr].children[0], acc);
+            fvs(ctx, expr_arena, expr_arena[expr].children[1], acc);
+            fvs(ctx, expr_arena, expr_arena[expr].children[2], acc);
         }
         ExprKind::Let { bndr } => {
             // Order doesn't matter as we don't have shadowing
-            fvs(expr_arena, expr_arena[expr].children[0], acc);
-            fvs(expr_arena, expr_arena[expr].children[1], acc);
+            fvs(ctx, expr_arena, expr_arena[expr].children[0], acc);
+            fvs(ctx, expr_arena, expr_arena[expr].children[1], acc);
             acc.remove(&bndr);
         }
         ExprKind::Var(var) => {
-            acc.insert(*var);
+            if !ctx.is_builtin_var(*var) {
+                acc.insert(*var);
+            }
         }
         ExprKind::LetRec { bndr, args } => {
             // Order doesn't matter as we don't have shadowing
-            fvs(expr_arena, expr_arena[expr].children[0], acc);
-            fvs(expr_arena, expr_arena[expr].children[1], acc);
+            fvs(ctx, expr_arena, expr_arena[expr].children[0], acc);
+            fvs(ctx, expr_arena, expr_arena[expr].children[1], acc);
             acc.remove(&bndr);
             for arg in args {
                 acc.remove(&arg);
             }
         }
         ExprKind::App => {
-            fvs(expr_arena, expr_arena[expr].children[0], acc);
+            fvs(ctx, expr_arena, expr_arena[expr].children[0], acc);
             for arg in &expr_arena[expr].children[1..] {
-                fvs(expr_arena, *arg, acc);
+                fvs(ctx, expr_arena, *arg, acc);
             }
         }
         ExprKind::Tuple => {
             for e in &expr_arena[expr].children {
-                fvs(expr_arena, *e, acc);
+                fvs(ctx, expr_arena, *e, acc);
             }
         }
         ExprKind::LetTuple { bndrs } => {
-            fvs(expr_arena, expr_arena[expr].children[0], acc);
-            fvs(expr_arena, expr_arena[expr].children[1], acc);
+            fvs(ctx, expr_arena, expr_arena[expr].children[0], acc);
+            fvs(ctx, expr_arena, expr_arena[expr].children[1], acc);
             for bndr in bndrs {
                 acc.remove(&bndr);
             }
