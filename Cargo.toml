@@ -17,12 +17,12 @@ name = "test"
 path = "bin/test.rs"
 
 [dependencies]
-cranelift-codegen = "0.63"
-cranelift-entity = "0.63"
-cranelift-frontend = "0.63"
-cranelift-module = "0.63"
-cranelift-native = "0.63"
-cranelift-object = "0.63"
+cranelift-codegen = "0.66"
+cranelift-entity = "0.66"
+cranelift-frontend = "0.66"
+cranelift-module = "0.66"
+cranelift-native = "0.66"
+cranelift-object = "0.66"
 fxhash = "0.2.1"
 
 [profile.release]

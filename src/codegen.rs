@@ -12,7 +12,7 @@ use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use cranelift_module::{default_libcall_names, DataId, FuncId, Linkage, Module};
 use cranelift_object::{ObjectBackend, ObjectBuilder, ObjectProduct};
 
-use fxhash::FxHashMap;
+use fxhash::{FxHashMap, FxHashSet};
 
 use crate::cg_types::RepType;
 use crate::common::{BinOp, Cmp, FloatBinOp, IntBinOp};
@@ -24,12 +24,15 @@ pub fn codegen(ctx: &mut Ctx, funs: &[lower::Fun], main_id: VarId, dump: bool) -
     // Module and FunctionBuilderContext are used for the whole compilation unit. Each function
     // gets its own FunctionBuilder.
     let codegen_flags: settings::Flags = settings::Flags::new(settings::builder());
-    let mut module: Module<ObjectBackend> = Module::new(ObjectBuilder::new(
-        // How does this know I'm building for x86_64 Linux?
-        cranelift_native::builder().unwrap().finish(codegen_flags),
-        [1, 2, 3, 4, 5, 6, 7, 8], // TODO: what is this?
-        default_libcall_names(),
-    ));
+    let mut module: Module<ObjectBackend> = Module::new(
+        ObjectBuilder::new(
+            // How does this know I'm building for x86_64 Linux?
+            cranelift_native::builder().unwrap().finish(codegen_flags),
+            [1, 2, 3, 4, 5, 6, 7, 8], // TODO: what is this?
+            default_libcall_names(),
+        )
+        .unwrap(),
+    );
 
     let mut fn_builder_ctx: FunctionBuilderContext = FunctionBuilderContext::new();
 
@@ -274,6 +277,7 @@ fn codegen_fun(
     }
 
     // Declare locals (TODO: we should probably have these readily available in lower::Fun)
+    let mut declared: FxHashSet<VarId> = Default::default();
     for lower::Block { stmts, .. } in blocks.values().filter_map(lower::BlockData::get_block) {
         for stmt in stmts {
             // let mut s = String::new();
@@ -281,10 +285,14 @@ fn codegen_fun(
             // println!("stmt: {}", s);
 
             match stmt {
-                lower::Stmt::Asgn(lower::Asgn { lhs, rhs: _ }) => {
-                    let lhs_cl_var = Variable::new(ctx.get_var(*lhs).get_uniq().0.get() as usize);
-                    let lhs_abi_type = rep_type_abi(ctx.var_rep_type(*lhs));
-                    builder.declare_var(lhs_cl_var, lhs_abi_type);
+                lower::Stmt::Asgn(lower::Asgn { lhs, rhs }) => {
+                    if !declared.contains(lhs) {
+                        declared.insert(*lhs);
+                        let lhs_cl_var =
+                            Variable::new(ctx.get_var(*lhs).get_uniq().0.get() as usize);
+                        let lhs_abi_type = rep_type_abi(ctx.var_rep_type(*lhs));
+                        builder.declare_var(lhs_cl_var, lhs_abi_type);
+                    }
                 }
                 lower::Stmt::Expr(_) => {}
             }
