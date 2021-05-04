@@ -134,7 +134,7 @@ fn create_dir(path: &str) {
     match fs::create_dir(path) {
         Ok(()) => (),
         Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => (),
-        Err(err) => panic!(err),
+        Err(err) => panic!("Unable to create dir {:?}: {:?}", path, err),
     }
 }
 
