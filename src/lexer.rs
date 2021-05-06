@@ -149,11 +149,6 @@ lexer! {
                 }
             },
 
-        // TODO: Having to add these too rules is a bit counter intuitive. Maybe
-        // consider this a lexgen bug?
-        '*',
-        '(',
-
         _,
     },
 }
