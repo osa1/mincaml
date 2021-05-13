@@ -22,11 +22,7 @@ fn run_ocaml(file_path: &str) -> String {
 
 enum McError {
     CompileError,
-    RunError {
-        exit_code: ExitStatus,
-        stderr: String,
-        stdout: String,
-    },
+    RunError { exit_code: ExitStatus, stderr: String, stdout: String },
 }
 
 fn run_mc(file_path_str: &str) -> Result<String, McError> {
@@ -40,11 +36,7 @@ fn run_mc(file_path_str: &str) -> Result<String, McError> {
         return Err(McError::CompileError);
     }
 
-    let Output {
-        status,
-        stdout,
-        stderr,
-    } = Command::new(&format!("_test/{}", file_stem_str))
+    let Output { status, stdout, stderr } = Command::new(&format!("_test/{}", file_stem_str))
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -55,11 +47,7 @@ fn run_mc(file_path_str: &str) -> Result<String, McError> {
     if !status.success() || !stderr.is_empty() {
         let stdout = String::from_utf8(stdout).unwrap();
         let stderr = String::from_utf8(stderr).unwrap();
-        return Err(McError::RunError {
-            exit_code: status,
-            stdout,
-            stderr,
-        });
+        return Err(McError::RunError { exit_code: status, stdout, stderr });
     }
 
     Ok(String::from_utf8(stdout).unwrap())
@@ -86,11 +74,7 @@ fn run_test(path: &Path) -> TestResult {
             }
         }
         Err(McError::CompileError) => TestResult::Fail("Compile error".to_string()),
-        Err(McError::RunError {
-            exit_code,
-            stderr,
-            stdout,
-        }) => TestResult::Fail(format!(
+        Err(McError::RunError { exit_code, stderr, stdout }) => TestResult::Fail(format!(
             "Generated program returned {}\nstderr: {:?}\nstdout: {:?}",
             exit_code, stderr, stdout
         )),

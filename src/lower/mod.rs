@@ -45,11 +45,7 @@ struct BlockBuilder {
 
 impl BlockBuilder {
     fn new(idx: BlockIdx) -> Self {
-        Self {
-            idx,
-            stmts: vec![],
-            comment: None,
-        }
+        Self { idx, stmts: vec![], comment: None }
     }
 
     fn asgn(&mut self, lhs: VarId, rhs: Expr) {
@@ -78,11 +74,7 @@ struct CcCtx<'ctx> {
 
 impl<'ctx> CcCtx<'ctx> {
     fn new(ctx: &'ctx mut Ctx) -> Self {
-        Self {
-            ctx,
-            funs: vec![],
-            blocks: PrimaryMap::new(),
-        }
+        Self { ctx, funs: vec![], blocks: PrimaryMap::new() }
     }
 
     fn fresh_var(&mut self, rep_type: RepType) -> VarId {
@@ -96,43 +88,25 @@ impl<'ctx> CcCtx<'ctx> {
 
     fn fork_fun<F: FnOnce(&mut CcCtx) -> FunSig>(&mut self, fork: F) {
         let blocks = ::std::mem::replace(&mut self.blocks, PrimaryMap::new());
-        let FunSig {
-            name,
-            args,
-            return_type,
-        } = fork(self);
+        let FunSig { name, args, return_type } = fork(self);
         let fun_blocks = ::std::mem::replace(&mut self.blocks, blocks);
-        self.funs.push(Fun {
-            name,
-            args,
-            blocks: fun_blocks,
-            return_type,
-        });
+        self.funs
+            .push(Fun { name, args, blocks: fun_blocks, return_type });
     }
 
     fn finish_block(&mut self, block: BlockBuilder, sequel: Sequel, value: Atom) {
-        let BlockBuilder {
-            idx,
-            mut stmts,
-            comment,
-        } = block;
+        let BlockBuilder { idx, mut stmts, comment } = block;
 
         let exit = match sequel {
             Sequel::Return => match value {
                 Atom::Unit => {
                     let tmp = self.fresh_var(RepType::Word);
-                    stmts.push(Stmt::Asgn(Asgn {
-                        lhs: tmp,
-                        rhs: Expr::Atom(Atom::Unit),
-                    }));
+                    stmts.push(Stmt::Asgn(Asgn { lhs: tmp, rhs: Expr::Atom(Atom::Unit) }));
                     Exit::Return(tmp)
                 }
                 Atom::Int(i) => {
                     let tmp = self.fresh_var(RepType::Word);
-                    stmts.push(Stmt::Asgn(Asgn {
-                        lhs: tmp,
-                        rhs: Expr::Atom(Atom::Int(i)),
-                    }));
+                    stmts.push(Stmt::Asgn(Asgn { lhs: tmp, rhs: Expr::Atom(Atom::Int(i)) }));
                     Exit::Return(tmp)
                 }
                 Atom::Float(f) => {
@@ -151,22 +125,14 @@ impl<'ctx> CcCtx<'ctx> {
                     // happen somehow?
                     Atom::Var(rhs) if lhs == rhs => {}
                     _ => {
-                        stmts.push(Stmt::Asgn(Asgn {
-                            lhs,
-                            rhs: Expr::Atom(value),
-                        }));
+                        stmts.push(Stmt::Asgn(Asgn { lhs, rhs: Expr::Atom(value) }));
                     }
                 }
                 Exit::Jump(label)
             }
         };
 
-        let block = Block {
-            idx,
-            comment,
-            stmts,
-            exit,
-        };
+        let block = Block { idx, comment, stmts, exit };
 
         self.finish_block_(block);
     }
@@ -251,12 +217,7 @@ fn cc_block(ctx: &mut CcCtx, mut block: BlockBuilder, sequel: Sequel, expr: anor
             ctx.finish_block(block, sequel, Atom::Var(var));
         }
 
-        anormal::Expr::Let {
-            id,
-            ty_id: _,
-            rhs,
-            body,
-        } => {
+        anormal::Expr::Let { id, ty_id: _, rhs, body } => {
             // TODO: When the RHS is not if-then-else we can continue extending the last block RHS
             // generates and avoid creating a block for the continuation.
             let cont_block = ctx.create_block();
@@ -265,13 +226,7 @@ fn cc_block(ctx: &mut CcCtx, mut block: BlockBuilder, sequel: Sequel, expr: anor
             cc_block(ctx, cont_block, sequel, *body)
         }
 
-        anormal::Expr::LetRec {
-            name,
-            ty_id,
-            mut args,
-            rhs,
-            body,
-        } => {
+        anormal::Expr::LetRec { name, ty_id, mut args, rhs, body } => {
             // TODO: Not sure about reusing 'name' in multiple places below.
 
             // After cc 'name' will refer to the closure tuple. For the function we'll need a fresh
@@ -312,22 +267,13 @@ fn cc_block(ctx: &mut CcCtx, mut block: BlockBuilder, sequel: Sequel, expr: anor
                     _ => panic!("Non-function in function position"),
                 };
 
-                FunSig {
-                    name: fun_var,
-                    args,
-                    return_type: fun_return_type,
-                }
+                FunSig { name: fun_var, args, return_type: fun_return_type }
             });
 
             // Body
             let mut closure_tuple_args = closure_fvs;
             closure_tuple_args.insert(0, fun_var);
-            block.asgn(
-                name,
-                Expr::Tuple {
-                    len: closure_tuple_args.len(),
-                },
-            );
+            block.asgn(name, Expr::Tuple { len: closure_tuple_args.len() });
             for (arg_idx, arg) in closure_tuple_args.iter().enumerate() {
                 block.expr(Expr::TuplePut(name, arg_idx, *arg));
             }
@@ -410,11 +356,7 @@ fn cc_block(ctx: &mut CcCtx, mut block: BlockBuilder, sequel: Sequel, expr: anor
             loop_body_block.asgn(idx_inc_var, Expr::Atom(Atom::Int(1)));
             loop_body_block.asgn(
                 idx_var,
-                Expr::IBinOp(BinOp {
-                    op: IntBinOp::Add,
-                    arg1: idx_var,
-                    arg2: idx_inc_var,
-                }),
+                Expr::IBinOp(BinOp { op: IntBinOp::Add, arg1: idx_var, arg2: idx_inc_var }),
             );
             ctx.finish_block_(Block {
                 idx: loop_body_block.idx,
@@ -475,12 +417,7 @@ fn fvs(ctx: &Ctx, e: &anormal::Expr, acc: &mut FxHashSet<VarId>) {
             fvs(ctx, e1, acc);
             fvs(ctx, e2, acc);
         }
-        Let {
-            id,
-            ty_id: _,
-            rhs,
-            body,
-        } => {
+        Let { id, ty_id: _, rhs, body } => {
             fvs(ctx, rhs, acc);
             fvs(ctx, body, acc);
             acc.remove(id);
@@ -488,13 +425,7 @@ fn fvs(ctx: &Ctx, e: &anormal::Expr, acc: &mut FxHashSet<VarId>) {
         Var(id) => {
             fv(ctx, *id, acc);
         }
-        LetRec {
-            name,
-            ty_id: _,
-            args,
-            rhs,
-            body,
-        } => {
+        LetRec { name, ty_id: _, args, rhs, body } => {
             fvs(ctx, rhs, acc);
             fvs(ctx, body, acc);
             acc.remove(name);

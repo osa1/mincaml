@@ -14,9 +14,7 @@ pub struct InternId {
 impl InternId {
     fn from_u32(i: u32) -> InternId {
         assert!(i < std::u32::MAX);
-        InternId {
-            value: unsafe { NonZeroU32::new_unchecked(i + 1) },
-        }
+        InternId { value: unsafe { NonZeroU32::new_unchecked(i + 1) } }
     }
 
     fn to_u32(&self) -> u32 {
@@ -36,10 +34,7 @@ where
     K: Eq + Hash,
 {
     fn default() -> Self {
-        Self {
-            map: Default::default(),
-            values: Default::default(),
-        }
+        Self { map: Default::default(), values: Default::default() }
     }
 }
 

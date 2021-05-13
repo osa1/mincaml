@@ -47,11 +47,7 @@ fn record_pass_stats<A, F: FnOnce() -> A>(
     let ret = pass();
     let elapsed = start_time.elapsed();
     let allocs_after = perf::get_allocated();
-    stats.push(PassStats {
-        name: pass_name,
-        time: elapsed,
-        allocs: allocs_after - allocs_before,
-    });
+    stats.push(PassStats { name: pass_name, time: elapsed, allocs: allocs_after - allocs_before });
     ret
 }
 

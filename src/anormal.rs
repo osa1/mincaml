@@ -14,30 +14,16 @@ pub enum Expr {
     Neg(VarId),
     FNeg(VarId),
     If(VarId, VarId, Cmp, Box<Expr>, Box<Expr>),
-    Let {
-        id: VarId,
-        ty_id: TypeId,
-        rhs: Box<Expr>,
-        body: Box<Expr>,
-    },
+    Let { id: VarId, ty_id: TypeId, rhs: Box<Expr>, body: Box<Expr> },
     Var(VarId),
-    LetRec {
-        name: VarId,
-        ty_id: TypeId,
-        args: Vec<VarId>,
-        rhs: Box<Expr>,
-        body: Box<Expr>,
-    },
+    LetRec { name: VarId, ty_id: TypeId, args: Vec<VarId>, rhs: Box<Expr>, body: Box<Expr> },
     App(VarId, Vec<VarId>),
     // Tuple allocation
     Tuple(Vec<VarId>),
     // Tuple field read
     TupleGet(VarId, usize),
     // Array allocation
-    ArrayAlloc {
-        len: VarId,
-        elem: VarId,
-    },
+    ArrayAlloc { len: VarId, elem: VarId },
     // Array field read
     ArrayGet(VarId, VarId),
     // Array field write
@@ -45,11 +31,7 @@ pub enum Expr {
 }
 
 enum TmpLet {
-    TmpLet {
-        id: VarId,
-        ty_id: TypeId,
-        rhs: Box<Expr>,
-    },
+    TmpLet { id: VarId, ty_id: TypeId, rhs: Box<Expr> },
     NoNeed,
 }
 
@@ -57,12 +39,7 @@ impl TmpLet {
     fn finish(self, body: Expr) -> Expr {
         match self {
             TmpLet::NoNeed => body,
-            TmpLet::TmpLet { id, ty_id, rhs } => Expr::Let {
-                id,
-                ty_id,
-                rhs,
-                body: Box::new(body),
-            },
+            TmpLet::TmpLet { id, ty_id, rhs } => Expr::Let { id, ty_id, rhs, body: Box::new(body) },
         }
     }
 }
@@ -73,14 +50,7 @@ fn mk_let(ctx: &mut Ctx, e: Expr, ty_id: TypeId) -> (TmpLet, VarId) {
         _ => {
             let id = ctx.fresh_generated_var(CompilerPhase::ANormal);
             ctx.set_var_type(id, ty_id);
-            (
-                TmpLet::TmpLet {
-                    id,
-                    ty_id,
-                    rhs: Box::new(e),
-                },
-                id,
-            )
+            (TmpLet::TmpLet { id, ty_id, rhs: Box::new(e) }, id)
         }
     }
 }
@@ -193,23 +163,13 @@ pub fn anormal_(ctx: &mut Ctx, expr: parser::Expr) -> (Expr, TypeId) {
         parser::Expr::Let { bndr, rhs, body } => {
             let (rhs, rhs_ty) = anormal_(ctx, *rhs);
             let (body, body_ty) = anormal_(ctx, *body);
-            let e = Expr::Let {
-                id: bndr,
-                ty_id: rhs_ty,
-                rhs: Box::new(rhs),
-                body: Box::new(body),
-            };
+            let e = Expr::Let { id: bndr, ty_id: rhs_ty, rhs: Box::new(rhs), body: Box::new(body) };
             (e, body_ty)
         }
 
         parser::Expr::Var(var) => (Expr::Var(var), ctx.var_type_id(var)),
 
-        parser::Expr::LetRec {
-            bndr,
-            args,
-            rhs,
-            body,
-        } => {
+        parser::Expr::LetRec { bndr, args, rhs, body } => {
             let mut arg_tys: Vec<Type> = Vec::with_capacity(args.len());
             for arg in &args {
                 arg_tys.push((&*ctx.var_type(*arg)).clone());
@@ -217,10 +177,7 @@ pub fn anormal_(ctx: &mut Ctx, expr: parser::Expr) -> (Expr, TypeId) {
 
             let (rhs, rhs_ty_id) = anormal_(ctx, *rhs);
             let rhs_ty = (&*ctx.get_type(rhs_ty_id)).clone();
-            let fun_ty = Type::Fun {
-                args: arg_tys,
-                ret: Box::new(rhs_ty),
-            };
+            let fun_ty = Type::Fun { args: arg_tys, ret: Box::new(rhs_ty) };
             let (body, body_ty) = anormal_(ctx, *body);
 
             let e = Expr::LetRec {
@@ -320,10 +277,7 @@ pub fn anormal_(ctx: &mut Ctx, expr: parser::Expr) -> (Expr, TypeId) {
             let (elem_tmp, elem_id) = mk_let(ctx, elem, elem_ty_id);
 
             (
-                len_tmp.finish(elem_tmp.finish(Expr::ArrayAlloc {
-                    len: len_id,
-                    elem: elem_id,
-                })),
+                len_tmp.finish(elem_tmp.finish(Expr::ArrayAlloc { len: len_id, elem: elem_id })),
                 ctx.intern_type(Type::Array(Box::new(elem_ty))),
             )
         }

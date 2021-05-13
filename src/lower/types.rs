@@ -97,12 +97,6 @@ pub enum Atom {
 #[derive(Debug, PartialEq)]
 pub enum Exit {
     Return(VarId),
-    Branch {
-        v1: VarId,
-        v2: VarId,
-        cond: Cmp,
-        then_block: BlockIdx,
-        else_block: BlockIdx,
-    },
+    Branch { v1: VarId, v2: VarId, cond: Cmp, then_block: BlockIdx, else_block: BlockIdx },
     Jump(BlockIdx),
 }
