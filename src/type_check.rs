@@ -1,9 +1,9 @@
 use fxhash::FxHashMap;
 use std::rc::Rc;
 
+use crate::ast::Expr;
 use crate::ctx::{Ctx, VarId};
 use crate::locals::Locals;
-use crate::parser::Expr;
 use crate::utils::take;
 use crate::var::Uniq;
 

@@ -1,5 +1,7 @@
 use crate::ctx::VarId;
 
+use std::fmt;
+
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Cmp {
     Equal,
@@ -17,7 +19,7 @@ pub struct BinOp<A> {
     pub arg2: VarId,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FloatBinOp {
     Add,
     Sub,
@@ -25,10 +27,25 @@ pub enum FloatBinOp {
     Div,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IntBinOp {
     Add,
     Sub,
     // Mul,
     // Div,
+}
+
+impl fmt::Display for Cmp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use Cmp::*;
+        let s = match self {
+            Equal => "=",
+            NotEqual => "<>",
+            LessThan => "<",
+            LessThanOrEqual => "<=",
+            GreaterThan => ">",
+            GreaterThanOrEqual => ">=",
+        };
+        s.fmt(f)
+    }
 }

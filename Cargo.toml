@@ -25,6 +25,10 @@ cranelift-native = "0.66"
 cranelift-object = "0.66"
 fxhash = "0.2.1"
 lexgen = "0.2.1"
+parsegen = "0.1"
 
 [profile.release]
 lto = true
+
+[profile.dev.package.parsegen]
+opt-level = 3

@@ -216,6 +216,7 @@ dependencies = [
  "cranelift-object",
  "fxhash",
  "lexgen",
+ "parsegen",
 ]
 
 [[package]]
@@ -226,6 +227,18 @@ checksum = "1ab52be62400ca80aa00285d25253d7f7c437b7375c4de678f5405d3afe82ca5"
 dependencies = [
  "crc32fast",
  "indexmap",
+]
+
+[[package]]
+name = "parsegen"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "97a79953fabf3c524f1d15343714d60b881077576374eb10f538ed0f46a64998"
+dependencies = [
+ "fxhash",
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

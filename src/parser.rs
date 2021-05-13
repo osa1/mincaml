@@ -1,461 +1,393 @@
-use crate::common::*;
-use crate::ctx::{Ctx, VarId};
+use crate::ast::ParsedExpr;
+use crate::common::{Cmp, FloatBinOp, IntBinOp};
 use crate::lexer::Token;
-use crate::var::CompilerPhase;
 
-use std::fmt;
+use parsegen::parser;
 
-#[derive(Debug)]
-pub enum Expr {
-    // ()
-    Unit,
-    // true, false
-    Bool(bool),
-    Int(i64),
-    Float(f64),
-    // not <expr>
-    Not(Box<Expr>),
-    // - <expr>
-    Neg(Box<Expr>),
-    // '<expr> + <expr>' or '<expr> - <expr>'
-    IntBinOp(Box<Expr>, IntBinOp, Box<Expr>),
-    // -. <expr>
-    FNeg(Box<Expr>),
-    // A float binary operation, e.g. '<expr> +. <expr>'
-    FloatBinOp(Box<Expr>, FloatBinOp, Box<Expr>),
-    // Comparison, e.g. <expr> <= <expr>
-    Cmp(Box<Expr>, Cmp, Box<Expr>),
-    // if <expr> then <expr> else <expr>
-    If(Box<Expr>, Box<Expr>, Box<Expr>),
-    // let <ident> = <expr> in <expr>
-    Let { bndr: VarId, rhs: Box<Expr>, body: Box<Expr> },
-    // <ident>
-    Var(VarId),
-    // let rec <ident> <ident>+ = <expr> in <expr>
-    LetRec { bndr: VarId, args: Vec<VarId>, rhs: Box<Expr>, body: Box<Expr> },
-    // <expr> <expr>+
-    App { fun: Box<Expr>, args: Vec<Expr> },
-    // <expr> (, <expr>)+
-    Tuple(Vec<Expr>),
-    // let ( <ident> (, <ident>)+ ) = <expr> in <expr>
-    LetTuple { bndrs: Vec<VarId>, rhs: Box<Expr>, body: Box<Expr> },
-    // Array.create <expr> <expr>
-    Array { len: Box<Expr>, elem: Box<Expr> },
-    // <expr> . ( <expr> )
-    Get(Box<Expr>, Box<Expr>),
-    // <expr> . ( <expr> ) <- <expr>
-    Put(Box<Expr>, Box<Expr>, Box<Expr>),
+parser! {
+    enum Token {
+        "(" => Token::LParen, // 0
+        ")" => Token::RParen,
+        "bool" => Token::Bool(<bool>),
+        "not" => Token::Not,
+        "if" => Token::If,
+        "then" => Token::Then, // 5
+        "else" => Token::Else,
+        "let" => Token::Let,
+        "rec" => Token::Rec,
+        "in" => Token::In,
+        "-" => Token::Minus, // 10
+        "-." => Token::MinusDot,
+        "+" => Token::Plus,
+        "+." => Token::PlusDot,
+        "*." => Token::AstDot,
+        "/." => Token::SlashDot, // 15
+        "=" => Token::Equal,
+        "<>" => Token::LessGreater,
+        "<=" => Token::LessEqual,
+        "<-" => Token::LessMinus,
+        "<" => Token::Less, // 20
+        ">=" => Token::GreaterEqual,
+        ">" => Token::Greater,
+        "." => Token::Dot,
+        "," => Token::Comma,
+        ";" => Token::Semicolon, // 25
+        "_" => Token::Underscore,
+        "Array.create" => Token::ArrayCreate,
+        "id" => Token::Id(<String>), // 28
+        "int" => Token::Int(<i64>),
+        "float" => Token::Float(<f64>), // 30
+    }
+
+    // Entry point
+    pub Expr: ParsedExpr = {
+        <expr:SeqExpr> =>
+            expr,
+    };
+
+    // `;`
+    SeqExpr: ParsedExpr = {
+        <expr:LetExpr> =>
+            expr,
+
+        // Making it right associative. It works either way.
+        <expr1:LetExpr> ";" <expr2:SeqExpr> =>
+            // TODO: fix the binder
+            ParsedExpr::Let { bndr: "_".to_string(), rhs: Box::new(expr1), body: Box::new(expr2) },
+    };
+
+    // `let`, `let rec`, and `let (...)`
+    LetExpr: ParsedExpr = {
+        <expr:IfExpr> =>
+            expr,
+
+        "let" <bndr:Binder> "=" <rhs:SeqExpr> "in" <body:SeqExpr> =>
+            ParsedExpr::Let { bndr, rhs: Box::new(rhs), body: Box::new(body) },
+
+        "let" "rec" <bndr:Binder> <args:Binders1> "=" <rhs:SeqExpr> "in" <body:SeqExpr> =>
+            ParsedExpr::LetRec { bndr, args, rhs: Box::new(rhs), body: Box::new(body) },
+
+        "let" "(" <bndr:Binder> <mut bndrs:CommaBinder1_Rev> ")" "=" <rhs:SeqExpr> "in" <body:SeqExpr> => {
+            bndrs.push(bndr);
+            bndrs.reverse();
+            ParsedExpr::LetTuple {
+                bndrs,
+                rhs: Box::new(rhs),
+                body: Box::new(body),
+            }
+        },
+    };
+
+    Binder: String = {
+        "_" =>
+            "_".to_owned(),
+
+        <id:"id"> =>
+            id,
+    };
+
+    // One or more ", id", returned in reverse
+    CommaBinder1_Rev: Vec<String> = {
+        "," <bndr:Binder> <mut bndrs:CommaBinder0_Rev> => {
+            bndrs.push(bndr);
+            bndrs
+        }
+    };
+
+    CommaBinder0_Rev: Vec<String> = {
+        => vec![],
+
+        "," <bndr:Binder> <mut bndrs:CommaBinder0_Rev> => {
+            bndrs.push(bndr);
+            bndrs
+        }
+    };
+
+    // One or more identifiers
+    Binders1: Vec<String> = {
+        <bndr:Binder> <mut bndrs:Binders0_Rev> => {
+            bndrs.push(bndr);
+            bndrs.reverse();
+            bndrs
+        }
+    };
+
+    // Zero or more identifiers
+    Binders0_Rev: Vec<String> = {
+        => vec![],
+
+        // TODO: I don't understand why I have to inline Binder here.
+        <bndr:"id"> <mut bndrs:Binders0_Rev> => {
+            bndrs.push(bndr);
+            bndrs
+        }
+
+        "_" <mut bndrs:Binders0_Rev> => {
+            bndrs.push("_".to_owned());
+            bndrs
+        }
+    };
+
+    // if-then-else
+    IfExpr: ParsedExpr = {
+        <expr:TupleExpr> =>
+            expr,
+
+        "if" <e1:SeqExpr> "then" <e2:SeqExpr> "else" <e3:LetExpr> =>
+            ParsedExpr::If(Box::new(e1), Box::new(e2), Box::new(e3)),
+    };
+
+    TupleExpr: ParsedExpr = {
+        <expr:CmpOpExpr> =>
+            expr,
+
+        <expr:CmpOpExpr> <mut exprs:CommaExpr1> => {
+            exprs.push(expr);
+            exprs.reverse();
+            ParsedExpr::Tuple(exprs)
+        },
+    };
+
+    // One or more ", <expr>"
+    CommaExpr1: Vec<ParsedExpr> = {
+        "," <expr:CmpOpExpr> <mut exprs:CommaExpr0> => {
+            exprs.push(expr);
+            exprs
+        },
+    };
+
+    // Zero or more ", <expr>"
+    CommaExpr0: Vec<ParsedExpr> = {
+        => vec![],
+
+        "," <expr:CmpOpExpr> <mut exprs:CommaExpr0> => {
+            exprs.push(expr);
+            exprs
+        },
+    };
+
+    // Comparison operators: `=`, `<>`, `<=` `<`, `>=`, `>`. These all have the same the same
+    // precedence, and are all left associative.
+    CmpOpExpr: ParsedExpr = {
+        <expr:BinOp1Expr> =>
+            expr,
+
+        <expr1:CmpOpExpr> <op:CmpOp> <expr2:BinOp1Expr> =>
+            ParsedExpr::Cmp(Box::new(expr1), op, Box::new(expr2)),
+    };
+
+    CmpOp: Cmp = {
+        "=" => Cmp::Equal,
+        "<>" => Cmp::NotEqual,
+        "<" => Cmp::LessThan,
+        "<=" => Cmp::LessThanOrEqual,
+        ">" => Cmp::GreaterThan,
+        ">=" => Cmp::GreaterThanOrEqual,
+    };
+
+    // `+` and `-`
+    BinOp1Expr: ParsedExpr = {
+        <expr:BinOp2Expr> =>
+            expr,
+
+        // Left associative
+        <expr1:BinOp1Expr> "-" <expr2:BinOp2Expr> =>
+            ParsedExpr::IntBinOp(Box::new(expr1), IntBinOp::Sub, Box::new(expr2)),
+
+        // Left associative
+        <expr1:BinOp1Expr> "+" <expr2:BinOp2Expr> =>
+            ParsedExpr::IntBinOp(Box::new(expr1), IntBinOp::Add, Box::new(expr2)),
+
+        // Left associative
+        <expr1:BinOp1Expr> "+." <expr2:BinOp2Expr> =>
+            ParsedExpr::FloatBinOp(Box::new(expr1), FloatBinOp::Add, Box::new(expr2)),
+
+        // Left associative
+        <expr1:BinOp1Expr> "-." <expr2:BinOp2Expr> =>
+            ParsedExpr::FloatBinOp(Box::new(expr1), FloatBinOp::Sub, Box::new(expr2)),
+    };
+
+    // `*.` and `/.`
+    BinOp2Expr: ParsedExpr = {
+        <expr:UnOpExpr> =>
+            expr,
+
+        // Left associative
+        <expr1:BinOp2Expr> "*." <expr2:UnOpExpr> =>
+            ParsedExpr::FloatBinOp(Box::new(expr1), FloatBinOp::Mul, Box::new(expr2)),
+
+        // Left associative
+        <expr1:BinOp2Expr> "/." <expr2:UnOpExpr> =>
+            ParsedExpr::FloatBinOp(Box::new(expr1), FloatBinOp::Div, Box::new(expr2)),
+    };
+
+    UnOpExpr: ParsedExpr = {
+        "-" <expr:AppExpr> =>
+            match expr {
+                ParsedExpr::Float(f) =>
+                    ParsedExpr::FNeg(Box::new(ParsedExpr::Float(f))),
+                other =>
+                    ParsedExpr::Neg(Box::new(other)),
+            },
+
+        "-." <expr:AppExpr> =>
+            ParsedExpr::FNeg(Box::new(expr)),
+
+        "not" <expr:AppExpr> =>
+            ParsedExpr::Not(Box::new(expr)),
+
+        <expr:AppExpr> =>
+            expr,
+    };
+
+    AppExpr: ParsedExpr = {
+        <expr:GetPutExpr> =>
+            expr,
+
+        <expr1:GetPutExpr> <exprs:GetPutExprs1> =>
+            ParsedExpr::App { fun: Box::new(expr1), args: exprs },
+
+        "Array.create" <e1:GetPutExpr> <e2:GetPutExpr> =>
+            ParsedExpr::Array { len: Box::new(e1), elem: Box::new(e2) },
+    };
+
+    // Array get and put expressions: `<expr> . ( <expr> )`, `<expr> . ( <expr> ) <- `<expr>`
+    GetPutExpr: ParsedExpr = {
+        <expr1:SimpleExpr> =>
+            expr1,
+
+        <expr1:SimpleExpr> <get_put_suffix:GetOrPutSuffix1_Rev> => {
+            let mut expr = expr1;
+            let (mut gets, put) = get_put_suffix;
+
+            match put {
+                None => {
+                    for idx in gets.into_iter().rev() {
+                        expr = ParsedExpr::Get(Box::new(expr), Box::new(idx));
+                    }
+                }
+                Some(put) => {
+                    let put_idx = gets.remove(0);
+                    for idx in gets.into_iter().rev() {
+                        expr = ParsedExpr::Get(Box::new(expr), Box::new(idx));
+                    }
+                    expr = ParsedExpr::Put(Box::new(expr), Box::new(put_idx), Box::new(put));
+                }
+            }
+
+            expr
+        }
+    };
+
+    GetOrPutSuffix1_Rev: (Vec<ParsedExpr>, Option<ParsedExpr>) = {
+        "." "(" <expr:SeqExpr> ")" <mut rest:GetOrPutSuffix0_Rev> => {
+            let (mut gets, put) = rest;
+            gets.push(expr);
+            (gets, put)
+        },
+    };
+
+    GetOrPutSuffix0_Rev: (Vec<ParsedExpr>, Option<ParsedExpr>) = {
+        => (vec![], None),
+
+        "." "(" <expr:SeqExpr> ")" <mut rest:GetOrPutSuffix0_Rev> => {
+            let (mut gets, put) = rest;
+            gets.push(expr);
+            (gets, put)
+        },
+
+        "<-" <expr:LetExpr> =>
+            (vec![], Some(expr)),
+    };
+
+    // One or more exprs
+    GetPutExprs1: Vec<ParsedExpr> = {
+        <expr:GetPutExpr> <mut exprs:GetPutExprs0> => {
+            exprs.push(expr);
+            exprs.reverse();
+            exprs
+        }
+    };
+
+    // Zero or more exprs
+    GetPutExprs0: Vec<ParsedExpr> = {
+        => vec![],
+
+        <expr1:GetPutExpr> <mut exprs:GetPutExprs0> => {
+            exprs.push(expr1);
+            exprs
+        },
+    };
+
+
+    SimpleExpr: ParsedExpr = {
+        "(" ")" =>
+            ParsedExpr::Unit,
+
+        "(" <expr:SeqExpr> ")" =>
+            expr,
+
+        <b:"bool"> =>
+            ParsedExpr::Bool(b),
+
+        <i:"int"> =>
+            ParsedExpr::Int(i),
+
+        <f:"float"> =>
+            ParsedExpr::Float(f),
+
+        <var:"id"> =>
+            ParsedExpr::Var(var),
+    };
 }
 
-impl fmt::Display for Cmp {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use Cmp::*;
-        let s = match self {
-            Equal => "=",
-            NotEqual => "<>",
-            LessThan => "<",
-            LessThanOrEqual => "<=",
-            GreaterThan => ">",
-            GreaterThanOrEqual => ">=",
-        };
-        s.fmt(f)
-    }
-}
+#[cfg(test)]
+mod test {
+    use super::*;
 
-pub fn parse(ctx: &mut Ctx, tokens: &[Token]) -> Result<Expr, ParseErr> {
-    let mut parser = Parser::new(tokens);
-    let expr = parser.expr(ctx)?;
-    Ok(expr)
-}
+    use crate::lexer::tokenize;
 
-#[derive(Debug)]
-pub enum ParseErr {
-    EndOfInput,
-    Unexpected { seen: Token, expected: &'static str },
-}
-
-pub struct Parser<'a> {
-    tokens: &'a [Token],
-    tok_idx: usize,
-}
-
-const INIT_PREC: usize = 0;
-const IN_PREC: usize = 0;
-const LET_PREC: usize = 1;
-const SEMICOLON_PREC: usize = 2;
-const IF_PREC: usize = 3;
-// The arrow in `x.(y) <- blah`
-const LESS_MINUS_PREC: usize = 4;
-const TUPLE_PREC: usize = 5;
-const COMMA_PREC: usize = 6;
-// Comparison operators
-const CMP_PREC: usize = 7;
-// Plus and minus, for floats and ints
-const PLUS_MINUS_PREC: usize = 8;
-// Multiplication and division, for floats and ints
-const DIV_MULT_PREC: usize = 9;
-const UNARY_MINUS_PREC: usize = 10;
-// Function application, `not`, and `Array.create`
-const APP_PREC: usize = 11;
-// Dots in `x.(y)` (both for getting and setting)
-const DOT_PREC: usize = 12;
-
-impl<'a> Parser<'a> {
-    pub fn new(tokens: &[Token]) -> Parser {
-        Parser { tokens, tok_idx: 0 }
+    fn parse(s: &str) -> ParsedExpr {
+        let tokens = tokenize(s).unwrap();
+        Expr::parse(tokens.into_iter().map(|r| Ok::<_, ()>(r))).unwrap()
     }
 
-    pub fn expr0(&mut self, ctx: &mut Ctx, prec: usize) -> Result<Expr, ParseErr> {
-        match self.next_token()? {
-            //
-            // Single-token expressions
-            //
-            Token::Bool(bool) => {
-                let b = *bool;
-                self.consume();
-                Ok(Expr::Bool(b))
-            }
-            Token::Int(int) => {
-                let i = *int;
-                self.consume();
-                Ok(Expr::Int(i))
-            }
-            Token::Float(float) => {
-                let f = *float;
-                self.consume();
-                Ok(Expr::Float(f))
-            }
-            Token::Id(id) => {
-                let var = ctx.fresh_user_var(id);
-                self.consume();
-                Ok(Expr::Var(var))
-            }
-
-            //
-            // Other stuff
-            //
-            Token::LParen => {
-                self.consume();
-                match self.next_token()? {
-                    Token::RParen => {
-                        self.consume();
-                        Ok(Expr::Unit)
-                    }
-                    _ => {
-                        // Parse everything until ')'
-                        let expr = self.expr1(ctx, INIT_PREC)?;
-                        self.expect(Token::RParen, "')'")?;
-                        Ok(expr)
-                    }
-                }
-            }
-            Token::Not if prec <= APP_PREC => {
-                self.consume();
-                Ok(Expr::Not(Box::new(self.expr1(ctx, APP_PREC)?)))
-            }
-            Token::Minus if prec <= UNARY_MINUS_PREC => {
-                self.consume();
-                let expr = self.expr1(ctx, UNARY_MINUS_PREC)?;
-                match expr {
-                    Expr::Float(_) =>
-                    // Hacky, but this is how the original min-caml parses this as well.
-                    {
-                        Ok(Expr::FNeg(Box::new(expr)))
-                    }
-                    _ => Ok(Expr::Neg(Box::new(expr))),
-                }
-            }
-            Token::MinusDot if prec <= UNARY_MINUS_PREC => {
-                self.consume();
-                Ok(Expr::FNeg(Box::new(self.expr1(ctx, PLUS_MINUS_PREC)?)))
-            }
-            Token::ArrayCreate if prec <= APP_PREC => {
-                self.consume();
-                let expr1 = self.expr0(ctx, APP_PREC)?;
-                let expr2 = self.expr0(ctx, APP_PREC)?;
-                Ok(Expr::Array { len: Box::new(expr1), elem: Box::new(expr2) })
-            }
-            Token::Let => {
-                self.consume();
-                match self.next_token()? {
-                    Token::Rec => {
-                        self.consume();
-                        let bndr = self.expect_id()?;
-                        let bndr = ctx.fresh_user_var(bndr);
-                        let mut args = vec![];
-                        loop {
-                            match self.next_token()? {
-                                Token::Underscore => {
-                                    args.push(ctx.fresh_generated_var(CompilerPhase::Parser));
-                                    self.consume();
-                                }
-                                Token::Id(arg) => {
-                                    args.push(ctx.fresh_user_var(arg));
-                                    self.consume();
-                                }
-                                Token::Equal => {
-                                    break;
-                                }
-                                other => {
-                                    return Err(ParseErr::Unexpected {
-                                        expected: "binder or '='",
-                                        seen: other.clone(),
-                                    });
-                                }
-                            }
-                        }
-                        self.expect(Token::Equal, "'='")?;
-                        // Parse everything until 'in'
-                        let rhs = Box::new(self.expr1(ctx, INIT_PREC)?);
-                        self.expect(Token::In, "'in'")?;
-                        let body = Box::new(self.expr1(ctx, LET_PREC)?);
-                        Ok(Expr::LetRec { bndr, args, rhs, body })
-                    }
-                    Token::LParen => {
-                        self.consume();
-                        let mut bndrs = vec![];
-                        {
-                            let bndr = self.expect_id()?;
-                            bndrs.push(ctx.fresh_user_var(bndr));
-                        }
-                        while let Ok(Token::Comma) = self.next_token() {
-                            self.consume();
-                            {
-                                let bndr = self.expect_id()?;
-                                bndrs.push(ctx.fresh_user_var(bndr));
-                            }
-                        }
-                        self.expect(Token::RParen, "')'")?;
-                        self.expect(Token::Equal, "'='")?;
-                        // Parse everything until '='
-                        let rhs = self.expr1(ctx, INIT_PREC)?;
-                        self.expect(Token::In, "in")?;
-                        let body = self.expr1(ctx, IN_PREC)?;
-                        Ok(Expr::LetTuple { bndrs, rhs: Box::new(rhs), body: Box::new(body) })
-                    }
-                    Token::Id(var) => {
-                        let bndr = ctx.fresh_user_var(var);
-                        self.consume();
-                        self.expect(Token::Equal, "'='")?;
-                        // Parse everything until 'in'
-                        let rhs = Box::new(self.expr1(ctx, INIT_PREC)?);
-                        self.expect(Token::In, "'in'")?;
-                        let body = Box::new(self.expr1(ctx, IN_PREC)?);
-                        Ok(Expr::Let { bndr, rhs, body })
-                    }
-                    other => {
-                        Err(ParseErr::Unexpected {
-                            // TODO: remove cloning
-                            seen: other.clone(),
-                            expected: "'rec', '(', or identifier",
-                        })
-                    }
-                }
-            }
-            Token::If if prec <= IF_PREC => {
-                self.consume();
-                // Parse evertying until 'then'
-                let e1 = self.expr1(ctx, INIT_PREC)?;
-                self.expect(Token::Then, "'then'")?;
-                // Parse everything until 'else'
-                let e2 = self.expr1(ctx, INIT_PREC)?;
-                self.expect(Token::Else, "'else'")?;
-                let e3 = self.expr1(ctx, IF_PREC)?;
-                Ok(Expr::If(Box::new(e1), Box::new(e2), Box::new(e3)))
-            }
-            other => Err(ParseErr::Unexpected { seen: other.clone(), expected: "expression" }),
-        }
-    }
-
-    pub fn expr1(&mut self, ctx: &mut Ctx, prec: usize) -> Result<Expr, ParseErr> {
-        let mut expr = self.expr0(ctx, prec)?;
-        let mut parsing_app = false;
-        loop {
-            match self.next_token() {
-                Ok(Token::Semicolon) if prec <= SEMICOLON_PREC => {
-                    self.consume();
-                    let sym = ctx.fresh_generated_var(CompilerPhase::Parser);
-                    let expr2 = self.expr1(ctx, prec)?;
-                    expr = Expr::Let { bndr: sym, rhs: Box::new(expr), body: Box::new(expr2) };
-                }
-                Ok(Token::Plus) if prec < PLUS_MINUS_PREC => {
-                    self.consume();
-                    let expr2 = self.expr1(ctx, PLUS_MINUS_PREC)?;
-                    expr = Expr::IntBinOp(Box::new(expr), IntBinOp::Add, Box::new(expr2));
-                }
-                Ok(Token::Minus) if prec < PLUS_MINUS_PREC => {
-                    self.consume();
-                    let expr2 = self.expr1(ctx, PLUS_MINUS_PREC)?;
-                    expr = Expr::IntBinOp(Box::new(expr), IntBinOp::Sub, Box::new(expr2));
-                }
-                Ok(Token::PlusDot) if prec < PLUS_MINUS_PREC => {
-                    self.consume();
-                    let expr2 = self.expr1(ctx, PLUS_MINUS_PREC)?;
-                    expr = Expr::FloatBinOp(Box::new(expr), FloatBinOp::Add, Box::new(expr2));
-                }
-                Ok(Token::MinusDot) if prec < PLUS_MINUS_PREC => {
-                    self.consume();
-                    let expr2 = self.expr1(ctx, PLUS_MINUS_PREC)?;
-                    expr = Expr::FloatBinOp(Box::new(expr), FloatBinOp::Sub, Box::new(expr2));
-                }
-                Ok(Token::AstDot) if prec < DIV_MULT_PREC => {
-                    self.consume();
-                    let expr2 = self.expr1(ctx, DIV_MULT_PREC)?;
-                    expr = Expr::FloatBinOp(Box::new(expr), FloatBinOp::Mul, Box::new(expr2));
-                }
-                Ok(Token::SlashDot) if prec < DIV_MULT_PREC => {
-                    self.consume();
-                    let expr2 = self.expr1(ctx, DIV_MULT_PREC)?;
-                    expr = Expr::FloatBinOp(Box::new(expr), FloatBinOp::Div, Box::new(expr2));
-                }
-                Ok(Token::Equal) if prec < CMP_PREC => {
-                    self.consume();
-                    let expr2 = self.expr1(ctx, CMP_PREC)?;
-                    expr = Expr::Cmp(Box::new(expr), Cmp::Equal, Box::new(expr2));
-                }
-                Ok(Token::LessGreater) if prec < CMP_PREC => {
-                    self.consume();
-                    let expr2 = self.expr1(ctx, CMP_PREC)?;
-                    expr = Expr::Cmp(Box::new(expr), Cmp::NotEqual, Box::new(expr2));
-                }
-                Ok(Token::Less) if prec < CMP_PREC => {
-                    self.consume();
-                    let expr2 = self.expr1(ctx, CMP_PREC)?;
-                    expr = Expr::Cmp(Box::new(expr), Cmp::LessThan, Box::new(expr2));
-                }
-                Ok(Token::LessEqual) if prec < CMP_PREC => {
-                    self.consume();
-                    let expr2 = self.expr1(ctx, CMP_PREC)?;
-                    expr = Expr::Cmp(Box::new(expr), Cmp::LessThanOrEqual, Box::new(expr2));
-                }
-                Ok(Token::Greater) if prec <= CMP_PREC => {
-                    self.consume();
-                    let expr2 = self.expr1(ctx, CMP_PREC)?;
-                    expr = Expr::Cmp(Box::new(expr), Cmp::GreaterThan, Box::new(expr2));
-                }
-                Ok(Token::GreaterEqual) if prec <= CMP_PREC => {
-                    self.consume();
-                    let expr2 = self.expr1(ctx, CMP_PREC)?;
-                    expr = Expr::Cmp(Box::new(expr), Cmp::GreaterThanOrEqual, Box::new(expr2));
-                }
-                Ok(Token::Comma) if prec <= TUPLE_PREC => {
-                    self.consume();
-                    let expr2 = self.expr1(ctx, COMMA_PREC)?;
-                    match expr {
-                        Expr::Tuple(ref mut vec) => {
-                            vec.push(expr2);
-                        }
-                        _ => {
-                            expr = Expr::Tuple(vec![expr, expr2]);
-                        }
-                    }
-                }
-                Ok(Token::Dot) if prec < DOT_PREC => {
-                    self.consume();
-                    self.expect(Token::LParen, "'('")?;
-                    // Parse everything until ')'
-                    let expr1 = self.expr1(ctx, INIT_PREC)?;
-                    self.expect(Token::RParen, "')'")?;
-                    match self.next_token() {
-                        Ok(Token::LessMinus) => {
-                            self.consume();
-                            let expr2 = self.expr1(ctx, LESS_MINUS_PREC)?;
-                            match expr {
-                                Expr::App { mut args, fun } if parsing_app => {
-                                    let arg = args.pop().unwrap();
-                                    expr = Expr::App {
-                                        fun,
-                                        args: vec![Expr::Put(
-                                            Box::new(arg),
-                                            Box::new(expr1),
-                                            Box::new(expr2),
-                                        )],
-                                    };
-                                }
-                                _ => {
-                                    expr =
-                                        Expr::Put(Box::new(expr), Box::new(expr1), Box::new(expr2));
-                                }
-                            }
-                        }
-                        _ => match expr {
-                            Expr::App { mut args, fun } if parsing_app => {
-                                let arg = args.pop().unwrap();
-                                expr = Expr::App {
-                                    fun,
-                                    args: vec![Expr::Get(Box::new(arg), Box::new(expr1))],
-                                };
-                            }
-                            _ => {
-                                expr = Expr::Get(Box::new(expr), Box::new(expr1));
-                            }
-                        },
-                    }
-                }
-                Ok(_) if prec <= APP_PREC => match self.expr0(ctx, APP_PREC) {
-                    Err(_) => {
-                        break;
-                    }
-                    Ok(expr_) => match expr {
-                        Expr::App { ref mut args, .. } if parsing_app => {
-                            args.push(expr_);
-                        }
-                        _ => {
-                            parsing_app = true;
-                            expr = Expr::App { fun: Box::new(expr), args: vec![expr_] };
-                        }
-                    },
-                },
-                _ => {
-                    break;
-                }
-            }
-        }
-
-        Ok(expr)
-    }
-
-    // Entry point for parsing
-    pub fn expr(&mut self, ctx: &mut Ctx) -> Result<Expr, ParseErr> {
-        let ret = self.expr1(ctx, INIT_PREC)?;
-        match self.next_token() {
-            Err(_) => Ok(ret),
-            Ok(next) => Err(ParseErr::Unexpected { seen: next.clone(), expected: "EOF" }),
-        }
-    }
-
-    fn expect(&mut self, tok: Token, str: &'static str) -> Result<(), ParseErr> {
-        let next_token = self.next_token()?;
-        if next_token == &tok {
-            self.consume();
-            Ok(())
-        } else {
-            Err(ParseErr::Unexpected { seen: next_token.clone(), expected: str })
-        }
-    }
-
-    fn expect_id(&mut self) -> Result<&str, ParseErr> {
-        // NOTE: 'consume' and 'next_token' inlined below to work around borrowchk issues
-        match self.tokens.get(self.tok_idx) {
-            None => Err(ParseErr::EndOfInput),
-            Some(Token::Id(id)) => {
-                self.tok_idx += 1;
-                Ok(id)
-            }
-            Some(other) => {
-                Err(ParseErr::Unexpected { seen: other.clone(), expected: "identifier" })
-            }
-        }
-    }
-
-    fn consume(&mut self) {
-        self.tok_idx += 1;
-    }
-
-    fn next_token(&self) -> Result<&Token, ParseErr> {
-        match self.tokens.get(self.tok_idx) {
-            None => Err(ParseErr::EndOfInput),
-            Some(next) => Ok(next),
-        }
+    #[test]
+    fn test_binop_1() {
+        assert_eq!(
+            parse("1 - 2"),
+            ParsedExpr::IntBinOp(
+                Box::new(ParsedExpr::Int(1)),
+                IntBinOp::Sub,
+                Box::new(ParsedExpr::Int(2))
+            )
+        );
+        assert_eq!(
+            parse("1 2"),
+            ParsedExpr::App { fun: Box::new(ParsedExpr::Int(1)), args: vec![ParsedExpr::Int(2)] }
+        );
+        assert_eq!(
+            parse("- 1 2"),
+            ParsedExpr::Neg(Box::new(ParsedExpr::App {
+                fun: Box::new(ParsedExpr::Int(1)),
+                args: vec![ParsedExpr::Int(2)],
+            }))
+        );
+        assert_eq!(
+            parse("- 1 - 2"),
+            ParsedExpr::IntBinOp(
+                Box::new(ParsedExpr::Neg(Box::new(ParsedExpr::Int(1)))),
+                IntBinOp::Sub,
+                Box::new(ParsedExpr::Int(2))
+            )
+        );
+        assert_eq!(
+            parse("1 - - 2"),
+            ParsedExpr::IntBinOp(
+                Box::new(ParsedExpr::Int(1)),
+                IntBinOp::Sub,
+                Box::new(ParsedExpr::Neg(Box::new(ParsedExpr::Int(2))))
+            )
+        );
     }
 }

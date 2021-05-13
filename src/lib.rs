@@ -1,6 +1,7 @@
 #![feature(box_patterns)]
 
 mod anormal;
+mod ast;
 mod cg_types;
 mod codegen;
 mod common;
@@ -19,7 +20,6 @@ use anormal::anormal;
 use codegen::codegen;
 use lexer::{tokenize, Token};
 use lower::lower_pgm;
-use parser::parse;
 use type_check::type_check_pgm;
 
 use std::fs::File;
@@ -71,7 +71,9 @@ fn compile_expr(
 
     let mut ctx = Default::default();
 
-    let mut expr = match record_pass_stats(&mut pass_stats, "parse", || parse(&mut ctx, &tokens)) {
+    let expr = match record_pass_stats(&mut pass_stats, "parse", || {
+        parser::Expr::parse(tokens.into_iter().map(|r| Ok::<_, ()>(r)))
+    }) {
         Err(err) => {
             println!("Parser error: {:#?}", err);
             return None;
@@ -80,6 +82,8 @@ fn compile_expr(
     };
 
     // println!("Expr: {:#?}", expr);
+
+    let mut expr = record_pass_stats(&mut pass_stats, "intern", || expr.intern(&mut ctx));
 
     match record_pass_stats(&mut pass_stats, "type check", || {
         type_check_pgm(&mut ctx, &mut expr)
