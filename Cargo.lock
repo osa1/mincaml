@@ -185,9 +185,9 @@ dependencies = [
 
 [[package]]
 name = "lexgen"
-version = "0.2.1"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "baddd624f47e845207f368e3fd718c0f0aacc534831ac68b762cb1464e7c499f"
+checksum = "5210570b71129680c1c61d010b752c250b16d02351b870f7278563fedf151378"
 dependencies = [
  "fxhash",
  "proc-macro2",
