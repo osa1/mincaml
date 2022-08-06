@@ -13,7 +13,11 @@ fn run_ocaml(file_path: &str) -> String {
         .stderr(Stdio::null())
         .stdout(Stdio::piped())
         .spawn()
-        .unwrap()
+        .unwrap_or_else(|err| {
+            eprintln!("Unable to run 'ocaml' executable. Make sure 'ocaml' is in PATH.");
+            eprintln!("Error: {:?}", err);
+            exit(1)
+        })
         .wait_with_output()
         .unwrap();
 
