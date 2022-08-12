@@ -1,6 +1,7 @@
 use std::str::FromStr;
 
 use lexgen::lexer;
+use lexgen_util::LexerError;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Token {
@@ -48,7 +49,7 @@ pub struct LexerState {
     comment_depth: usize,
 }
 
-pub fn tokenize(expr_str: &str) -> Result<Vec<Token>, LexerError> {
+pub fn tokenize(expr_str: &str) -> Result<Vec<Token>, LexerError<LexErr>> {
     let lexer = Lexer::new(expr_str);
     let mut tokens = vec![];
     for next in lexer {
