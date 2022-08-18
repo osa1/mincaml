@@ -72,7 +72,7 @@ fn compile_expr(
     let mut ctx = Default::default();
 
     let expr = match record_pass_stats(&mut pass_stats, "parse", || {
-        parser::Expr::parse(tokens.into_iter().map(|r| Ok::<_, ()>(r)))
+        parser::Expr::parse(tokens.into_iter().map(Ok::<_, ()>))
     }) {
         Err(err) => {
             println!("Parser error: {:#?}", err);

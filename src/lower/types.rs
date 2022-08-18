@@ -94,7 +94,7 @@ pub enum Atom {
 }
 
 // Exit nodes of basic blocks
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Exit {
     Return(VarId),
     Branch { v1: VarId, v2: VarId, cond: Cmp, then_block: BlockIdx, else_block: BlockIdx },

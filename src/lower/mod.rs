@@ -239,7 +239,7 @@ fn cc_block(ctx: &mut CcCtx, mut block: BlockBuilder, sequel: Sequel, expr: anor
             // to annotate LetRecs with fvs. Doesn't matter in practice though.
             let closure_fvs: Vec<VarId> = {
                 let mut closure_fvs: FxHashSet<VarId> = Default::default();
-                fvs(ctx.ctx, &*rhs, &mut closure_fvs);
+                fvs(ctx.ctx, &rhs, &mut closure_fvs);
                 closure_fvs.remove(&name);
                 for arg in &args {
                     closure_fvs.remove(arg);

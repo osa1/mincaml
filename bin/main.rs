@@ -1,5 +1,3 @@
-use libmc;
-
 use std::process::exit;
 
 fn main() {

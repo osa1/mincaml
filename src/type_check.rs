@@ -61,7 +61,7 @@ pub fn type_check_pgm(ctx: &mut Ctx, expr: &mut Expr) -> Result<(), TypeErr> {
         let var = ctx.get_var(*var_id);
         let var_name = var.name();
         let ty = ctx.get_type(*ty_id);
-        global_scope.insert(var_name, Binder { binder: *var_id, ty: (&*ty).clone() });
+        global_scope.insert(var_name, Binder { binder: *var_id, ty: (*ty).clone() });
     }
 
     let mut scope: Scope = Locals::new(global_scope);
@@ -338,7 +338,7 @@ fn unify(subst_env: &mut SubstEnv, ty1: &Type, ty2: &Type) -> Result<(), TypeErr
             for (arg1, arg2) in args1.iter().zip(args2.iter()) {
                 unify(subst_env, arg1, arg2)?;
             }
-            unify(subst_env, &*ret1, &*ret2)
+            unify(subst_env, ret1, ret2)
         }
 
         (Type::Var(var1), Type::Var(var2)) if var1 == var2 => Ok(()),

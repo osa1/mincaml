@@ -125,7 +125,7 @@ lexer! {
             },
 
         "(*" =>
-            |mut lexer| {
+            |lexer| {
                 lexer.state().comment_depth = 1;
                 lexer.switch(LexerRule::Comment)
             },
@@ -133,19 +133,19 @@ lexer! {
 
     rule Comment {
         "(*" =>
-            |mut lexer| {
+            |lexer| {
                 let depth = &mut lexer.state().comment_depth;
-                *depth =  *depth + 1;
+                *depth += 1;
                 lexer.continue_()
             },
 
         "*)" =>
-            |mut lexer| {
+            |lexer| {
                 let depth = &mut lexer.state().comment_depth;
                 if *depth == 1 {
                     lexer.switch(LexerRule::Init)
                 } else {
-                    *depth = *depth - 1;
+                    *depth -= 1;
                     lexer.continue_()
                 }
             },
@@ -155,7 +155,9 @@ lexer! {
 }
 
 #[cfg(test)]
-fn unwrap_ignore_pos<T, E: std::fmt::Debug>(token: Option<Result<(usize, T, usize), E>>) -> T {
+fn unwrap_ignore_pos<T, E: std::fmt::Debug>(
+    token: Option<Result<(lexgen_util::Loc, T, lexgen_util::Loc), E>>,
+) -> T {
     token.unwrap().unwrap().1
 }
 

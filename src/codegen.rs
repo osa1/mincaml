@@ -179,7 +179,7 @@ fn init_module_env(
         let name = var.symbol_name();
 
         let id: DataId = module
-            .declare_data(&*name, Linkage::Import, false, false, None)
+            .declare_data(&name, Linkage::Import, false, false, None)
             .unwrap();
         env.add_data(*builtin_var_id, id);
     }
@@ -196,7 +196,7 @@ fn init_module_env(
         let sig = Signature { params, returns, call_conv: CallConv::SystemV };
 
         let id: FuncId = module
-            .declare_function(&*ctx.get_var(*name).name(), Linkage::Local, &sig)
+            .declare_function(&ctx.get_var(*name).name(), Linkage::Local, &sig)
             .unwrap();
 
         if *name == main_id {
@@ -287,7 +287,7 @@ fn codegen_fun(
     for block in blocks.values().filter_map(lower::BlockData::get_block) {
         let lower::Block { idx, comment: _, stmts, exit } = block;
 
-        let mut cl_block = *label_to_block.get(&idx).unwrap();
+        let mut cl_block = *label_to_block.get(idx).unwrap();
         builder.switch_to_block(cl_block);
 
         for stmt in stmts {
@@ -298,7 +298,7 @@ fn codegen_fun(
             match stmt {
                 lower::Stmt::Asgn(lower::Asgn { lhs, rhs }) => {
                     let (block, val) =
-                        codegen_expr(ctx, &module, cl_block, &mut builder, &mut env, malloc, rhs);
+                        codegen_expr(ctx, module, cl_block, &mut builder, &mut env, malloc, rhs);
                     cl_block = block;
 
                     let lhs_cl_var = Variable::new(ctx.get_var(*lhs).get_uniq().0.get() as usize);
@@ -306,7 +306,7 @@ fn codegen_fun(
                 }
                 lower::Stmt::Expr(expr) => {
                     let (block, _) =
-                        codegen_expr(ctx, &module, cl_block, &mut builder, &mut env, malloc, expr);
+                        codegen_expr(ctx, module, cl_block, &mut builder, &mut env, malloc, expr);
                     cl_block = block;
                 }
             }
@@ -314,13 +314,13 @@ fn codegen_fun(
 
         match exit {
             lower::Exit::Return(var) => {
-                let var = env.use_var(ctx, &module, &mut builder, *var);
+                let var = env.use_var(ctx, module, &mut builder, *var);
                 builder.ins().return_(&[var]);
             }
             lower::Exit::Branch { v1, v2, cond, then_block, else_block } => {
                 let comp_type = ctx.var_rep_type(*v1);
-                let v1 = env.use_var(ctx, &module, &mut builder, *v1);
-                let v2 = env.use_var(ctx, &module, &mut builder, *v2);
+                let v1 = env.use_var(ctx, module, &mut builder, *v1);
+                let v2 = env.use_var(ctx, module, &mut builder, *v2);
 
                 let then_block = *label_to_block.get(then_block).unwrap();
                 let else_block = *label_to_block.get(else_block).unwrap();

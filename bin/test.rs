@@ -5,8 +5,6 @@ use std::io::Write;
 use std::path::Path;
 use std::process::{exit, Command, ExitStatus, Output, Stdio};
 
-use libmc;
-
 fn run_ocaml(file_path: &str) -> String {
     let ret: Output = Command::new("ocaml")
         .arg(file_path)

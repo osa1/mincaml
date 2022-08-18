@@ -172,11 +172,11 @@ pub fn anormal_(ctx: &mut Ctx, expr: ast::Expr) -> (Expr, TypeId) {
         ast::Expr::LetRec { bndr, args, rhs, body } => {
             let mut arg_tys: Vec<Type> = Vec::with_capacity(args.len());
             for arg in &args {
-                arg_tys.push((&*ctx.var_type(*arg)).clone());
+                arg_tys.push((*ctx.var_type(*arg)).clone());
             }
 
             let (rhs, rhs_ty_id) = anormal_(ctx, *rhs);
-            let rhs_ty = (&*ctx.get_type(rhs_ty_id)).clone();
+            let rhs_ty = (*ctx.get_type(rhs_ty_id)).clone();
             let fun_ty = Type::Fun { args: arg_tys, ret: Box::new(rhs_ty) };
             let (body, body_ty) = anormal_(ctx, *body);
 
@@ -193,7 +193,7 @@ pub fn anormal_(ctx: &mut Ctx, expr: ast::Expr) -> (Expr, TypeId) {
 
         ast::Expr::App { fun, args } => {
             let (fun, fun_ty_id) = anormal_(ctx, *fun);
-            let fun_ty = (&*ctx.get_type(fun_ty_id)).clone();
+            let fun_ty = &*ctx.get_type(fun_ty_id);
             let ret_ty: Type = match &fun_ty {
                 Type::Fun { args: _, ret } => (**ret).clone(),
                 other => panic!("Non-function in function position: {:?} : {:?}", fun, other),
@@ -228,7 +228,7 @@ pub fn anormal_(ctx: &mut Ctx, expr: ast::Expr) -> (Expr, TypeId) {
 
             for arg in args {
                 let (arg, arg_ty_id) = anormal_(ctx, arg);
-                let arg_ty = (&*ctx.get_type(arg_ty_id)).clone();
+                let arg_ty = (*ctx.get_type(arg_ty_id)).clone();
                 let (arg_tmp, arg_id) = mk_let(ctx, arg, arg_ty_id);
                 arg_ids.push(arg_id);
                 arg_tmps.push(arg_tmp);
@@ -272,7 +272,7 @@ pub fn anormal_(ctx: &mut Ctx, expr: ast::Expr) -> (Expr, TypeId) {
             let (len, len_ty_id) = anormal_(ctx, *len);
             assert_eq!(len_ty_id, int);
             let (elem, elem_ty_id) = anormal_(ctx, *elem);
-            let elem_ty = (&*ctx.get_type(elem_ty_id)).clone();
+            let elem_ty = (*ctx.get_type(elem_ty_id)).clone();
             let (len_tmp, len_id) = mk_let(ctx, len, len_ty_id);
             let (elem_tmp, elem_id) = mk_let(ctx, elem, elem_ty_id);
 
