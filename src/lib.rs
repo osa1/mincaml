@@ -16,6 +16,7 @@ mod type_check;
 mod utils;
 mod var;
 mod wasm_builder;
+mod wasm_codegen;
 
 use anormal::anormal;
 use codegen::codegen;

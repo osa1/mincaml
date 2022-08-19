@@ -4,7 +4,16 @@ use crate::ctx::VarId;
 use fxhash::FxHashMap;
 
 /// A Wasm module builder
-pub struct ModuleBuilder {}
+pub struct ModuleBuilder {
+    /// Maps function types in the module to their type indices.
+    ///
+    /// Type indices are used in `call_indirect` instructions for the type of the function being
+    /// called.
+    func_types: FxHashMap<FuncType, u32>,
+
+    /// Function codes in the module.
+    functions: Vec<Vec<u8>>,
+}
 
 /// A Wasm function builder
 pub struct FunctionBuilder<'a> {
@@ -30,10 +39,30 @@ struct Local {
 }
 
 /// A Wasm value type
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ValType {
     I64,
     F64,
+}
+
+impl ValType {
+    fn binary(&self) -> u8 {
+        match self {
+            ValType::I64 => 0x7E,
+            ValType::F64 => 0x7C,
+        }
+    }
+}
+
+/// A Wasm function type
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct FuncType {
+    /// Argument types
+    // NB. Can be represented as a bit vector since `ValType` is one bit of information
+    pub args: Vec<ValType>,
+
+    /// Return type
+    pub ret: ValType,
 }
 
 impl ValType {
@@ -50,7 +79,7 @@ pub struct FunctionLocalId(u32);
 
 impl ModuleBuilder {
     pub fn new() -> Self {
-        ModuleBuilder {}
+        ModuleBuilder { func_types: Default::default(), functions: Vec::new() }
     }
 
     pub fn new_function(&mut self, args: Vec<(VarId, RepType)>) -> FunctionBuilder {
@@ -69,6 +98,94 @@ impl ModuleBuilder {
                 .collect(),
 
             code: Vec::new(),
+        }
+    }
+
+    pub fn encode(self) -> Vec<u8> {
+        let mut encoded = Vec::new();
+
+        encoded.extend_from_slice(&[0x00, 0x61, 0x73, 0x6D]); // Wasm magic number
+        encoded.extend_from_slice(&[0x01, 0x00, 0x00, 0x00]); // Wasm version number
+
+        // Type section
+        {
+            encoded.push(1); // type section id
+
+            let mut type_section_body: Vec<u8> = Vec::new();
+
+            // Type vector length
+            leb128::write::unsigned(
+                &mut type_section_body,
+                self.func_types.len().try_into().unwrap(),
+            )
+            .unwrap();
+
+            let mut func_types: Vec<(FuncType, u32)> = self.func_types.into_iter().collect();
+            func_types.sort_by_key(|(_, key)| *key);
+
+            for (func_ty, _) in func_types {
+                type_section_body.push(0x60);
+
+                // Argument `resulttype` vector length
+                leb128::write::unsigned(
+                    &mut type_section_body,
+                    func_ty.args.len().try_into().unwrap(),
+                )
+                .unwrap();
+
+                for arg in func_ty.args {
+                    type_section_body.push(arg.binary());
+                }
+
+                // Return `resulttype` vector length
+                type_section_body.push(1);
+                type_section_body.push(func_ty.ret.binary());
+            }
+
+            leb128::write::unsigned(&mut encoded, type_section_body.len().try_into().unwrap())
+                .unwrap();
+            encoded.extend_from_slice(&type_section_body);
+        }
+
+        // TODO: Function section
+
+        // Table section
+        {
+            encoded.push(4); // table section id
+
+            let mut table_section_body: Vec<u8> = Vec::new();
+
+            // Table vector length
+            table_section_body.push(1);
+
+            // reftype
+            table_section_body.push(0x70); // funcref
+
+            // limits
+            table_section_body.push(0x1); // min and max
+
+            // leb128::write::unsigned(&mut table_section_body, number_of_functions); // min TODO
+            // leb128::write::unsigned(&mut table_section_body, number_of_functions); // max TODO
+
+            leb128::write::unsigned(&mut encoded, table_section_body.len().try_into().unwrap())
+                .unwrap();
+            encoded.extend_from_slice(&table_section_body);
+        }
+
+        // TODO: Do we need memory section? (5)
+
+        // TODO: Start section (8)
+        // TODO: Element section (9)
+        // TODO: Code section (10)
+
+        encoded
+    }
+
+    fn add_func_type(&mut self, func_type: FuncType) -> u32 {
+        let next_idx: u32 = self.func_types.len().try_into().unwrap();
+        match self.func_types.entry(func_type) {
+            std::collections::hash_map::Entry::Occupied(entry) => *entry.get(),
+            std::collections::hash_map::Entry::Vacant(entry) => *entry.insert(next_idx),
         }
     }
 }
@@ -136,9 +253,15 @@ impl<'a> FunctionBuilder<'a> {
     }
 
     /// Generate a `call_indirect` instruction. Table index assumed to be 0.
-    ///
-    /// TODO: type index?
-    pub fn call_indirect(&mut self) {
-        todo!()
+    pub fn call_indirect(&mut self, func_type: FuncType) {
+        let type_idx = self.module_builder.add_func_type(func_type);
+        self.code.push(0x11);
+        leb128::write::unsigned(&mut self.code, type_idx.into()).unwrap();
+        self.code.push(0); // table index
+    }
+
+    pub fn finish(self) {
+        let FunctionBuilder { module_builder, code, .. } = self;
+        module_builder.functions.push(code);
     }
 }
