@@ -181,6 +181,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "leb128"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "884e2677b40cc8c339eaefcb701c32ef1fd2493d71118dc0ca4b6a736c93bd67"
+
+[[package]]
 name = "lexgen"
 version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -221,6 +227,7 @@ dependencies = [
  "cranelift-native",
  "cranelift-object",
  "fxhash",
+ "leb128",
  "lexgen",
  "lexgen_util",
  "parsegen",

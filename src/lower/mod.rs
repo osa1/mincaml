@@ -144,6 +144,7 @@ impl<'ctx> CcCtx<'ctx> {
     }
 }
 
+/// Lower a a-normal form program. Returns a list of functions, and the id for the main function.
 pub fn lower_pgm(ctx: &mut Ctx, expr: anormal::Expr) -> (Vec<Fun>, VarId) {
     let mut ctx = CcCtx::new(ctx);
 
