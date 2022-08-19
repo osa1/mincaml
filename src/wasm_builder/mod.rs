@@ -235,8 +235,10 @@ impl ModuleBuilder {
             // limits
             table_section_body.push(0x1); // min and max
 
-            // leb128::write::unsigned(&mut table_section_body, number_of_functions); // min TODO
-            // leb128::write::unsigned(&mut table_section_body, number_of_functions); // max TODO
+            let n_functions: u64 = self.functions.len().try_into().unwrap();
+
+            leb128::write::unsigned(&mut table_section_body, n_functions).unwrap(); // min
+            leb128::write::unsigned(&mut table_section_body, n_functions).unwrap(); // max
 
             leb128::write::unsigned(&mut encoded, table_section_body.len().try_into().unwrap())
                 .unwrap();
