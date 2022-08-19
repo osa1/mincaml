@@ -4,6 +4,7 @@ use crate::ctx::VarId;
 use fxhash::FxHashMap;
 
 /// A Wasm module builder
+#[derive(Debug)]
 pub struct ModuleBuilder {
     /// Maps function types in the module to their type indices.
     ///
@@ -15,10 +16,11 @@ pub struct ModuleBuilder {
     func_idxs: FxHashMap<VarId, usize>,
 
     /// Function codes in the module.
-    functions: Vec<Vec<u8>>,
+    functions: Vec<Function>,
 }
 
 /// A Wasm function builder
+#[derive(Debug)]
 pub struct FunctionBuilder<'a> {
     module_builder: &'a mut ModuleBuilder,
 
@@ -35,7 +37,14 @@ pub struct FunctionBuilder<'a> {
     code: Vec<u8>,
 }
 
+#[derive(Debug)]
+struct Function {
+    locals: Vec<ValType>,
+    code: Vec<u8>,
+}
+
 /// A Wasm function local variable
+#[derive(Debug)]
 struct Local {
     /// Index of the local in the function
     idx: u32,
@@ -238,7 +247,45 @@ impl ModuleBuilder {
             encoded.extend_from_slice(&element_section_body);
         }
 
-        // TODO: Code section (10)
+        // Code section
+        {
+            encoded.push(10);
+
+            let mut code_section_body: Vec<u8> = Vec::new();
+
+            leb128::write::unsigned(
+                &mut code_section_body,
+                self.functions.len().try_into().unwrap(),
+            )
+            .unwrap();
+
+            for Function { locals, code } in self.functions {
+                let mut func_encoding: Vec<u8> = Vec::new();
+
+                leb128::write::unsigned(&mut func_encoding, locals.len().try_into().unwrap())
+                    .unwrap();
+
+                for local in locals {
+                    func_encoding.push(1); // number of locals with the type
+                    func_encoding.push(local.binary());
+                }
+
+                func_encoding.extend_from_slice(&code);
+
+                leb128::write::unsigned(
+                    &mut code_section_body,
+                    func_encoding.len().try_into().unwrap(),
+                )
+                .unwrap();
+
+                code_section_body.extend_from_slice(&func_encoding);
+            }
+
+            leb128::write::unsigned(&mut encoded, code_section_body.len().try_into().unwrap())
+                .unwrap();
+
+            encoded.extend_from_slice(&code_section_body);
+        }
 
         encoded
     }
@@ -323,9 +370,9 @@ impl<'a> FunctionBuilder<'a> {
     }
 
     pub fn finish(self) {
-        let FunctionBuilder { module_builder, code, id, .. } = self;
+        let FunctionBuilder { module_builder, id, locals, code, .. } = self;
         let idx = module_builder.functions.len();
-        module_builder.functions.push(code);
+        module_builder.functions.push(Function { locals, code });
         let old_idx = module_builder.func_idxs.insert(id, idx);
         assert_eq!(old_idx, None);
     }
