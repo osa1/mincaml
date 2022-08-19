@@ -207,7 +207,37 @@ impl ModuleBuilder {
             encoded.extend_from_slice(&start_section_body);
         }
 
-        // TODO: Element section (9)
+        // Element section
+        {
+            encoded.push(9);
+
+            let mut element_section_body: Vec<u8> = Vec::new();
+
+            // element kind 0: expr for start offset, a vector of func indices
+            element_section_body.push(0);
+
+            // expr for start offset
+            element_section_body.push(0x41); // i32.const
+            element_section_body.push(0);
+            element_section_body.push(0x0B); // end
+
+            // Func index vec length
+            leb128::write::unsigned(
+                &mut element_section_body,
+                self.functions.len().try_into().unwrap(),
+            )
+            .unwrap();
+
+            for i in 0..self.functions.len() {
+                leb128::write::unsigned(&mut element_section_body, i.try_into().unwrap()).unwrap();
+            }
+
+            leb128::write::unsigned(&mut encoded, element_section_body.len().try_into().unwrap())
+                .unwrap();
+
+            encoded.extend_from_slice(&element_section_body);
+        }
+
         // TODO: Code section (10)
 
         encoded
