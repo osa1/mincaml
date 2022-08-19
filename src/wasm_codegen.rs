@@ -9,7 +9,7 @@ pub fn codegen(ctx: &mut Ctx, funs: &[Fun], main_id: VarId) -> Vec<u8> {
         codegen_fun(ctx, &mut builder);
     }
 
-    builder.encode()
+    builder.encode(main_id)
 }
 
 fn codegen_fun(ctx: &mut Ctx, builder: &mut ModuleBuilder) {}

@@ -11,6 +11,9 @@ pub struct ModuleBuilder {
     /// called.
     func_types: FxHashMap<FuncType, u32>,
 
+    /// Maps ids for functions to their indices in [functions]
+    func_idxs: FxHashMap<VarId, usize>,
+
     /// Function codes in the module.
     functions: Vec<Vec<u8>>,
 }
@@ -18,6 +21,9 @@ pub struct ModuleBuilder {
 /// A Wasm function builder
 pub struct FunctionBuilder<'a> {
     module_builder: &'a mut ModuleBuilder,
+
+    /// Id of the function being built
+    id: VarId,
 
     /// Locals in the function. Includes function arguments. Indexed by [FunctionLocalId].
     locals: Vec<ValType>,
@@ -79,12 +85,18 @@ pub struct FunctionLocalId(u32);
 
 impl ModuleBuilder {
     pub fn new() -> Self {
-        ModuleBuilder { func_types: Default::default(), functions: Vec::new() }
+        ModuleBuilder {
+            func_types: Default::default(),
+            func_idxs: Default::default(),
+            functions: Vec::new(),
+        }
     }
 
-    pub fn new_function(&mut self, args: Vec<(VarId, RepType)>) -> FunctionBuilder {
+    pub fn new_function(&mut self, id: VarId, args: Vec<(VarId, RepType)>) -> FunctionBuilder {
         FunctionBuilder {
             module_builder: self,
+
+            id,
 
             locals: args
                 .iter()
@@ -101,7 +113,7 @@ impl ModuleBuilder {
         }
     }
 
-    pub fn encode(self) -> Vec<u8> {
+    pub fn encode(self, main_fn_id: VarId) -> Vec<u8> {
         let mut encoded = Vec::new();
 
         encoded.extend_from_slice(&[0x00, 0x61, 0x73, 0x6D]); // Wasm magic number
@@ -169,12 +181,32 @@ impl ModuleBuilder {
 
             leb128::write::unsigned(&mut encoded, table_section_body.len().try_into().unwrap())
                 .unwrap();
+
             encoded.extend_from_slice(&table_section_body);
         }
 
         // TODO: Do we need memory section? (5)
 
-        // TODO: Start section (8)
+        // Start section
+        {
+            encoded.push(8);
+
+            let mut start_section_body: Vec<u8> = Vec::new();
+
+            let main_fn_id = self
+                .func_idxs
+                .get(&main_fn_id)
+                .unwrap_or_else(|| panic!("Unknown function {:?}", main_fn_id));
+
+            leb128::write::unsigned(&mut start_section_body, (*main_fn_id).try_into().unwrap())
+                .unwrap();
+
+            leb128::write::unsigned(&mut encoded, start_section_body.len().try_into().unwrap())
+                .unwrap();
+
+            encoded.extend_from_slice(&start_section_body);
+        }
+
         // TODO: Element section (9)
         // TODO: Code section (10)
 
@@ -261,7 +293,10 @@ impl<'a> FunctionBuilder<'a> {
     }
 
     pub fn finish(self) {
-        let FunctionBuilder { module_builder, code, .. } = self;
+        let FunctionBuilder { module_builder, code, id, .. } = self;
+        let idx = module_builder.functions.len();
         module_builder.functions.push(code);
+        let old_idx = module_builder.func_idxs.insert(id, idx);
+        assert_eq!(old_idx, None);
     }
 }
