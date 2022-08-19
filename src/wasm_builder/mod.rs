@@ -24,6 +24,9 @@ pub struct ModuleBuilder {
 pub struct FunctionBuilder<'a> {
     module_builder: &'a mut ModuleBuilder,
 
+    /// Type of the function being built
+    ty: FuncType,
+
     /// Id of the function being built
     id: VarId,
 
@@ -39,6 +42,7 @@ pub struct FunctionBuilder<'a> {
 
 #[derive(Debug)]
 struct Function {
+    ty: FuncType,
     locals: Vec<ValType>,
     code: Vec<u8>,
 }
@@ -101,9 +105,23 @@ impl ModuleBuilder {
         }
     }
 
-    pub fn new_function(&mut self, id: VarId, args: Vec<(VarId, RepType)>) -> FunctionBuilder {
+    pub fn new_function(
+        &mut self, id: VarId, args: Vec<(VarId, RepType)>, ret_ty: RepType,
+    ) -> FunctionBuilder {
+        let func_ty = FuncType {
+            args: args
+                .iter()
+                .map(|(_, ty)| ValType::from_rep_type(*ty))
+                .collect(),
+            ret: ValType::from_rep_type(ret_ty),
+        };
+
+        self.add_func_type(func_ty.clone());
+
         FunctionBuilder {
             module_builder: self,
+
+            ty: func_ty,
 
             id,
 
@@ -141,7 +159,12 @@ impl ModuleBuilder {
             )
             .unwrap();
 
-            let mut func_types: Vec<(FuncType, u32)> = self.func_types.into_iter().collect();
+            let mut func_types: Vec<(FuncType, u32)> = self
+                .func_types
+                .iter()
+                .map(|(k, v)| (k.clone(), *v))
+                .collect();
+
             func_types.sort_by_key(|(_, key)| *key);
 
             for (func_ty, _) in func_types {
@@ -168,7 +191,34 @@ impl ModuleBuilder {
             encoded.extend_from_slice(&type_section_body);
         }
 
-        // TODO: Function section
+        // Function section
+        {
+            encoded.push(3); // function section id
+
+            let mut function_section_body: Vec<u8> = Vec::new();
+
+            leb128::write::unsigned(
+                &mut function_section_body,
+                self.functions.len().try_into().unwrap(),
+            )
+            .unwrap();
+
+            for f in &self.functions {
+                let f_ty_idx = self.func_types.get(&f.ty).unwrap();
+                leb128::write::unsigned(
+                    &mut function_section_body,
+                    (*f_ty_idx).try_into().unwrap(),
+                )
+                .unwrap();
+            }
+
+            leb128::write::unsigned(
+                &mut encoded,
+                function_section_body.len().try_into().unwrap(),
+            )
+            .unwrap();
+            encoded.extend_from_slice(&function_section_body);
+        }
 
         // Table section
         {
@@ -259,7 +309,7 @@ impl ModuleBuilder {
             )
             .unwrap();
 
-            for Function { locals, code } in self.functions {
+            for Function { ty: _, locals, code } in self.functions {
                 let mut func_encoding: Vec<u8> = Vec::new();
 
                 leb128::write::unsigned(&mut func_encoding, locals.len().try_into().unwrap())
@@ -370,9 +420,9 @@ impl<'a> FunctionBuilder<'a> {
     }
 
     pub fn finish(self) {
-        let FunctionBuilder { module_builder, id, locals, code, .. } = self;
+        let FunctionBuilder { module_builder, id, locals, code, ty, local_indices: _ } = self;
         let idx = module_builder.functions.len();
-        module_builder.functions.push(Function { locals, code });
+        module_builder.functions.push(Function { ty, locals, code });
         let old_idx = module_builder.func_idxs.insert(id, idx);
         assert_eq!(old_idx, None);
     }
