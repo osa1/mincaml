@@ -270,7 +270,7 @@ fn codegen_fun(
             // println!("stmt: {}", s);
 
             match stmt {
-                lower::Stmt::Asgn(lower::Asgn { lhs, rhs }) => {
+                lower::Stmt::Asgn(lower::Asgn { lhs, rhs: _ }) => {
                     if !declared.contains(lhs) {
                         declared.insert(*lhs);
                         let lhs_cl_var =
