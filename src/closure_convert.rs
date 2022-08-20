@@ -4,6 +4,8 @@
 //! closure itself: a tuple with the function as the first element, and captured variables as rest
 //! of the elements.
 
+mod print;
+
 use crate::anormal;
 use crate::cg_types::RepType;
 use crate::common::*;

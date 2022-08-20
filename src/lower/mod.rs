@@ -232,10 +232,18 @@ fn cc_block(ctx: &mut CcCtx, mut block: BlockBuilder, sequel: Sequel, expr: cc::
         cc::Expr::TupleGet(tuple, idx) => {
             let elem_ty = match &*ctx.ctx.var_type(tuple) {
                 Type::Tuple(args) => RepType::from(&args[idx]),
-                other => panic!(
-                    "Non-tuple type in tuple position: {:?} (type={:?})",
-                    tuple, other
-                ),
+                other => {
+                    let mut expr_str = String::new();
+                    cc::Expr::TupleGet(tuple, idx)
+                        .pp(&ctx.ctx, 0, &mut expr_str)
+                        .unwrap();
+                    panic!(
+                        "Non-tuple type in tuple position: {} (type={:?}), expr = \n{}",
+                        ctx.ctx.get_var(tuple),
+                        other,
+                        expr_str
+                    )
+                }
             };
             let ret_tmp = sequel.get_ret_var(ctx, elem_ty);
             block.asgn(ret_tmp, Expr::TupleGet(tuple, idx));
