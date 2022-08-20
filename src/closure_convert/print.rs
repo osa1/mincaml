@@ -72,7 +72,7 @@ impl Expr {
                 for (var_idx, var) in vars.iter().enumerate() {
                     write!(w, "{}", ctx.get_var(*var))?;
                     if var_idx != vars.len() - 1 {
-                        write!(w, " ")?;
+                        write!(w, ", ")?;
                     }
                 }
                 write!(w, ")")

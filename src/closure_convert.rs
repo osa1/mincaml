@@ -162,7 +162,7 @@ fn cc_expr(ctx: &mut CcCtx, expr: anormal::Expr, fvs: &FxHashMap<VarId, FxHashSe
 
         anormal::Expr::Var(var) => Expr::Var(var),
 
-        anormal::Expr::LetRec { name, ty_id, mut args, rhs, body } => {
+        anormal::Expr::LetRec { name, ty_id, args, rhs, body } => {
             // After cc 'name' will refer to the closure tuple. For the function we use a fresh
             // variable.
             let fun_var = ctx.fresh_var(RepType::Word);
@@ -187,6 +187,7 @@ fn cc_expr(ctx: &mut CcCtx, expr: anormal::Expr, fvs: &FxHashMap<VarId, FxHashSe
                             body: Box::new(body),
                         });
 
+                let mut args = args;
                 args.insert(0, name); // first argument will be 'self'
 
                 let fun_type = ctx.ctx.get_type(ty_id);
@@ -209,15 +210,16 @@ fn cc_expr(ctx: &mut CcCtx, expr: anormal::Expr, fvs: &FxHashMap<VarId, FxHashSe
             }
         }
 
-        anormal::Expr::App(fun, mut args) => {
+        anormal::Expr::App(fun, args) => {
             // f(x) -> f.0(f, x)
-            let fun_tmp = ctx.fresh_var(RepType::Word);
-            args.insert(0, fun);
-            Expr::Let {
-                id: fun_tmp,
-                rhs: Box::new(Expr::TupleGet(fun, 0)),
-                body: Box::new(Expr::App(fun_tmp, args)),
-            }
+            // let fun_tmp = ctx.fresh_var(RepType::Word);
+            // args.insert(0, fun);
+            // Expr::Let {
+            //     id: fun_tmp,
+            //     rhs: Box::new(Expr::TupleGet(fun, 0)),
+            //     body: Box::new(Expr::App(fun_tmp, args)),
+            // }
+            Expr::App(fun, args)
         }
 
         anormal::Expr::Tuple(vars) => Expr::Tuple(vars),
@@ -235,18 +237,12 @@ fn cc_expr(ctx: &mut CcCtx, expr: anormal::Expr, fvs: &FxHashMap<VarId, FxHashSe
 /// Collect free variables. Returns a map from closure ids to their free variables.
 fn collect_fvs(ctx: &Ctx, expr: &anormal::Expr) -> FxHashMap<VarId, FxHashSet<VarId>> {
     let mut closure_fvs = Default::default();
-    collect_fvs_(
-        ctx,
-        expr,
-        &mut Default::default(),
-        &mut Default::default(),
-        &mut closure_fvs,
-    );
+    collect_fvs_(ctx, expr, &mut Default::default(), &mut closure_fvs);
     closure_fvs
 }
 
 fn collect_fvs_(
-    ctx: &Ctx, expr: &anormal::Expr, bounds: &mut FxHashSet<VarId>, fvs: &mut FxHashSet<VarId>,
+    ctx: &Ctx, expr: &anormal::Expr, fvs: &mut FxHashSet<VarId>,
     acc: &mut FxHashMap<VarId, FxHashSet<VarId>>,
 ) {
     use anormal::Expr::*;
@@ -257,77 +253,72 @@ fn collect_fvs_(
         IBinOp(BinOp { arg1, arg2, .. })
         | FBinOp(BinOp { arg1, arg2, .. })
         | ArrayGet(arg1, arg2) => {
-            collect_fv(ctx, *arg1, bounds, fvs);
-            collect_fv(ctx, *arg2, bounds, fvs);
+            collect_fv(ctx, *arg1, fvs);
+            collect_fv(ctx, *arg2, fvs);
         }
 
         Neg(arg) | FNeg(arg) | TupleGet(arg, _) => {
-            collect_fv(ctx, *arg, bounds, fvs);
+            collect_fv(ctx, *arg, fvs);
         }
 
         If(arg1, arg2, _, e1, e2) => {
-            collect_fv(ctx, *arg1, bounds, fvs);
-            collect_fv(ctx, *arg2, bounds, fvs);
-            collect_fvs_(ctx, e1, bounds, fvs, acc);
-            collect_fvs_(ctx, e2, bounds, fvs, acc);
+            collect_fv(ctx, *arg1, fvs);
+            collect_fv(ctx, *arg2, fvs);
+            collect_fvs_(ctx, e1, fvs, acc);
+            collect_fvs_(ctx, e2, fvs, acc);
         }
 
         Let { id, ty_id: _, rhs, body } => {
-            // TODO: We don't have shadowing at this point so we don't need to remove stuff from
-            // `bounds`?
-            bounds.insert(*id);
-            collect_fvs_(ctx, body, bounds, fvs, acc);
-            bounds.remove(id);
-            collect_fvs_(ctx, rhs, bounds, fvs, acc);
+            collect_fvs_(ctx, body, fvs, acc);
+            collect_fvs_(ctx, rhs, fvs, acc);
+            fvs.remove(id);
         }
 
-        Var(id) => collect_fv(ctx, *id, bounds, fvs),
+        Var(id) => collect_fv(ctx, *id, fvs),
 
         LetRec { name, ty_id: _, args, rhs, body } => {
-            bounds.insert(*name);
-            collect_fvs_(ctx, body, bounds, fvs, acc);
+            collect_fvs_(ctx, body, fvs, acc);
+            fvs.remove(name);
+
             let mut letrec_fvs: FxHashSet<VarId> = Default::default();
+            collect_fvs_(ctx, rhs, &mut letrec_fvs, acc);
             for arg in args {
-                bounds.insert(*arg);
+                letrec_fvs.remove(arg);
             }
-            collect_fvs_(ctx, rhs, bounds, &mut letrec_fvs, acc);
+
             fvs.extend(letrec_fvs.iter().copied());
             let old = acc.insert(*name, letrec_fvs);
             debug_assert_eq!(old, None);
-            for arg in args {
-                bounds.remove(arg);
-            }
-            bounds.remove(name);
         }
 
         App(fun, args) => {
-            collect_fv(ctx, *fun, bounds, fvs);
+            collect_fv(ctx, *fun, fvs);
             for arg in args {
-                collect_fv(ctx, *arg, bounds, fvs);
+                collect_fv(ctx, *arg, fvs);
             }
         }
 
         Tuple(args) => {
             for arg in args {
-                collect_fv(ctx, *arg, bounds, fvs);
+                collect_fv(ctx, *arg, fvs);
             }
         }
 
         ArrayAlloc { len, elem } => {
-            collect_fv(ctx, *len, bounds, fvs);
-            collect_fv(ctx, *elem, bounds, fvs);
+            collect_fv(ctx, *len, fvs);
+            collect_fv(ctx, *elem, fvs);
         }
 
         ArrayPut(arg1, arg2, arg3) => {
-            collect_fv(ctx, *arg1, bounds, fvs);
-            collect_fv(ctx, *arg2, bounds, fvs);
-            collect_fv(ctx, *arg3, bounds, fvs);
+            collect_fv(ctx, *arg1, fvs);
+            collect_fv(ctx, *arg2, fvs);
+            collect_fv(ctx, *arg3, fvs);
         }
     }
 }
 
-fn collect_fv(ctx: &Ctx, var: VarId, bounds: &FxHashSet<VarId>, fvs: &mut FxHashSet<VarId>) {
-    if !ctx.is_builtin_var(var) && !bounds.contains(&var) {
+fn collect_fv(ctx: &Ctx, var: VarId, fvs: &mut FxHashSet<VarId>) {
+    if !ctx.is_builtin_var(var) {
         fvs.insert(var);
     }
 }
