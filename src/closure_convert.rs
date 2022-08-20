@@ -7,7 +7,9 @@
 use crate::anormal;
 use crate::cg_types::RepType;
 use crate::common::*;
-use crate::ctx::{Ctx, TypeId, VarId};
+use crate::ctx::{Ctx, VarId};
+use crate::type_check::Type;
+use crate::var::CompilerPhase::ClosureConvert;
 
 use fxhash::{FxHashMap, FxHashSet};
 
@@ -39,7 +41,6 @@ pub enum Expr {
     /// Let binding
     Let {
         id: VarId,
-        ty_id: TypeId,
         rhs: Box<Expr>,
         body: Box<Expr>,
     },
@@ -83,16 +84,163 @@ pub struct Fun {
     pub return_type: RepType,
 }
 
+/// Closure conversion state
+struct CcCtx<'ctx> {
+    ctx: &'ctx mut Ctx,
+
+    /// Functions generated so far
+    funs: Vec<Fun>,
+}
+
+impl<'ctx> CcCtx<'ctx> {
+    fn new(ctx: &'ctx mut Ctx) -> Self {
+        Self { ctx, funs: vec![] }
+    }
+
+    fn fresh_var(&mut self, rep_type: RepType) -> VarId {
+        self.ctx.fresh_codegen_var(ClosureConvert, rep_type)
+    }
+
+    fn fork_fun<F: FnOnce(&mut CcCtx) -> Fun>(&mut self, fork: F) {
+        let fun = fork(self);
+        self.funs.push(fun);
+    }
+}
+
 /// Closure conversion, see module documentation for details.
 ///
 /// Returns functions of the program and the id for the main function.
 pub fn closure_convert(ctx: &mut Ctx, expr: anormal::Expr) -> (Vec<Fun>, VarId) {
-    todo!()
+    let closure_fvs = collect_fvs(ctx, &expr);
+    let mut ctx = CcCtx::new(ctx);
+
+    let main_name = ctx.fresh_var(RepType::Word);
+    let main_expr = cc_expr(&mut ctx, expr, &closure_fvs);
+
+    let CcCtx { ctx: _, mut funs } = ctx;
+    funs.push(Fun {
+        name: main_name,
+        args: Vec::new(),
+        body: main_expr,
+        return_type: RepType::Word,
+    });
+
+    (funs, main_name)
+}
+
+fn cc_expr(ctx: &mut CcCtx, expr: anormal::Expr, fvs: &FxHashMap<VarId, FxHashSet<VarId>>) -> Expr {
+    match expr {
+        anormal::Expr::Unit => Expr::Unit,
+
+        anormal::Expr::Int(i) => Expr::Int(i),
+
+        anormal::Expr::Float(f) => Expr::Float(f),
+
+        anormal::Expr::IBinOp(op) => Expr::IBinOp(op),
+
+        anormal::Expr::FBinOp(op) => Expr::FBinOp(op),
+
+        anormal::Expr::Neg(arg) => Expr::Neg(arg),
+
+        anormal::Expr::FNeg(arg) => Expr::FNeg(arg),
+
+        anormal::Expr::If(v1, v2, cmp, then_, else_) => Expr::If(
+            v1,
+            v2,
+            cmp,
+            Box::new(cc_expr(ctx, *then_, fvs)),
+            Box::new(cc_expr(ctx, *else_, fvs)),
+        ),
+
+        anormal::Expr::Let { id, ty_id: _, rhs, body } => Expr::Let {
+            id,
+            rhs: Box::new(cc_expr(ctx, *rhs, fvs)),
+            body: Box::new(cc_expr(ctx, *body, fvs)),
+        },
+
+        anormal::Expr::Var(var) => Expr::Var(var),
+
+        anormal::Expr::LetRec { name, ty_id, mut args, rhs, body } => {
+            // After cc 'name' will refer to the closure tuple. For the function we use a fresh
+            // variable.
+            let fun_var = ctx.fresh_var(RepType::Word);
+
+            // Free variables of the closure will be moved to tuple payload
+            let closure_fvs: Vec<VarId> = fvs.get(&name).unwrap().iter().copied().collect();
+
+            // In the RHS and the body, 'name' will refer to the tuple. In the RHS the tuple will
+            // be the first argument of the function, in the body we'll allocate a tuple.
+
+            let rhs = cc_expr(ctx, *rhs, fvs);
+            ctx.fork_fun(|ctx| {
+                // Bind captured variables in function body
+                let fun_body: Expr =
+                    closure_fvs
+                        .iter()
+                        .copied()
+                        .enumerate()
+                        .rfold(rhs, |body, (fv_idx, fv)| Expr::Let {
+                            id: fv,
+                            rhs: Box::new(Expr::TupleGet(name, fv_idx + 1)),
+                            body: Box::new(body),
+                        });
+
+                args.insert(0, name); // first argument will be 'self'
+
+                let fun_type = ctx.ctx.get_type(ty_id);
+                let fun_return_type = match &*fun_type {
+                    Type::Fun { ret, .. } => RepType::from(&**ret),
+                    _ => panic!("Non-function in function position"),
+                };
+
+                Fun { name: fun_var, args, body: fun_body, return_type: fun_return_type }
+            });
+
+            // Body
+            let mut closure_tuple_args = closure_fvs;
+            closure_tuple_args.insert(0, fun_var);
+            let body = cc_expr(ctx, *body, fvs);
+            Expr::Let {
+                id: name,
+                rhs: Box::new(Expr::Tuple(closure_tuple_args)),
+                body: Box::new(body),
+            }
+        }
+
+        anormal::Expr::App(fun, mut args) => {
+            // f(x) -> f.0(f, x)
+            let fun_tmp = ctx.fresh_var(RepType::Word);
+            args.insert(0, fun);
+            Expr::Let {
+                id: fun_tmp,
+                rhs: Box::new(Expr::TupleGet(fun, 0)),
+                body: Box::new(Expr::App(fun_tmp, args)),
+            }
+        }
+
+        anormal::Expr::Tuple(vars) => Expr::Tuple(vars),
+
+        anormal::Expr::TupleGet(var, idx) => Expr::TupleGet(var, idx),
+
+        anormal::Expr::ArrayAlloc { len, elem } => Expr::ArrayAlloc { len, elem },
+
+        anormal::Expr::ArrayGet(var, idx) => Expr::ArrayGet(var, idx),
+
+        anormal::Expr::ArrayPut(var, idx, elem) => Expr::ArrayPut(var, idx, elem),
+    }
 }
 
 /// Collect free variables. Returns a map from closure ids to their free variables.
-fn collect_fvs(expr: &anormal::Expr) -> FxHashMap<VarId, FxHashSet<VarId>> {
-    todo!()
+fn collect_fvs(ctx: &Ctx, expr: &anormal::Expr) -> FxHashMap<VarId, FxHashSet<VarId>> {
+    let mut closure_fvs = Default::default();
+    collect_fvs_(
+        ctx,
+        expr,
+        &mut Default::default(),
+        &mut Default::default(),
+        &mut closure_fvs,
+    );
+    closure_fvs
 }
 
 fn collect_fvs_(
