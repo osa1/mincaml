@@ -3,6 +3,7 @@
 mod anormal;
 mod ast;
 mod cg_types;
+mod closure_convert;
 mod codegen;
 mod common;
 mod ctx;

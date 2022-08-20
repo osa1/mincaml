@@ -409,31 +409,35 @@ fn fvs(ctx: &Ctx, e: &anormal::Expr, acc: &mut FxHashSet<VarId>) {
     use anormal::Expr::*;
     match e {
         Unit | Int(_) | Float(_) => {}
-        IBinOp(BinOp { arg1, arg2, op: _ }) => {
+
+        IBinOp(BinOp { arg1, arg2, op: _ })
+        | FBinOp(BinOp { arg1, arg2, op: _ })
+        | ArrayGet(arg1, arg2) => {
             fv(ctx, *arg1, acc);
             fv(ctx, *arg2, acc);
         }
-        FBinOp(BinOp { arg1, arg2, op: _ }) => {
-            fv(ctx, *arg1, acc);
-            fv(ctx, *arg2, acc);
-        }
+
         Neg(arg) | FNeg(arg) => {
             fv(ctx, *arg, acc);
         }
+
         If(arg1, arg2, _, e1, e2) => {
             fv(ctx, *arg1, acc);
             fv(ctx, *arg2, acc);
             fvs(ctx, e1, acc);
             fvs(ctx, e2, acc);
         }
+
         Let { id, ty_id: _, rhs, body } => {
             fvs(ctx, rhs, acc);
             fvs(ctx, body, acc);
             acc.remove(id);
         }
+
         Var(id) => {
             fv(ctx, *id, acc);
         }
+
         LetRec { name, ty_id: _, args, rhs, body } => {
             fvs(ctx, rhs, acc);
             fvs(ctx, body, acc);
@@ -442,28 +446,29 @@ fn fvs(ctx: &Ctx, e: &anormal::Expr, acc: &mut FxHashSet<VarId>) {
                 acc.remove(arg);
             }
         }
+
         App(fun, args) => {
             fv(ctx, *fun, acc);
             for arg in args {
                 fv(ctx, *arg, acc);
             }
         }
+
         Tuple(args) => {
             for arg in args {
                 fv(ctx, *arg, acc);
             }
         }
+
         TupleGet(arg, _) => {
             fv(ctx, *arg, acc);
         }
+
         ArrayAlloc { len, elem } => {
             fv(ctx, *len, acc);
             fv(ctx, *elem, acc);
         }
-        ArrayGet(arg1, arg2) => {
-            fv(ctx, *arg1, acc);
-            fv(ctx, *arg2, acc);
-        }
+
         ArrayPut(arg1, arg2, arg3) => {
             fv(ctx, *arg1, acc);
             fv(ctx, *arg2, acc);

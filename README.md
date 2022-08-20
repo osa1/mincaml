@@ -12,7 +12,7 @@ code generation, which was also something I wanted to learn.
 
 - A subset of OCaml (but see integer size below)
 - 64-bit integers (different from OCaml integers which are 63-bit), 64-bit
-  floats, arrays and tuples
+  floats, arrays, and tuples
 - No user defined types
 - No polymorphism, all types inferred
 - Tail-call elimination (currently unimplemented, see [cranelift issue][6])
