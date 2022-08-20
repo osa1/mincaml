@@ -20,9 +20,10 @@ mod wasm_builder;
 mod wasm_codegen;
 
 use anormal::anormal;
+use closure_convert::closure_convert;
 use codegen::codegen;
 use lexer::{tokenize, Token};
-use lower::lower_pgm;
+use lower::lower_fun;
 use type_check::type_check_pgm;
 
 use std::fs::File;
@@ -56,10 +57,11 @@ fn record_pass_stats<A, F: FnOnce() -> A>(
 
 type ObjectCode = Vec<u8>;
 
-/// Prepare an expression for code generation: parse, type check, lower it, do closure conversion.
-fn lower_expr(
+/// Prepare an expression for code generation: parse, type check, convert to a-normal form, do
+/// closure conversion.
+fn prepare_expr(
     expr_str: &str, dump_cc: bool, ctx: &mut ctx::Ctx, pass_stats: &mut Vec<PassStats>,
-) -> Option<(Vec<lower::Fun>, ctx::VarId)> {
+) -> Option<(Vec<closure_convert::Fun>, ctx::VarId)> {
     let tokens: Vec<Token> = match record_pass_stats(pass_stats, "tokenize", || tokenize(expr_str))
     {
         Err(err) => {
@@ -100,18 +102,19 @@ fn lower_expr(
     // println!("K normalized:");
     // println!("{:?}", expr);
 
-    let (funs, main) = record_pass_stats(pass_stats, "closure convert", || lower_pgm(ctx, expr));
+    let (funs, main) =
+        record_pass_stats(pass_stats, "closure convert", || closure_convert(ctx, expr));
 
-    if dump_cc {
-        println!("### Closure conversion:\n");
+    // if dump_cc {
+    //     println!("### Closure conversion:\n");
 
-        let mut s = String::new();
-        for fun in &funs {
-            fun.pp(ctx, &mut s).unwrap();
-        }
+    //     let mut s = String::new();
+    //     for fun in &funs {
+    //         fun.pp(ctx, &mut s).unwrap();
+    //     }
 
-        println!("{}", s);
-    }
+    //     println!("{}", s);
+    // }
 
     Some((funs, main))
 }
@@ -123,7 +126,11 @@ fn compile_expr(
 
     let mut ctx = Default::default();
 
-    let (funs, main) = lower_expr(expr_str, dump_cc, &mut ctx, &mut pass_stats)?;
+    let (funs, main) = prepare_expr(expr_str, dump_cc, &mut ctx, &mut pass_stats)?;
+    let funs: Vec<lower::Fun> = funs
+        .into_iter()
+        .map(|fun| lower_fun(&mut ctx, fun))
+        .collect();
 
     if dump_cg {
         println!("### Code generation:\n");
@@ -140,6 +147,7 @@ fn compile_expr(
     Some(object_code)
 }
 
+/*
 #[allow(unused)]
 fn compile_expr_wasm(expr_str: &str) {
     let mut pass_stats: Vec<PassStats> = Vec::with_capacity(10);
@@ -152,6 +160,7 @@ fn compile_expr_wasm(expr_str: &str) {
         wasm_codegen::codegen(&mut ctx, &funs, main)
     });
 }
+*/
 
 fn report_pass_stats(pass_stats: &[PassStats]) {
     // TODO: align columns
