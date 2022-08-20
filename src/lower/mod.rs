@@ -1,3 +1,9 @@
+//! Lowering prepares the program for code generation:
+//!
+//! - Converts a-normal form expressions to basic blocks
+//! - Does closure conversion
+//! - Simplifies array allocation expressions to alloc + set instructions
+
 mod print;
 mod types;
 
@@ -22,7 +28,9 @@ use fxhash::FxHashSet;
 #[derive(Debug, Clone)]
 enum Sequel {
     Return,
-    // Assign return value to this variable and jump to the label. Used when lowering let bindings.
+
+    /// Assign return value to this variable and jump to the label. Used when lowering let
+    /// bindings.
     Asgn(VarId, BlockIdx),
 }
 

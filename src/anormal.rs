@@ -7,26 +7,66 @@ use crate::var::CompilerPhase;
 #[derive(Debug)]
 pub enum Expr {
     Unit,
+
     Int(i64),
+
     Float(f64),
+
+    /// Integer binary operation
     IBinOp(BinOp<IntBinOp>),
+
+    /// Float binary operation
     FBinOp(BinOp<FloatBinOp>),
+
+    /// Integer negation
     Neg(VarId),
+
+    /// Float negation
     FNeg(VarId),
+
+    /// Conditional
     If(VarId, VarId, Cmp, Box<Expr>, Box<Expr>),
-    Let { id: VarId, ty_id: TypeId, rhs: Box<Expr>, body: Box<Expr> },
+
+    /// Let binding
+    Let {
+        id: VarId,
+        ty_id: TypeId,
+        rhs: Box<Expr>,
+        body: Box<Expr>,
+    },
+
     Var(VarId),
-    LetRec { name: VarId, ty_id: TypeId, args: Vec<VarId>, rhs: Box<Expr>, body: Box<Expr> },
+
+    /// Recursive let (closure).
+    ///
+    /// Closure conversion is done in the `lower` pass.
+    LetRec {
+        name: VarId,
+        ty_id: TypeId,
+        args: Vec<VarId>,
+        rhs: Box<Expr>,
+        body: Box<Expr>,
+    },
+
+    /// Function application
     App(VarId, Vec<VarId>),
-    // Tuple allocation
+
+    /// Tuple allocation
     Tuple(Vec<VarId>),
-    // Tuple field read
+
+    /// Tuple field read
     TupleGet(VarId, usize),
-    // Array allocation
-    ArrayAlloc { len: VarId, elem: VarId },
-    // Array field read
+
+    /// Array allocation
+    ArrayAlloc {
+        len: VarId,
+        elem: VarId,
+    },
+
+    /// Array field read
     ArrayGet(VarId, VarId),
-    // Array field write
+
+    /// Array field write
     ArrayPut(VarId, VarId, VarId),
 }
 
