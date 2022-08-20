@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use crate::common::*;
 use crate::ctx::{Ctx, VarId};
 

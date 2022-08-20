@@ -163,12 +163,30 @@ fn cc_expr(ctx: &mut CcCtx, expr: anormal::Expr, fvs: &FxHashMap<VarId, FxHashSe
         anormal::Expr::Var(var) => Expr::Var(var),
 
         anormal::Expr::LetRec { name, ty_id, args, rhs, body } => {
+            let (fun_arg_tys, fun_ret_ty) = match &*ctx.ctx.var_type(name) {
+                Type::Fun { args, ret } => (args.clone(), ret.clone()),
+                _ => panic!(),
+            };
+
             // After cc 'name' will refer to the closure tuple. For the function we use a fresh
             // variable.
             let fun_var = ctx.fresh_var(RepType::Word);
 
             // Free variables of the closure will be moved to tuple payload
             let closure_fvs: Vec<VarId> = fvs.get(&name).unwrap().iter().copied().collect();
+
+            // TODO: This part is super hacky, either document or fix
+            let mut tuple_field_tys: Vec<Type> =
+                // arg types not used in codegen
+                vec![Type::Fun { args: fun_arg_tys, ret: fun_ret_ty }];
+            tuple_field_tys.extend(
+                closure_fvs
+                    .iter()
+                    .map(|fv| (*ctx.ctx.var_type(*fv)).clone()),
+            );
+            let tuple_ty = Type::Tuple(tuple_field_tys);
+            let tuple_ty_interned = ctx.ctx.intern_type(tuple_ty);
+            ctx.ctx.set_var_type(name, tuple_ty_interned);
 
             // In the RHS and the body, 'name' will refer to the tuple. In the RHS the tuple will
             // be the first argument of the function, in the body we'll allocate a tuple.

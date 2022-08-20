@@ -212,7 +212,20 @@ fn cc_block(ctx: &mut CcCtx, mut block: BlockBuilder, sequel: Sequel, expr: cc::
 
             let fun_ret_ty = match &*ctx.ctx.var_type(fun) {
                 Type::Fun { args: _, ret } => RepType::from(&**ret),
-                other => panic!("Non-function in function position: {:?}", other),
+                // TODO: Another hacky part..
+                Type::Tuple(fields) => match &fields[0] {
+                    Type::Fun { args: _, ret } => RepType::from(&**ret),
+                    other => panic!(
+                        "Non-function {} in function position: {:?}",
+                        ctx.ctx.get_var(fun),
+                        other
+                    ),
+                },
+                other => panic!(
+                    "Non-function {} in function position: {:?}",
+                    ctx.ctx.get_var(fun),
+                    other
+                ),
             };
             let ret_tmp = sequel.get_ret_var(ctx, fun_ret_ty);
 
