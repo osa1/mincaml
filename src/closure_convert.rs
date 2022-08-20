@@ -171,6 +171,11 @@ fn cc_expr(ctx: &mut CcCtx, expr: anormal::Expr, fvs: &FxHashMap<VarId, FxHashSe
             // After cc 'name' will refer to the closure tuple. For the function we use a fresh
             // variable.
             let fun_var = ctx.fresh_var(RepType::Word);
+            {
+                let fun_var_ty = Type::Fun { args: fun_arg_tys.clone(), ret: fun_ret_ty.clone() };
+                let fun_var_ty_interned = ctx.ctx.intern_type(fun_var_ty);
+                ctx.ctx.set_var_type(fun_var, fun_var_ty_interned);
+            }
 
             // Free variables of the closure will be moved to tuple payload
             let closure_fvs: Vec<VarId> = fvs.get(&name).unwrap().iter().copied().collect();
@@ -256,6 +261,12 @@ fn cc_expr(ctx: &mut CcCtx, expr: anormal::Expr, fvs: &FxHashMap<VarId, FxHashSe
 fn collect_fvs(ctx: &Ctx, expr: &anormal::Expr) -> FxHashMap<VarId, FxHashSet<VarId>> {
     let mut closure_fvs = Default::default();
     collect_fvs_(ctx, expr, &mut Default::default(), &mut closure_fvs);
+
+    // for (var, fvs) in closure_fvs.iter() {
+    //     let fvs_vec: Vec<_> = fvs.iter().copied().map(|fv| ctx.get_var(fv)).collect();
+    //     println!("{}: {:?}", ctx.get_var(*var), fvs_vec);
+    // }
+
     closure_fvs
 }
 
@@ -303,6 +314,7 @@ fn collect_fvs_(
             for arg in args {
                 letrec_fvs.remove(arg);
             }
+            letrec_fvs.remove(name);
 
             fvs.extend(letrec_fvs.iter().copied());
             let old = acc.insert(*name, letrec_fvs);
