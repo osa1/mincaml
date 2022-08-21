@@ -155,24 +155,6 @@ pub fn anormal_(ctx: &mut Ctx, expr: ast::Expr) -> (Expr, TypeId) {
             (e, int)
         }
 
-        ast::Expr::If(box ast::Expr::Cmp(e1, cmp, e2), then_, else_) => {
-            let (e1, e1_ty) = anormal_(ctx, *e1);
-            let (tmp1, var1) = mk_let(ctx, e1, e1_ty);
-            let (e2, e2_ty) = anormal_(ctx, *e2);
-            // assert_eq!(e1_ty, e2_ty);
-            let (tmp2, var2) = mk_let(ctx, e2, e2_ty);
-            let (then_, ty) = anormal_(ctx, *then_);
-            let else_ = anormal(ctx, *else_);
-            let e = tmp1.finish(tmp2.finish(Expr::If(
-                var1,
-                var2,
-                cmp,
-                Box::new(then_),
-                Box::new(else_),
-            )));
-            (e, ty)
-        }
-
         ast::Expr::If(cond, then_, else_) => {
             let cond = anormal(ctx, *cond);
             let (cond_tmp, cond_var) = mk_let(ctx, cond, int);

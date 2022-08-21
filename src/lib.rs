@@ -1,5 +1,3 @@
-#![feature(box_patterns)]
-
 mod anormal;
 mod ast;
 mod cg_types;
