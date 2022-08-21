@@ -85,7 +85,7 @@ pub struct FuncType {
 }
 
 impl ValType {
-    fn from_rep_type(rep_ty: RepType) -> Self {
+    pub fn from_rep_type(rep_ty: RepType) -> Self {
         match rep_ty {
             RepType::Word => ValType::I64,
             RepType::Float => ValType::F64,
@@ -106,7 +106,10 @@ impl ModuleBuilder {
     }
 
     pub fn new_function(
-        &mut self, id: VarId, args: Vec<(VarId, RepType)>, ret_ty: RepType,
+        &mut self,
+        id: VarId,
+        args: Vec<(VarId, RepType)>,
+        ret_ty: RepType,
     ) -> FunctionBuilder {
         let func_ty = FuncType {
             args: args
@@ -311,7 +314,12 @@ impl ModuleBuilder {
             )
             .unwrap();
 
-            for Function { ty: _, locals, code } in self.functions {
+            for Function {
+                ty: _,
+                locals,
+                code,
+            } in self.functions
+            {
                 let mut func_encoding: Vec<u8> = Vec::new();
 
                 leb128::write::unsigned(&mut func_encoding, locals.len().try_into().unwrap())
@@ -379,6 +387,13 @@ impl<'a> FunctionBuilder<'a> {
         leb128::write::unsigned(&mut self.code, id.0.into()).unwrap();
     }
 
+    pub fn block<F: FnOnce(&mut Self)>(&mut self, ty: RepType, f: F) {
+        self.code.push(0x02);
+        self.code.push(ValType::from_rep_type(ty).binary());
+        f(self);
+        self.code.push(0x0B);
+    }
+
     pub fn i64_const(&mut self, val: i64) {
         self.code.push(0x42);
         leb128::write::signed(&mut self.code, val).unwrap();
@@ -413,6 +428,64 @@ impl<'a> FunctionBuilder<'a> {
         self.code.push(0xA3);
     }
 
+    pub fn i64_eq(&mut self) {
+        self.code.push(0x51);
+    }
+
+    pub fn i64_ne(&mut self) {
+        self.code.push(0x52);
+    }
+
+    pub fn i64_lt_s(&mut self) {
+        self.code.push(0x53);
+    }
+
+    pub fn i64_le_s(&mut self) {
+        self.code.push(0x57);
+    }
+
+    pub fn i64_gt_s(&mut self) {
+        self.code.push(0x55);
+    }
+
+    pub fn i64_ge_s(&mut self) {
+        self.code.push(0x59);
+    }
+
+    pub fn f64_eq(&mut self) {
+        self.code.push(0x61);
+    }
+
+    pub fn f64_ne(&mut self) {
+        self.code.push(0x62);
+    }
+
+    pub fn f64_lt(&mut self) {
+        self.code.push(0x63);
+    }
+
+    pub fn f64_le(&mut self) {
+        self.code.push(0x65);
+    }
+
+    pub fn f64_gt(&mut self) {
+        self.code.push(0x64);
+    }
+
+    pub fn f64_ge(&mut self) {
+        self.code.push(0x66);
+    }
+
+    pub fn br(&mut self, i: u32) {
+        self.code.push(0x0C);
+        leb128::write::unsigned(&mut self.code, i.into()).unwrap();
+    }
+
+    pub fn br_if(&mut self, i: u32) {
+        self.code.push(0x0D);
+        leb128::write::unsigned(&mut self.code, i.into()).unwrap();
+    }
+
     /// Generate a `call_indirect` instruction. Table index assumed to be 0.
     pub fn call_indirect(&mut self, func_type: FuncType) {
         let type_idx = self.module_builder.add_func_type(func_type);
@@ -422,7 +495,14 @@ impl<'a> FunctionBuilder<'a> {
     }
 
     pub fn finish(self) {
-        let FunctionBuilder { module_builder, id, locals, code, ty, local_indices: _ } = self;
+        let FunctionBuilder {
+            module_builder,
+            id,
+            locals,
+            code,
+            ty,
+            local_indices: _,
+        } = self;
         let idx = module_builder.functions.len();
         module_builder.functions.push(Function { ty, locals, code });
         let old_idx = module_builder.func_idxs.insert(id, idx);
