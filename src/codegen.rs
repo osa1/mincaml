@@ -496,7 +496,11 @@ fn codegen_expr(
                     // Note sure how to best implement/fix this, so for now we allow this case.
                     I64
                 }
-                other => panic!("Non-tuple in tuple position: {:?}", other),
+                other => panic!(
+                    "Non-tuple {} in tuple position: {:?}",
+                    ctx.get_var(*tuple),
+                    other
+                ),
             };
 
             let tuple = env.use_var(ctx, module, builder, *tuple);
@@ -522,7 +526,11 @@ fn codegen_expr(
             let var_type = ctx.var_type(*array);
             let elem_type = match &*var_type {
                 type_check::Type::Array(elem_type) => rep_type_abi(RepType::from(&**elem_type)),
-                _ => panic!("Non-array in array location"),
+                other => panic!(
+                    "Non-array {} in array location: {:?}",
+                    ctx.get_var(*array),
+                    other
+                ),
             };
 
             let array = env.use_var(ctx, module, builder, *array);
