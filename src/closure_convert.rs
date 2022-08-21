@@ -175,7 +175,7 @@ fn cc_expr(ctx: &mut CcCtx, expr: anormal::Expr, fvs: &FxHashMap<VarId, FxHashSe
             // variable.
             let fun_var = ctx.fresh_var(RepType::Word);
             {
-                let mut fun_var_arg_tys = fun_arg_tys.clone();
+                let mut fun_var_arg_tys = fun_arg_tys;
                 // TODO: We can't have recursive types (not supported), so for the 'self' argument
                 // we use 'int'. This is fine as rest of the passes do not care about parameter
                 // types of functions being called; they use types of arguments being passed.

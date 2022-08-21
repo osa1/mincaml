@@ -51,7 +51,7 @@ impl fmt::Display for Cmp {
 }
 
 impl FloatBinOp {
-    pub fn to_str(&self) -> &'static str {
+    pub fn as_str(&self) -> &'static str {
         match self {
             FloatBinOp::Add => "+.",
             FloatBinOp::Sub => "-.",
@@ -62,7 +62,7 @@ impl FloatBinOp {
 }
 
 impl IntBinOp {
-    pub fn to_str(&self) -> &'static str {
+    pub fn as_str(&self) -> &'static str {
         match self {
             IntBinOp::Add => "+.",
             IntBinOp::Sub => "-.",
@@ -71,7 +71,7 @@ impl IntBinOp {
 }
 
 impl Cmp {
-    pub fn to_str(&self) -> &'static str {
+    pub fn as_str(&self) -> &'static str {
         match self {
             Cmp::Equal => "=",
             Cmp::NotEqual => "<>",

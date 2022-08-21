@@ -16,13 +16,13 @@ impl Expr {
             Expr::IBinOp(BinOp { op, arg1, arg2 }) => {
                 let arg1 = ctx.get_var(*arg1);
                 let arg2 = ctx.get_var(*arg2);
-                write!(w, "{}{} {} {}", indent_str(indent), arg1, op.to_str(), arg2)
+                write!(w, "{}{} {} {}", indent_str(indent), arg1, op.as_str(), arg2)
             }
 
             Expr::FBinOp(BinOp { op, arg1, arg2 }) => {
                 let arg1 = ctx.get_var(*arg1);
                 let arg2 = ctx.get_var(*arg2);
-                write!(w, "{}{} {} {}", indent_str(indent), arg1, op.to_str(), arg2)
+                write!(w, "{}{} {} {}", indent_str(indent), arg1, op.as_str(), arg2)
             }
 
             Expr::Neg(var) => write!(w, "{}-{}", indent_str(indent), ctx.get_var(*var)),
@@ -37,7 +37,7 @@ impl Expr {
                     "{}if {} {} {} then",
                     indent_str(indent),
                     var1,
-                    cmp.to_str(),
+                    cmp.as_str(),
                     var2
                 )?;
                 then_.pp(ctx, indent + 2, w)?;
