@@ -173,6 +173,33 @@ impl Ctx {
         TypeId(self.tys.intern(ty))
     }
 
+    /// Given function argument types, function return type, and function free variable types, this
+    /// returns two types:
+    ///
+    /// 1. A function type that takes 'self' as first argument, and then the actual args
+    ///
+    /// 2. A 'self' tuple with the function as the first element, and free variables as the rest of
+    ///    the elements
+    pub fn make_closure_type(
+        &mut self, mut fun_args: Vec<Type>, fun_ret: Type, fvs: Vec<Type>,
+    ) -> (TypeId, TypeId) {
+        // TODO: We can't have recursive types (not supported), so as 'self' argument of the
+        // function type we use 'int'. This works as code generator doesn't care about function
+        // argument types.
+        fun_args.insert(0, Type::Int);
+
+        let fun = Type::Fun { args: fun_args, ret: Box::new(fun_ret) };
+
+        let mut tuple_elem_tys = fvs;
+        tuple_elem_tys.insert(0, fun.clone());
+        let tuple = Type::Tuple(tuple_elem_tys);
+
+        let tuple_id = self.intern_type(tuple);
+        let fun_id = self.intern_type(fun);
+
+        (fun_id, tuple_id)
+    }
+
     fn add_builtin_vars(&mut self) {
         // float -> float
         let float_float =

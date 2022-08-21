@@ -251,7 +251,7 @@ fn cc_block(ctx: &mut CcCtx, mut block: BlockBuilder, sequel: Sequel, expr: cc::
                         .pp(&ctx.ctx, 0, &mut expr_str)
                         .unwrap();
                     panic!(
-                        "Non-tuple type in tuple position: {} (type={:?}), expr = \n{}",
+                        "Non-tuple {} in tuple position: {:?} ({})",
                         ctx.ctx.get_var(tuple),
                         other,
                         expr_str

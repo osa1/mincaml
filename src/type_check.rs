@@ -23,16 +23,22 @@ pub enum Type {
     Var(TyVar),
 }
 
-/*
 impl Type {
+    #[allow(unused)]
+    pub fn is_fun(&self) -> bool {
+        matches!(self, Type::Fun { .. })
+    }
+
+    #[allow(unused)]
+    pub fn is_tuple(&self) -> bool {
+        matches!(self, Type::Tuple(_))
+    }
+
+    #[allow(unused)]
     pub fn is_array(&self) -> bool {
-        match self {
-            Type::Array(_) => true,
-            _ => false,
-        }
+        matches!(self, Type::Array(_))
     }
 }
-*/
 
 #[derive(Debug)]
 pub enum TypeErr {
