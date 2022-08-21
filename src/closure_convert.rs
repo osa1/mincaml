@@ -1,4 +1,5 @@
-//! Closure conversion: converts `let rec`s to functions.
+//! Closure conversion: converts `let rec`s to functions, converts function applications to closure
+//! applications.
 //!
 //! Generated functions take 'self' as the first argument. 'self' is the representation of the
 //! closure itself: a tuple with the function as the first element, and captured variables as rest
@@ -15,8 +16,10 @@ use crate::var::CompilerPhase::ClosureConvert;
 
 use fxhash::{FxHashMap, FxHashSet};
 
-/// Post-closure-conversion expressions. Only difference from [anormal::Expr] is this one doesn't
-/// have `LetRec`.
+/// Post-closure-conversion expressions. Differences from [anormal::Expr] are:
+///
+/// - No `LetRec`
+/// - `App`s and `TupleGet`s are annotated with `RepType`s for the values of the expressions
 #[derive(Debug)]
 pub enum Expr {
     Unit,
@@ -50,13 +53,13 @@ pub enum Expr {
     Var(VarId),
 
     /// Function application
-    App(VarId, Vec<VarId>),
+    App(VarId, Vec<VarId>, RepType),
 
     /// Tuple allocation
     Tuple(Vec<VarId>),
 
     /// Tuple field read
-    TupleGet(VarId, usize),
+    TupleGet(VarId, usize, RepType),
 
     /// Array allocation
     ArrayAlloc {
@@ -225,7 +228,11 @@ fn cc_expr(ctx: &mut CcCtx, expr: anormal::Expr, fvs: &FxHashMap<VarId, FxHashSe
                         .enumerate()
                         .rfold(rhs, |body, (fv_idx, fv)| Expr::Let {
                             id: fv,
-                            rhs: Box::new(Expr::TupleGet(name, fv_idx + 1)),
+                            rhs: Box::new(Expr::TupleGet(
+                                name,
+                                fv_idx + 1,
+                                RepType::from(&*ctx.ctx.var_type(fv)),
+                            )),
                             body: Box::new(body),
                         });
 
@@ -252,21 +259,47 @@ fn cc_expr(ctx: &mut CcCtx, expr: anormal::Expr, fvs: &FxHashMap<VarId, FxHashSe
             }
         }
 
-        anormal::Expr::App(fun, args) => {
+        anormal::Expr::App(fun, mut args) => {
             // f(x) -> f.0(f, x)
-            // let fun_tmp = ctx.fresh_var(RepType::Word);
-            // args.insert(0, fun);
-            // Expr::Let {
-            //     id: fun_tmp,
-            //     rhs: Box::new(Expr::TupleGet(fun, 0)),
-            //     body: Box::new(Expr::App(fun_tmp, args)),
-            // }
-            Expr::App(fun, args)
+
+            // TODO FIXME: We update types of closures converted to tuples, but there are two cases
+            // where an id in function position in an application will still have a function type
+            // (instead of a tuple type):
+            //
+            // - Built-in functions: we don't update types of these
+            // - `let x = y` where `y` is a function. Since technically `x` isn't a closure (`y`
+            //   is), its type doesn't get updated to a tuple.
+            let ret_ty = match &*ctx.ctx.var_type(fun) {
+                Type::Fun { args: _, ret } => RepType::from(&**ret),
+                Type::Tuple(tuple) => {
+                    // Must be a user-defined closure
+                    debug_assert!(!ctx.ctx.get_var(fun).is_builtin());
+                    match &tuple[0] {
+                        Type::Fun { args: _, ret } => RepType::from(&**ret),
+                        _ => panic!(),
+                    }
+                }
+                _ => panic!(),
+            };
+
+            let fun_tmp = ctx.fresh_var(RepType::Word);
+            args.insert(0, fun);
+            Expr::Let {
+                id: fun_tmp,
+                rhs: Box::new(Expr::TupleGet(fun, 0, RepType::Word)),
+                body: Box::new(Expr::App(fun_tmp, args, ret_ty)),
+            }
         }
 
         anormal::Expr::Tuple(vars) => Expr::Tuple(vars),
 
-        anormal::Expr::TupleGet(var, idx) => Expr::TupleGet(var, idx),
+        anormal::Expr::TupleGet(var, idx) => {
+            let elem_ty = match &*ctx.ctx.var_type(var) {
+                Type::Tuple(tuple) => RepType::from(&tuple[idx]),
+                _ => panic!(),
+            };
+            Expr::TupleGet(var, idx, elem_ty)
+        }
 
         anormal::Expr::ArrayAlloc { len, elem } => Expr::ArrayAlloc { len, elem },
 

@@ -204,32 +204,9 @@ fn cc_block(ctx: &mut CcCtx, mut block: BlockBuilder, sequel: Sequel, expr: cc::
             cc_block(ctx, cont_block, sequel, *body)
         }
 
-        cc::Expr::App(fun, mut args) => {
-            // f(x) -> f.0(f, x)
-            let fun_tmp = ctx.fresh_var(RepType::Word);
-            block.asgn(fun_tmp, Expr::TupleGet(fun, 0));
-            args.insert(0, fun);
-
-            let fun_ret_ty = match &*ctx.ctx.var_type(fun) {
-                Type::Fun { args: _, ret } => RepType::from(&**ret),
-                // TODO: Another hacky part..
-                Type::Tuple(fields) => match &fields[0] {
-                    Type::Fun { args: _, ret } => RepType::from(&**ret),
-                    other => panic!(
-                        "Non-function {} in function position: {:?}",
-                        ctx.ctx.get_var(fun),
-                        other
-                    ),
-                },
-                other => panic!(
-                    "Non-function {} in function position: {:?}",
-                    ctx.ctx.get_var(fun),
-                    other
-                ),
-            };
-            let ret_tmp = sequel.get_ret_var(ctx, fun_ret_ty);
-
-            block.asgn(ret_tmp, Expr::App(fun_tmp, args, fun_ret_ty));
+        cc::Expr::App(fun, args, ret_ty) => {
+            let ret_tmp = sequel.get_ret_var(ctx, ret_ty);
+            block.asgn(ret_tmp, Expr::App(fun, args, ret_ty));
             ctx.finish_block(block, sequel, Atom::Var(ret_tmp));
         }
 
@@ -242,24 +219,9 @@ fn cc_block(ctx: &mut CcCtx, mut block: BlockBuilder, sequel: Sequel, expr: cc::
             ctx.finish_block(block, sequel, Atom::Var(ret_tmp));
         }
 
-        cc::Expr::TupleGet(tuple, idx) => {
-            let elem_ty = match &*ctx.ctx.var_type(tuple) {
-                Type::Tuple(args) => RepType::from(&args[idx]),
-                other => {
-                    let mut expr_str = String::new();
-                    cc::Expr::TupleGet(tuple, idx)
-                        .pp(&ctx.ctx, 0, &mut expr_str)
-                        .unwrap();
-                    panic!(
-                        "Non-tuple {} in tuple position: {:?} ({})",
-                        ctx.ctx.get_var(tuple),
-                        other,
-                        expr_str
-                    )
-                }
-            };
+        cc::Expr::TupleGet(tuple, idx, elem_ty) => {
             let ret_tmp = sequel.get_ret_var(ctx, elem_ty);
-            block.asgn(ret_tmp, Expr::TupleGet(tuple, idx));
+            block.asgn(ret_tmp, Expr::TupleGet(tuple, idx, elem_ty));
             ctx.finish_block(block, sequel, Atom::Var(ret_tmp));
         }
 

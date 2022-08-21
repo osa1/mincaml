@@ -58,7 +58,7 @@ impl Expr {
                 write!(w, "{}{}", indent_str(indent), var)
             }
 
-            Expr::App(fun, args) => {
+            Expr::App(fun, args, _) => {
                 let fun = ctx.get_var(*fun);
                 write!(w, "{}{}", indent_str(indent), fun)?;
                 for arg in args {
@@ -78,7 +78,7 @@ impl Expr {
                 write!(w, ")")
             }
 
-            Expr::TupleGet(var, idx) => {
+            Expr::TupleGet(var, idx, _) => {
                 write!(w, "{}{}.{}", indent_str(indent), ctx.get_var(*var), idx)
             }
 

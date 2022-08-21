@@ -112,7 +112,7 @@ pub enum Expr {
     },
 
     /// Tuple field read
-    TupleGet(VarId, usize),
+    TupleGet(VarId, usize, RepType),
 
     /// Tuple field write
     TuplePut(VarId, usize, VarId),
