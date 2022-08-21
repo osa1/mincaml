@@ -130,7 +130,11 @@ fn codegen_expr(
         Expr::Var(var) => builder.get_local(builder.id_wasm_local(*var)),
 
         Expr::App(fun, args, ret_ty) => {
-            todo!()
+            let fun_idx = *func_idxs.get(fun).unwrap();
+            for arg in args {
+                builder.get_local(builder.id_wasm_local(*arg))
+            }
+            builder.call(fun_idx);
         }
 
         Expr::Tuple(_) => todo!(),
