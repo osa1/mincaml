@@ -270,7 +270,7 @@ fn codegen_fun(
             // println!("stmt: {}", s);
 
             match stmt {
-                lower::Stmt::Asgn(lower::Asgn { lhs, rhs }) => {
+                lower::Stmt::Asgn(lower::Asgn { lhs, rhs: _ }) => {
                     if !declared.contains(lhs) {
                         declared.insert(*lhs);
                         let lhs_cl_var =
@@ -479,30 +479,11 @@ fn codegen_expr(
             (block, None)
         }
 
-        lower::Expr::TupleGet(tuple, idx) => {
-            let tuple_type = ctx.var_type(*tuple);
-            let elem_type = match &*tuple_type {
-                type_check::Type::Tuple(args) => rep_type_abi(RepType::from(&args[*idx])),
-                type_check::Type::Fun { .. } => {
-                    // NOTE DISGUSTING HACK: This case happens after closure conversion where we
-                    // turn functions into tuples (closures) and in application code when we see
-                    //
-                    //   f x
-                    //
-                    // we instead do
-                    //
-                    //   f.0 x
-                    //
-                    // Note sure how to best implement/fix this, so for now we allow this case.
-                    I64
-                }
-                other => panic!("Non-tuple in tuple position: {:?}", other),
-            };
-
+        lower::Expr::TupleGet(tuple, idx, elem_type) => {
             let tuple = env.use_var(ctx, module, builder, *tuple);
 
             let val = builder.ins().load(
-                elem_type,
+                rep_type_abi(*elem_type),
                 MemFlags::new(),
                 tuple,
                 (idx * usize::from(WORD_SIZE)) as i32,
@@ -522,7 +503,11 @@ fn codegen_expr(
             let var_type = ctx.var_type(*array);
             let elem_type = match &*var_type {
                 type_check::Type::Array(elem_type) => rep_type_abi(RepType::from(&**elem_type)),
-                _ => panic!("Non-array in array location"),
+                other => panic!(
+                    "Non-array {} in array location: {:?}",
+                    ctx.get_var(*array),
+                    other
+                ),
             };
 
             let array = env.use_var(ctx, module, builder, *array);

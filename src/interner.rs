@@ -17,7 +17,7 @@ impl InternId {
         InternId { value: unsafe { NonZeroU32::new_unchecked(i + 1) } }
     }
 
-    fn to_u32(&self) -> u32 {
+    fn as_u32(&self) -> u32 {
         self.value.get() - 1
     }
 }
@@ -58,6 +58,6 @@ where
 
     pub fn get(&self, id: InternId) -> Rc<K> {
         // assert_eq!(id.table_id, self.table_id);
-        self.values[id.to_u32() as usize].clone()
+        self.values[id.as_u32() as usize].clone()
     }
 }

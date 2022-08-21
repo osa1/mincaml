@@ -1,6 +1,5 @@
 use fxhash::FxHashMap;
 use std::hash::Hash;
-use std::mem::replace;
 
 pub struct Locals<K, V>
 where
@@ -23,7 +22,7 @@ where
     }
 
     pub fn new_scope(&mut self) {
-        self.scopes.push(replace(&mut self.current_scope, vec![]));
+        self.scopes.push(std::mem::take(&mut self.current_scope));
     }
 
     pub fn pop_scope(&mut self) {

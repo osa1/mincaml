@@ -90,9 +90,17 @@ pub struct Asgn {
 #[derive(Debug)]
 pub enum Expr {
     Atom(Atom),
+
+    /// Integer binary operation
     IBinOp(BinOp<IntBinOp>),
+
+    /// Float binary operation
     FBinOp(BinOp<FloatBinOp>),
+
+    /// Integer negation
     Neg(VarId),
+
+    /// Float negation
     FNeg(VarId),
 
     /// Function application. `RepType` is the runtime representation of the return value.
@@ -104,7 +112,7 @@ pub enum Expr {
     },
 
     /// Tuple field read
-    TupleGet(VarId, usize),
+    TupleGet(VarId, usize, RepType),
 
     /// Tuple field write
     TuplePut(VarId, usize, VarId),
@@ -132,7 +140,7 @@ pub enum Atom {
 /// A basic block exit node
 #[derive(Debug, PartialEq, Eq)]
 pub enum Exit {
-    /// Function return: return the value of the given variable
+    /// Function return: return value of the variable
     Return(VarId),
 
     /// Conditional jump: compare `v1` with `v2` according to `cond`, jump to `then_block` if true,

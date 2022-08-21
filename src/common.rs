@@ -49,3 +49,36 @@ impl fmt::Display for Cmp {
         s.fmt(f)
     }
 }
+
+impl FloatBinOp {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            FloatBinOp::Add => "+.",
+            FloatBinOp::Sub => "-.",
+            FloatBinOp::Mul => "*.",
+            FloatBinOp::Div => "/.",
+        }
+    }
+}
+
+impl IntBinOp {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            IntBinOp::Add => "+.",
+            IntBinOp::Sub => "-.",
+        }
+    }
+}
+
+impl Cmp {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Cmp::Equal => "=",
+            Cmp::NotEqual => "<>",
+            Cmp::LessThan => "<",
+            Cmp::LessThanOrEqual => "<=",
+            Cmp::GreaterThan => ">",
+            Cmp::GreaterThanOrEqual => ">=",
+        }
+    }
+}

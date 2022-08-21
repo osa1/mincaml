@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use crate::common::*;
 use crate::ctx::{Ctx, VarId};
 
@@ -160,7 +162,7 @@ impl Expr {
                 write!(w, ".{{{}}} <- ", idx)?;
                 pp_id(ctx, *val, w)
             }
-            TupleGet(tuple, idx) => {
+            TupleGet(tuple, idx, _) => {
                 pp_id(ctx, *tuple, w)?;
                 write!(w, ".{}", idx)
             }

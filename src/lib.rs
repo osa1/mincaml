@@ -3,6 +3,7 @@
 mod anormal;
 mod ast;
 mod cg_types;
+mod closure_convert;
 mod codegen;
 mod common;
 mod ctx;
@@ -17,9 +18,10 @@ mod utils;
 mod var;
 
 use anormal::anormal;
+use closure_convert::closure_convert;
 use codegen::codegen;
 use lexer::{tokenize, Token};
-use lower::lower_pgm;
+use lower::lower_fun;
 use type_check::type_check_pgm;
 
 use std::fs::File;
@@ -53,25 +55,23 @@ fn record_pass_stats<A, F: FnOnce() -> A>(
 
 type ObjectCode = Vec<u8>;
 
-fn compile_expr(
-    expr_str: &str, dump_cc: bool, dump_cg: bool, show_pass_stats: bool,
-) -> Option<ObjectCode> {
-    let mut pass_stats: Vec<PassStats> = Vec::with_capacity(10);
-
-    let tokens: Vec<Token> =
-        match record_pass_stats(&mut pass_stats, "tokenize", || tokenize(expr_str)) {
-            Err(err) => {
-                println!("Lexer error: {:#?}", err);
-                return None;
-            }
-            Ok(tokens) => tokens,
-        };
+/// Prepare an expression for code generation: parse, type check, convert to a-normal form, do
+/// closure conversion.
+fn prepare_expr(
+    expr_str: &str, dump_cc: bool, ctx: &mut ctx::Ctx, pass_stats: &mut Vec<PassStats>,
+) -> Option<(Vec<closure_convert::Fun>, ctx::VarId)> {
+    let tokens: Vec<Token> = match record_pass_stats(pass_stats, "tokenize", || tokenize(expr_str))
+    {
+        Err(err) => {
+            println!("Lexer error: {:#?}", err);
+            return None;
+        }
+        Ok(tokens) => tokens,
+    };
 
     // println!("{:#?}", tokens);
 
-    let mut ctx = Default::default();
-
-    let expr = match record_pass_stats(&mut pass_stats, "parse", || {
+    let expr = match record_pass_stats(pass_stats, "parse", || {
         parser::Expr::parse(tokens.into_iter().map(Ok::<_, ()>))
     }) {
         Err(err) => {
@@ -83,11 +83,9 @@ fn compile_expr(
 
     // println!("Expr: {:#?}", expr);
 
-    let mut expr = record_pass_stats(&mut pass_stats, "intern", || expr.intern(&mut ctx));
+    let mut expr = record_pass_stats(pass_stats, "intern", || expr.intern(ctx));
 
-    match record_pass_stats(&mut pass_stats, "type check", || {
-        type_check_pgm(&mut ctx, &mut expr)
-    }) {
+    match record_pass_stats(pass_stats, "type check", || type_check_pgm(ctx, &mut expr)) {
         Err(err) => {
             println!("Type error: {:#?}", err);
             return None;
@@ -97,25 +95,40 @@ fn compile_expr(
 
     // println!("Type-checked expr: {:#?}", expr);
 
-    let expr = record_pass_stats(&mut pass_stats, "anormal", || anormal(&mut ctx, expr));
+    let expr = record_pass_stats(pass_stats, "anormal", || anormal(ctx, expr));
 
     // println!("K normalized:");
     // println!("{:?}", expr);
 
-    let (funs, main) = record_pass_stats(&mut pass_stats, "closure convert", || {
-        lower_pgm(&mut ctx, expr)
-    });
+    let (funs, main) =
+        record_pass_stats(pass_stats, "closure convert", || closure_convert(ctx, expr));
 
     if dump_cc {
         println!("### Closure conversion:\n");
 
         let mut s = String::new();
         for fun in &funs {
-            fun.pp(&ctx, &mut s).unwrap();
+            fun.pp(ctx, &mut s).unwrap();
         }
 
         println!("{}", s);
     }
+
+    Some((funs, main))
+}
+
+fn compile_expr(
+    expr_str: &str, dump_cc: bool, dump_cg: bool, show_pass_stats: bool,
+) -> Option<ObjectCode> {
+    let mut pass_stats: Vec<PassStats> = Vec::with_capacity(10);
+
+    let mut ctx = Default::default();
+
+    let (funs, main) = prepare_expr(expr_str, dump_cc, &mut ctx, &mut pass_stats)?;
+    let funs: Vec<lower::Fun> = funs
+        .into_iter()
+        .map(|fun| lower_fun(&mut ctx, fun))
+        .collect();
 
     if dump_cg {
         println!("### Code generation:\n");
