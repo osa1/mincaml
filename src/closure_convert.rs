@@ -157,7 +157,12 @@ fn cc_expr(ctx: &mut CcCtx, expr: anormal::Expr, fvs: &FxHashMap<VarId, FxHashSe
             Box::new(cc_expr(ctx, *else_, fvs)),
         ),
 
-        anormal::Expr::Let { id, ty_id: _, rhs, body } => Expr::Let {
+        anormal::Expr::Let {
+            id,
+            ty_id: _,
+            rhs,
+            body,
+        } => Expr::Let {
             id,
             rhs: Box::new(cc_expr(ctx, *rhs, fvs)),
             body: Box::new(cc_expr(ctx, *body, fvs)),
@@ -165,7 +170,13 @@ fn cc_expr(ctx: &mut CcCtx, expr: anormal::Expr, fvs: &FxHashMap<VarId, FxHashSe
 
         anormal::Expr::Var(var) => Expr::Var(var),
 
-        anormal::Expr::LetRec { name, ty_id, args, rhs, body } => {
+        anormal::Expr::LetRec {
+            name,
+            ty_id,
+            args,
+            rhs,
+            body,
+        } => {
             let (fun_arg_tys, fun_ret_ty) = match &*ctx.ctx.var_type(name) {
                 Type::Fun { args, ret } => (args.clone(), ret.clone()),
                 _ => panic!(),
@@ -180,7 +191,10 @@ fn cc_expr(ctx: &mut CcCtx, expr: anormal::Expr, fvs: &FxHashMap<VarId, FxHashSe
                 // we use 'int'. This is fine as rest of the passes do not care about parameter
                 // types of functions being called; they use types of arguments being passed.
                 fun_var_arg_tys.insert(0, Type::Int);
-                let fun_var_ty = Type::Fun { args: fun_var_arg_tys, ret: fun_ret_ty.clone() };
+                let fun_var_ty = Type::Fun {
+                    args: fun_var_arg_tys,
+                    ret: fun_ret_ty.clone(),
+                };
                 let fun_var_ty_interned = ctx.ctx.intern_type(fun_var_ty);
                 ctx.ctx.set_var_type(fun_var, fun_var_ty_interned);
             }
@@ -245,7 +259,12 @@ fn cc_expr(ctx: &mut CcCtx, expr: anormal::Expr, fvs: &FxHashMap<VarId, FxHashSe
                     _ => panic!("Non-function in function position"),
                 };
 
-                Fun { name: fun_var, args, body: fun_body, return_type: fun_return_type }
+                Fun {
+                    name: fun_var,
+                    args,
+                    body: fun_body,
+                    return_type: fun_return_type,
+                }
             });
 
             // Body
@@ -323,7 +342,9 @@ fn collect_fvs(ctx: &Ctx, expr: &anormal::Expr) -> FxHashMap<VarId, FxHashSet<Va
 }
 
 fn collect_fvs_(
-    ctx: &Ctx, expr: &anormal::Expr, fvs: &mut FxHashSet<VarId>,
+    ctx: &Ctx,
+    expr: &anormal::Expr,
+    fvs: &mut FxHashSet<VarId>,
     acc: &mut FxHashMap<VarId, FxHashSet<VarId>>,
 ) {
     use anormal::Expr::*;
@@ -349,7 +370,12 @@ fn collect_fvs_(
             collect_fvs_(ctx, e2, fvs, acc);
         }
 
-        Let { id, ty_id: _, rhs, body } => {
+        Let {
+            id,
+            ty_id: _,
+            rhs,
+            body,
+        } => {
             collect_fvs_(ctx, body, fvs, acc);
             collect_fvs_(ctx, rhs, fvs, acc);
             fvs.remove(id);
@@ -357,7 +383,13 @@ fn collect_fvs_(
 
         Var(id) => collect_fv(ctx, *id, fvs),
 
-        LetRec { name, ty_id: _, args, rhs, body } => {
+        LetRec {
+            name,
+            ty_id: _,
+            args,
+            rhs,
+            body,
+        } => {
             collect_fvs_(ctx, body, fvs, acc);
             fvs.remove(name);
 

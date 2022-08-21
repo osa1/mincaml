@@ -19,6 +19,7 @@ unsafe impl GlobalAlloc for AllocCounter {
     }
 }
 
+#[allow(unused)]
 pub fn reset_allocated() {
     ALLOCATED.store(0, Ordering::SeqCst);
 }

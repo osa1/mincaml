@@ -112,7 +112,12 @@ impl Expr {
 
 impl Fun {
     pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result {
-        let Fun { name, args, body, return_type: _ } = self;
+        let Fun {
+            name,
+            args,
+            body,
+            return_type: _,
+        } = self;
 
         write!(w, "let rec {} ", ctx.get_var(*name))?;
         for arg in args {

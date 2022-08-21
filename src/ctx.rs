@@ -175,26 +175,36 @@ impl Ctx {
 
     fn add_builtin_vars(&mut self) {
         // float -> float
-        let float_float =
-            self.intern_type(Type::Fun { args: vec![Type::Float], ret: Box::new(Type::Float) });
+        let float_float = self.intern_type(Type::Fun {
+            args: vec![Type::Float],
+            ret: Box::new(Type::Float),
+        });
 
         // float -> int
-        let float_int =
-            self.intern_type(Type::Fun { args: vec![Type::Float], ret: Box::new(Type::Int) });
+        let float_int = self.intern_type(Type::Fun {
+            args: vec![Type::Float],
+            ret: Box::new(Type::Int),
+        });
 
         let print_int_var = self.fresh_builtin_var("print_int", "mc_print_int");
-        let print_int_ty =
-            self.intern_type(Type::Fun { args: vec![Type::Int], ret: Box::new(Type::Unit) });
+        let print_int_ty = self.intern_type(Type::Fun {
+            args: vec![Type::Int],
+            ret: Box::new(Type::Unit),
+        });
         self.add_builtin(print_int_var, print_int_ty);
 
         let print_newline_var = self.fresh_builtin_var("print_newline", "mc_print_newline");
-        let print_newline_ty =
-            self.intern_type(Type::Fun { args: vec![Type::Unit], ret: Box::new(Type::Unit) });
+        let print_newline_ty = self.intern_type(Type::Fun {
+            args: vec![Type::Unit],
+            ret: Box::new(Type::Unit),
+        });
         self.add_builtin(print_newline_var, print_newline_ty);
 
         let float_of_int_var = self.fresh_builtin_var("float_of_int", "mc_float_of_int");
-        let float_of_int_ty =
-            self.intern_type(Type::Fun { args: vec![Type::Int], ret: Box::new(Type::Float) });
+        let float_of_int_ty = self.intern_type(Type::Fun {
+            args: vec![Type::Int],
+            ret: Box::new(Type::Float),
+        });
         self.add_builtin(float_of_int_var, float_of_int_ty);
 
         let int_of_float_var = self.fresh_builtin_var("int_of_float", "mc_int_of_float");

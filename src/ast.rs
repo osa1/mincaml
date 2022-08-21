@@ -31,19 +31,38 @@ pub enum Expr_<I> {
     // if <expr> then <expr> else <expr>
     If(Box<Expr_<I>>, Box<Expr_<I>>, Box<Expr_<I>>),
     // let <ident> = <expr> in <expr>
-    Let { bndr: I, rhs: Box<Expr_<I>>, body: Box<Expr_<I>> },
+    Let {
+        bndr: I,
+        rhs: Box<Expr_<I>>,
+        body: Box<Expr_<I>>,
+    },
     // <ident>
     Var(I),
     // let rec <ident> <ident>+ = <expr> in <expr>
-    LetRec { bndr: I, args: Vec<I>, rhs: Box<Expr_<I>>, body: Box<Expr_<I>> },
+    LetRec {
+        bndr: I,
+        args: Vec<I>,
+        rhs: Box<Expr_<I>>,
+        body: Box<Expr_<I>>,
+    },
     // <expr> <expr>+
-    App { fun: Box<Expr_<I>>, args: Vec<Expr_<I>> },
+    App {
+        fun: Box<Expr_<I>>,
+        args: Vec<Expr_<I>>,
+    },
     // <expr> (, <expr>)+
     Tuple(Vec<Expr_<I>>),
     // let ( <ident> (, <ident>)+ ) = <expr> in <expr>
-    LetTuple { bndrs: Vec<I>, rhs: Box<Expr_<I>>, body: Box<Expr_<I>> },
+    LetTuple {
+        bndrs: Vec<I>,
+        rhs: Box<Expr_<I>>,
+        body: Box<Expr_<I>>,
+    },
     // Array.create <expr> <expr>
-    Array { len: Box<Expr_<I>>, elem: Box<Expr_<I>> },
+    Array {
+        len: Box<Expr_<I>>,
+        elem: Box<Expr_<I>>,
+    },
     // <expr> . ( <expr> )
     Get(Box<Expr_<I>>, Box<Expr_<I>>),
     // <expr> . ( <expr> ) <- <expr>
@@ -93,7 +112,12 @@ impl ParsedExpr {
 
             ParsedExpr::Var(var) => Expr::Var(intern(&var, ctx)),
 
-            ParsedExpr::LetRec { bndr, args, rhs, body } => Expr::LetRec {
+            ParsedExpr::LetRec {
+                bndr,
+                args,
+                rhs,
+                body,
+            } => Expr::LetRec {
                 bndr: intern(&bndr, ctx),
                 args: args.into_iter().map(|arg| intern(&arg, ctx)).collect(),
                 rhs: Box::new(rhs.intern(ctx)),
@@ -115,9 +139,10 @@ impl ParsedExpr {
                 body: Box::new(body.intern(ctx)),
             },
 
-            ParsedExpr::Array { len, elem } => {
-                Expr::Array { len: Box::new(len.intern(ctx)), elem: Box::new(elem.intern(ctx)) }
-            }
+            ParsedExpr::Array { len, elem } => Expr::Array {
+                len: Box::new(len.intern(ctx)),
+                elem: Box::new(elem.intern(ctx)),
+            },
 
             ParsedExpr::Get(e1, e2) => {
                 Expr::Get(Box::new(e1.intern(ctx)), Box::new(e2.intern(ctx)))

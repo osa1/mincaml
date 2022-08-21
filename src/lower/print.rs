@@ -8,8 +8,10 @@ use super::types::*;
 use std::fmt;
 
 fn print_comma_sep<A>(
-    ctx: &Ctx, stuffs: &mut dyn Iterator<Item = &A>,
-    show_stuff: fn(&A, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result, w: &mut dyn fmt::Write,
+    ctx: &Ctx,
+    stuffs: &mut dyn Iterator<Item = &A>,
+    show_stuff: fn(&A, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result,
+    w: &mut dyn fmt::Write,
 ) -> Result<(), fmt::Error> {
     let mut add_comma = false;
     for stuff in stuffs {
@@ -25,7 +27,12 @@ fn print_comma_sep<A>(
 
 impl Fun {
     pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result {
-        let Fun { name, args, blocks, return_type } = self;
+        let Fun {
+            name,
+            args,
+            blocks,
+            return_type,
+        } = self;
 
         w.write_str("function ")?;
         pp_id(ctx, *name, w)?;
@@ -47,7 +54,12 @@ impl Fun {
 
 impl Block {
     pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> Result<(), fmt::Error> {
-        let Block { idx, comment, stmts, exit } = self;
+        let Block {
+            idx,
+            comment,
+            stmts,
+            exit,
+        } = self;
         write!(w, "{}:", idx)?;
         match comment {
             None => {
@@ -76,7 +88,13 @@ impl Exit {
                 w.write_str("return ")?;
                 pp_id(ctx, *var, w)
             }
-            Branch { v1, v2, cond, then_block, else_block } => {
+            Branch {
+                v1,
+                v2,
+                cond,
+                then_block,
+                else_block,
+            } => {
                 w.write_str("if ")?;
                 pp_id(ctx, *v1, w)?;
                 write!(w, " {} ", cond)?;

@@ -115,7 +115,10 @@ impl Env {
     }
 
     fn use_var(
-        &mut self, ctx: &Ctx, module: &Module<ObjectBackend>, builder: &mut FunctionBuilder,
+        &mut self,
+        ctx: &Ctx,
+        module: &Module<ObjectBackend>,
+        builder: &mut FunctionBuilder,
         var: VarId,
     ) -> Value {
         let val = self.0.get(&var).cloned();
@@ -168,7 +171,10 @@ fn declare_malloc(module: &mut Module<ObjectBackend>) -> FuncId {
 }
 
 fn init_module_env(
-    ctx: &mut Ctx, module: &mut Module<ObjectBackend>, funs: &[lower::Fun], main_id: VarId,
+    ctx: &mut Ctx,
+    module: &mut Module<ObjectBackend>,
+    funs: &[lower::Fun],
+    main_id: VarId,
 ) -> (Env, FuncId) {
     let mut main_fun_id: Option<FuncId> = None;
     let mut env = Env::new();
@@ -185,7 +191,13 @@ fn init_module_env(
     }
 
     // Declare functions
-    for lower::Fun { name, args, return_type, .. } in funs {
+    for lower::Fun {
+        name,
+        args,
+        return_type,
+        ..
+    } in funs
+    {
         let params: Vec<AbiParam> = args
             .iter()
             .map(|arg| AbiParam::new(rep_type_abi(ctx.var_rep_type(*arg))))
@@ -193,7 +205,11 @@ fn init_module_env(
 
         let returns: Vec<AbiParam> = vec![AbiParam::new(rep_type_abi(*return_type))];
 
-        let sig = Signature { params, returns, call_conv: CallConv::SystemV };
+        let sig = Signature {
+            params,
+            returns,
+            call_conv: CallConv::SystemV,
+        };
 
         let id: FuncId = module
             .declare_function(&ctx.get_var(*name).name(), Linkage::Local, &sig)
@@ -214,10 +230,20 @@ fn init_module_env(
 }
 
 fn codegen_fun(
-    ctx: &mut Ctx, module: &mut Module<ObjectBackend>, global_env: &Env, malloc_id: FuncId,
-    fun: &lower::Fun, fn_builder_ctx: &mut FunctionBuilderContext, dump: bool,
+    ctx: &mut Ctx,
+    module: &mut Module<ObjectBackend>,
+    global_env: &Env,
+    malloc_id: FuncId,
+    fun: &lower::Fun,
+    fn_builder_ctx: &mut FunctionBuilderContext,
+    dump: bool,
 ) {
-    let lower::Fun { name, args, blocks, return_type } = fun;
+    let lower::Fun {
+        name,
+        args,
+        blocks,
+        return_type,
+    } = fun;
 
     let mut context = module.make_context();
 
@@ -285,7 +311,12 @@ fn codegen_fun(
     }
 
     for block in blocks.values().filter_map(lower::BlockData::get_block) {
-        let lower::Block { idx, comment: _, stmts, exit } = block;
+        let lower::Block {
+            idx,
+            comment: _,
+            stmts,
+            exit,
+        } = block;
 
         let mut cl_block = *label_to_block.get(idx).unwrap();
         builder.switch_to_block(cl_block);
@@ -317,7 +348,13 @@ fn codegen_fun(
                 let var = env.use_var(ctx, module, &mut builder, *var);
                 builder.ins().return_(&[var]);
             }
-            lower::Exit::Branch { v1, v2, cond, then_block, else_block } => {
+            lower::Exit::Branch {
+                v1,
+                v2,
+                cond,
+                then_block,
+                else_block,
+            } => {
                 let comp_type = ctx.var_rep_type(*v1);
                 let v1 = env.use_var(ctx, module, &mut builder, *v1);
                 let v2 = env.use_var(ctx, module, &mut builder, *v2);
@@ -385,8 +422,13 @@ fn codegen_fun(
 }
 
 fn codegen_expr(
-    ctx: &mut Ctx, module: &Module<ObjectBackend>, block: Block, builder: &mut FunctionBuilder,
-    env: &mut Env, malloc: FuncRef, rhs: &lower::Expr,
+    ctx: &mut Ctx,
+    module: &Module<ObjectBackend>,
+    block: Block,
+    builder: &mut FunctionBuilder,
+    env: &mut Env,
+    malloc: FuncRef,
+    rhs: &lower::Expr,
 ) -> (Block, Option<Value>) {
     match rhs {
         lower::Expr::Atom(lower::Atom::Unit) => (block, Some(builder.ins().iconst(I64, 0))),
@@ -444,7 +486,11 @@ fn codegen_expr(
             // TODO: Apparently cranelift doesn't intern these signatures so if we add `int -> int`
             // many times we get many `int -> int` signatures in the module. Would be good to cache
             // and reuse SigRefs.
-            let fun_sig = Signature { params, returns, call_conv: CallConv::SystemV };
+            let fun_sig = Signature {
+                params,
+                returns,
+                call_conv: CallConv::SystemV,
+            };
 
             let fun_sig_ref: SigRef = builder.import_signature(fun_sig);
 
@@ -540,7 +586,9 @@ fn codegen_expr(
 }
 
 fn make_main(
-    module: &mut Module<ObjectBackend>, fun_ctx: &mut FunctionBuilderContext, main_id: FuncId,
+    module: &mut Module<ObjectBackend>,
+    fun_ctx: &mut FunctionBuilderContext,
+    main_id: FuncId,
     dump: bool,
 ) {
     let mut context = module.make_context();

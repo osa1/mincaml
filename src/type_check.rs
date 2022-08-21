@@ -61,7 +61,13 @@ pub fn type_check_pgm(ctx: &mut Ctx, expr: &mut Expr) -> Result<(), TypeErr> {
         let var = ctx.get_var(*var_id);
         let var_name = var.name();
         let ty = ctx.get_type(*ty_id);
-        global_scope.insert(var_name, Binder { binder: *var_id, ty: (*ty).clone() });
+        global_scope.insert(
+            var_name,
+            Binder {
+                binder: *var_id,
+                ty: (*ty).clone(),
+            },
+        );
     }
 
     let mut scope: Scope = Locals::new(global_scope);
@@ -130,7 +136,10 @@ fn occurs_check(subst: &SubstEnv, var: TyVar, ty: &Type) -> bool {
 }
 
 fn type_check(
-    ctx: &mut Ctx, ty_env: &mut TypeEnv, subst_env: &mut SubstEnv, scope: &mut Scope,
+    ctx: &mut Ctx,
+    ty_env: &mut TypeEnv,
+    subst_env: &mut SubstEnv,
+    scope: &mut Scope,
     expr: &mut Expr,
 ) -> Result<Type, TypeErr> {
     match expr {
@@ -189,13 +198,23 @@ fn type_check(
             Ok(e2_ty)
         }
 
-        Expr::Let { bndr, ref mut rhs, body } => {
+        Expr::Let {
+            bndr,
+            ref mut rhs,
+            body,
+        } => {
             let bndr_ty = Type::Var(ctx.fresh_tyvar());
             ty_env.insert(*bndr, bndr_ty.clone());
             let rhs_ty = type_check(ctx, ty_env, subst_env, scope, rhs)?;
             unify(subst_env, &bndr_ty, &rhs_ty)?;
             scope.new_scope();
-            scope.add(ctx.var_name(*bndr), Binder { binder: *bndr, ty: bndr_ty });
+            scope.add(
+                ctx.var_name(*bndr),
+                Binder {
+                    binder: *bndr,
+                    ty: bndr_ty,
+                },
+            );
             let ret = type_check(ctx, ty_env, subst_env, scope, body);
             scope.pop_scope();
             ret
@@ -209,7 +228,12 @@ fn type_check(
             None => Err(TypeErr::UnboundVar(*var)),
         },
 
-        Expr::LetRec { bndr, ref args, rhs, body } => {
+        Expr::LetRec {
+            bndr,
+            ref args,
+            rhs,
+            body,
+        } => {
             // Type variables for the arguments
             let mut arg_tys: Vec<Type> = Vec::with_capacity(args.len());
             for arg in args {
@@ -222,19 +246,31 @@ fn type_check(
             let rhs_ty = Type::Var(ctx.fresh_tyvar());
 
             // We can now give type to the recursive function
-            let fun_ty = Type::Fun { args: arg_tys.clone(), ret: Box::new(rhs_ty.clone()) };
+            let fun_ty = Type::Fun {
+                args: arg_tys.clone(),
+                ret: Box::new(rhs_ty.clone()),
+            };
 
             ty_env.insert(*bndr, fun_ty.clone());
 
             // RHS and body will be type checked with `name` and args in scope
             scope.new_scope(); // new scope for function
-            scope.add(ctx.var_name(*bndr), Binder { binder: *bndr, ty: fun_ty });
+            scope.add(
+                ctx.var_name(*bndr),
+                Binder {
+                    binder: *bndr,
+                    ty: fun_ty,
+                },
+            );
             scope.new_scope(); // new scope for args
 
             for (binder, arg_ty) in args.iter().zip(arg_tys.iter()) {
                 scope.add(
                     ctx.var_name(*binder),
-                    Binder { binder: *binder, ty: arg_ty.clone() },
+                    Binder {
+                        binder: *binder,
+                        ty: arg_ty.clone(),
+                    },
                 );
             }
 
@@ -255,7 +291,10 @@ fn type_check(
             for arg in args {
                 arg_tys.push(type_check(ctx, ty_env, subst_env, scope, arg)?);
             }
-            let fun_ty = Type::Fun { args: arg_tys, ret: Box::new(ret_ty.clone()) };
+            let fun_ty = Type::Fun {
+                args: arg_tys,
+                ret: Box::new(ret_ty.clone()),
+            };
             let fun_ty_ = type_check(ctx, ty_env, subst_env, scope, fun)?;
             unify(subst_env, &fun_ty, &fun_ty_)?;
             Ok(ret_ty)
@@ -269,7 +308,11 @@ fn type_check(
             Ok(Type::Tuple(arg_tys))
         }
 
-        Expr::LetTuple { ref bndrs, rhs, body } => {
+        Expr::LetTuple {
+            ref bndrs,
+            rhs,
+            body,
+        } => {
             let mut arg_tys: Vec<Type> = Vec::with_capacity(bndrs.len());
             for bndr in bndrs {
                 let bndr_ty = Type::Var(ctx.fresh_tyvar());
@@ -281,7 +324,13 @@ fn type_check(
             unify(subst_env, &rhs_ty, &tuple_ty)?;
             scope.new_scope();
             for (bndr, bndr_type) in bndrs.iter().zip(arg_tys.into_iter()) {
-                scope.add(ctx.var_name(*bndr), Binder { binder: *bndr, ty: bndr_type });
+                scope.add(
+                    ctx.var_name(*bndr),
+                    Binder {
+                        binder: *bndr,
+                        ty: bndr_type,
+                    },
+                );
             }
             let ret = type_check(ctx, ty_env, subst_env, scope, body);
             scope.pop_scope();
@@ -331,7 +380,16 @@ fn unify(subst_env: &mut SubstEnv, ty1: &Type, ty2: &Type) -> Result<(), TypeErr
         | (Type::Bool, Type::Bool)
         | (Type::Int, Type::Int)
         | (Type::Float, Type::Float) => Ok(()),
-        (Type::Fun { args: args1, ret: ret1 }, Type::Fun { args: args2, ret: ret2 }) => {
+        (
+            Type::Fun {
+                args: args1,
+                ret: ret1,
+            },
+            Type::Fun {
+                args: args2,
+                ret: ret2,
+            },
+        ) => {
             if args1.len() != args2.len() {
                 return Err(TypeErr::UnifyError(ty1.clone(), ty2.clone()));
             }

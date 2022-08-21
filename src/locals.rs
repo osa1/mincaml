@@ -18,7 +18,11 @@ where
     V: Clone,
 {
     pub fn new(globals: FxHashMap<K, V>) -> Locals<K, V> {
-        Locals { env: globals, current_scope: vec![], scopes: vec![] }
+        Locals {
+            env: globals,
+            current_scope: vec![],
+            scopes: vec![],
+        }
     }
 
     pub fn new_scope(&mut self) {

@@ -42,14 +42,20 @@ struct PassStats {
 }
 
 fn record_pass_stats<A, F: FnOnce() -> A>(
-    stats: &mut Vec<PassStats>, pass_name: &'static str, pass: F,
+    stats: &mut Vec<PassStats>,
+    pass_name: &'static str,
+    pass: F,
 ) -> A {
     let allocs_before = perf::get_allocated();
     let start_time = Instant::now();
     let ret = pass();
     let elapsed = start_time.elapsed();
     let allocs_after = perf::get_allocated();
-    stats.push(PassStats { name: pass_name, time: elapsed, allocs: allocs_after - allocs_before });
+    stats.push(PassStats {
+        name: pass_name,
+        time: elapsed,
+        allocs: allocs_after - allocs_before,
+    });
     ret
 }
 
@@ -58,7 +64,10 @@ type ObjectCode = Vec<u8>;
 /// Prepare an expression for code generation: parse, type check, convert to a-normal form, do
 /// closure conversion.
 fn prepare_expr(
-    expr_str: &str, dump_cc: bool, ctx: &mut ctx::Ctx, pass_stats: &mut Vec<PassStats>,
+    expr_str: &str,
+    dump_cc: bool,
+    ctx: &mut ctx::Ctx,
+    pass_stats: &mut Vec<PassStats>,
 ) -> Option<(Vec<closure_convert::Fun>, ctx::VarId)> {
     let tokens: Vec<Token> = match record_pass_stats(pass_stats, "tokenize", || tokenize(expr_str))
     {
@@ -118,7 +127,10 @@ fn prepare_expr(
 }
 
 fn compile_expr(
-    expr_str: &str, dump_cc: bool, dump_cg: bool, show_pass_stats: bool,
+    expr_str: &str,
+    dump_cc: bool,
+    dump_cg: bool,
+    show_pass_stats: bool,
 ) -> Option<ObjectCode> {
     let mut pass_stats: Vec<PassStats> = Vec::with_capacity(10);
 
@@ -172,7 +184,11 @@ fn report_pass_stats(pass_stats: &[PassStats]) {
 }
 
 pub fn compile_file(
-    path: &str, out_dir: Option<&str>, dump_cc: bool, dump_cg: bool, show_pass_stats: bool,
+    path: &str,
+    out_dir: Option<&str>,
+    dump_cc: bool,
+    dump_cg: bool,
+    show_pass_stats: bool,
 ) -> i32 {
     let contents = std::fs::read_to_string(path).unwrap();
     match compile_expr(&contents, dump_cc, dump_cg, show_pass_stats) {

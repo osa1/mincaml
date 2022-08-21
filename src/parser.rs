@@ -364,7 +364,10 @@ mod test {
         );
         assert_eq!(
             parse("1 2"),
-            ParsedExpr::App { fun: Box::new(ParsedExpr::Int(1)), args: vec![ParsedExpr::Int(2)] }
+            ParsedExpr::App {
+                fun: Box::new(ParsedExpr::Int(1)),
+                args: vec![ParsedExpr::Int(2)]
+            }
         );
         assert_eq!(
             parse("- 1 2"),

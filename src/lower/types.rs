@@ -145,7 +145,13 @@ pub enum Exit {
 
     /// Conditional jump: compare `v1` with `v2` according to `cond`, jump to `then_block` if true,
     /// jump to `else_block` otherwise.
-    Branch { v1: VarId, v2: VarId, cond: Cmp, then_block: BlockIdx, else_block: BlockIdx },
+    Branch {
+        v1: VarId,
+        v2: VarId,
+        cond: Cmp,
+        then_block: BlockIdx,
+        else_block: BlockIdx,
+    },
 
     /// Unconditional jump
     Jump(BlockIdx),

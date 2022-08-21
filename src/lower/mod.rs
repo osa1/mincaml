@@ -45,7 +45,11 @@ struct BlockBuilder {
 
 impl BlockBuilder {
     fn new(idx: BlockIdx) -> Self {
-        Self { idx, stmts: vec![], comment: None }
+        Self {
+            idx,
+            stmts: vec![],
+            comment: None,
+        }
     }
 
     fn asgn(&mut self, lhs: VarId, rhs: Expr) {
@@ -66,7 +70,10 @@ struct CcCtx<'ctx> {
 
 impl<'ctx> CcCtx<'ctx> {
     fn new(ctx: &'ctx mut Ctx) -> Self {
-        Self { ctx, blocks: PrimaryMap::new() }
+        Self {
+            ctx,
+            blocks: PrimaryMap::new(),
+        }
     }
 
     fn fresh_var(&mut self, rep_type: RepType) -> VarId {
@@ -79,18 +86,28 @@ impl<'ctx> CcCtx<'ctx> {
     }
 
     fn finish_block(&mut self, block: BlockBuilder, sequel: Sequel, value: Atom) {
-        let BlockBuilder { idx, mut stmts, comment } = block;
+        let BlockBuilder {
+            idx,
+            mut stmts,
+            comment,
+        } = block;
 
         let exit = match sequel {
             Sequel::Return => match value {
                 Atom::Unit => {
                     let tmp = self.fresh_var(RepType::Word);
-                    stmts.push(Stmt::Asgn(Asgn { lhs: tmp, rhs: Expr::Atom(Atom::Unit) }));
+                    stmts.push(Stmt::Asgn(Asgn {
+                        lhs: tmp,
+                        rhs: Expr::Atom(Atom::Unit),
+                    }));
                     Exit::Return(tmp)
                 }
                 Atom::Int(i) => {
                     let tmp = self.fresh_var(RepType::Word);
-                    stmts.push(Stmt::Asgn(Asgn { lhs: tmp, rhs: Expr::Atom(Atom::Int(i)) }));
+                    stmts.push(Stmt::Asgn(Asgn {
+                        lhs: tmp,
+                        rhs: Expr::Atom(Atom::Int(i)),
+                    }));
                     Exit::Return(tmp)
                 }
                 Atom::Float(f) => {
@@ -109,14 +126,22 @@ impl<'ctx> CcCtx<'ctx> {
                     // happen somehow?
                     Atom::Var(rhs) if lhs == rhs => {}
                     _ => {
-                        stmts.push(Stmt::Asgn(Asgn { lhs, rhs: Expr::Atom(value) }));
+                        stmts.push(Stmt::Asgn(Asgn {
+                            lhs,
+                            rhs: Expr::Atom(value),
+                        }));
                     }
                 }
                 Exit::Jump(label)
             }
         };
 
-        let block = Block { idx, comment, stmts, exit };
+        let block = Block {
+            idx,
+            comment,
+            stmts,
+            exit,
+        };
 
         self.finish_block_(block);
     }
@@ -131,12 +156,22 @@ impl<'ctx> CcCtx<'ctx> {
 pub fn lower_fun(ctx: &mut Ctx, fun: cc::Fun) -> Fun {
     let mut ctx = CcCtx::new(ctx);
 
-    let cc::Fun { name, args, body, return_type } = fun;
+    let cc::Fun {
+        name,
+        args,
+        body,
+        return_type,
+    } = fun;
 
     let block = ctx.create_block();
     cc_block(&mut ctx, block, Sequel::Return, body);
 
-    Fun { name, args, blocks: ctx.blocks, return_type }
+    Fun {
+        name,
+        args,
+        blocks: ctx.blocks,
+        return_type,
+    }
 }
 
 // Returns whether the added block was a fork (i.e. then or else branch of an if)
@@ -263,7 +298,11 @@ fn cc_block(ctx: &mut CcCtx, mut block: BlockBuilder, sequel: Sequel, expr: cc::
             loop_body_block.asgn(idx_inc_var, Expr::Atom(Atom::Int(1)));
             loop_body_block.asgn(
                 idx_var,
-                Expr::IBinOp(BinOp { op: IntBinOp::Add, arg1: idx_var, arg2: idx_inc_var }),
+                Expr::IBinOp(BinOp {
+                    op: IntBinOp::Add,
+                    arg1: idx_var,
+                    arg2: idx_inc_var,
+                }),
             );
             ctx.finish_block_(Block {
                 idx: loop_body_block.idx,
