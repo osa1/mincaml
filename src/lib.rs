@@ -105,23 +105,16 @@ fn prepare_expr(
     let (funs, main) =
         record_pass_stats(pass_stats, "closure convert", || closure_convert(ctx, expr));
 
-    // for fun in &funs {
-    //     let mut str = String::new();
-    //     fun.pp(ctx, &mut str).unwrap();
-    //     println!("{}", str);
-    //     println!();
-    // }
+    if dump_cc {
+        println!("### Closure conversion:\n");
 
-    // if dump_cc {
-    //     println!("### Closure conversion:\n");
+        let mut s = String::new();
+        for fun in &funs {
+            fun.pp(ctx, &mut s).unwrap();
+        }
 
-    //     let mut s = String::new();
-    //     for fun in &funs {
-    //         fun.pp(ctx, &mut s).unwrap();
-    //     }
-
-    //     println!("{}", s);
-    // }
+        println!("{}", s);
+    }
 
     Some((funs, main))
 }
