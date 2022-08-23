@@ -48,15 +48,7 @@ fn codegen_fun(
 
     let mut func_builder = builder.new_function(*name, args.clone(), *return_type);
 
-    // Maps function locals and arguments to their indices in the function.
-    //
-    // Note: `new_function` above allocates locals for arguments
-    let mut locals: FxHashMap<VarId, usize> = Default::default();
-
-    for (arg, _) in args {
-        let idx = locals.len();
-        locals.insert(arg, idx);
-    }
+    codegen_expr(ctx, &mut func_builder, func_idxs, body);
 
     func_builder.finish();
 }
