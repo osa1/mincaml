@@ -447,6 +447,11 @@ impl<'a> FunctionBuilder<'a> {
         leb128::write::signed(&mut self.code, val).unwrap();
     }
 
+    pub fn f32_const(&mut self, val: f32) {
+        self.code.push(0x43);
+        self.code.extend_from_slice(&val.to_le_bytes());
+    }
+
     pub fn f64_const(&mut self, val: f64) {
         self.code.push(0x44);
         self.code.extend_from_slice(&val.to_le_bytes());
@@ -559,6 +564,54 @@ impl<'a> FunctionBuilder<'a> {
 
     pub fn memory_grow(&mut self) {
         self.code.push(0x40);
+    }
+
+    pub fn i32_load(&mut self, offset: u32) {
+        self.code.push(0x28);
+        self.code.push(0); // align
+        leb128::write::unsigned(&mut self.code, offset.into()).unwrap();
+    }
+
+    pub fn i64_load(&mut self, offset: u32) {
+        self.code.push(0x29);
+        self.code.push(0); // align
+        leb128::write::unsigned(&mut self.code, offset.into()).unwrap();
+    }
+
+    pub fn f32_load(&mut self, offset: u32) {
+        self.code.push(0x2A);
+        self.code.push(0); // align
+        leb128::write::unsigned(&mut self.code, offset.into()).unwrap();
+    }
+
+    pub fn f64_load(&mut self, offset: u32) {
+        self.code.push(0x2B);
+        self.code.push(0); // align
+        leb128::write::unsigned(&mut self.code, offset.into()).unwrap();
+    }
+
+    pub fn i32_store(&mut self, offset: u32) {
+        self.code.push(0x36);
+        self.code.push(0); // align
+        leb128::write::unsigned(&mut self.code, offset.into()).unwrap();
+    }
+
+    pub fn i64_store(&mut self, offset: u32) {
+        self.code.push(0x37);
+        self.code.push(0); // align
+        leb128::write::unsigned(&mut self.code, offset.into()).unwrap();
+    }
+
+    pub fn f32_store(&mut self, offset: u32) {
+        self.code.push(0x38);
+        self.code.push(0); // align
+        leb128::write::unsigned(&mut self.code, offset.into()).unwrap();
+    }
+
+    pub fn f64_store(&mut self, offset: u32) {
+        self.code.push(0x39);
+        self.code.push(0); // align
+        leb128::write::unsigned(&mut self.code, offset.into()).unwrap();
     }
 
     pub fn finish(self) {
