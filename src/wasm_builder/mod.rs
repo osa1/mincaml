@@ -437,6 +437,11 @@ impl<'a> FunctionBuilder<'a> {
         self.code.push(0x0B);
     }
 
+    pub fn i32_const(&mut self, val: i32) {
+        self.code.push(0x42);
+        leb128::write::signed(&mut self.code, val.into()).unwrap();
+    }
+
     pub fn i64_const(&mut self, val: i64) {
         self.code.push(0x42);
         leb128::write::signed(&mut self.code, val).unwrap();
@@ -550,6 +555,10 @@ impl<'a> FunctionBuilder<'a> {
     pub fn global_set(&mut self, global: &GlobalId) {
         self.code.push(0x24);
         leb128::write::unsigned(&mut self.code, global.0.into()).unwrap();
+    }
+
+    pub fn memory_grow(&mut self) {
+        self.code.push(0x40);
     }
 
     pub fn finish(self) {

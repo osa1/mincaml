@@ -2,7 +2,7 @@ use crate::cg_types::RepType;
 use crate::closure_convert::{Expr, Fun};
 use crate::common::{BinOp, Cmp, FloatBinOp, IntBinOp};
 use crate::ctx::{Ctx, VarId};
-use crate::wasm_builder::{FunctionBuilder, FunctionLocalId, ModuleBuilder, ValType};
+use crate::wasm_builder::{FunctionBuilder, FunctionLocalId, GlobalId, ModuleBuilder, ValType};
 
 use fxhash::FxHashMap;
 
@@ -139,6 +139,44 @@ fn codegen_expr(
 
         Expr::ArrayPut(_, _, _) => todo!(),
     }
+}
+
+// NB. word size = 8
+fn alloc(
+    builder: &mut FunctionBuilder,
+    hp_global: &GlobalId,
+    hp_lim_global: &GlobalId,
+    n_words: u32,
+) {
+    builder.global_get(hp_global);
+    let amt: i64 = (n_words * 8).try_into().unwrap();
+    builder.i64_const(amt);
+    builder.i64_add();
+
+    builder.global_get(hp_lim_global);
+    builder.i64_lt_s();
+
+    builder.block(RepType::Word, |builder| {
+        builder.br_if(1);
+
+        // hp + (amt * 8) >= hp_lim
+
+        builder.i32_const(1);
+        builder.memory_grow();
+
+        builder.global_get(hp_lim_global);
+        builder.i64_const(65536);
+        builder.i64_add();
+        builder.global_set(hp_lim_global);
+    });
+
+    // hp + (amt * 8) < hp_lim
+    builder.global_get(hp_global);
+
+    builder.global_get(hp_global);
+    builder.i64_const(amt);
+    builder.i64_add();
+    builder.global_set(hp_global);
 }
 
 fn codegen_cmp(ctx: &mut Ctx, builder: &mut FunctionBuilder, v1: VarId, v2: VarId, cmp: Cmp) {
