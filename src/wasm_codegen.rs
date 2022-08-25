@@ -2,7 +2,7 @@ use crate::cg_types::RepType;
 use crate::closure_convert::{Expr, Fun};
 use crate::common::{BinOp, Cmp, FloatBinOp, IntBinOp};
 use crate::ctx::{Ctx, VarId};
-use crate::wasm_builder::{FunctionBuilder, FunctionLocalId, GlobalId, ModuleBuilder, ValType};
+use crate::wasm_builder::{FunctionBuilder, GlobalId, ModuleBuilder};
 
 use fxhash::FxHashMap;
 
@@ -60,18 +60,19 @@ fn codegen_expr(
     expr: &Expr,
 ) {
     match expr {
-        Expr::Unit => builder.i64_const(0),
+        Expr::Unit => builder.i32_const(0),
 
-        Expr::Int(i) => builder.i64_const(*i),
+        Expr::Int(i) => builder.i32_const((*i).try_into().unwrap()),
 
-        Expr::Float(f) => builder.f64_const(*f),
+        // TODO: 64-bit floats truncated to 32-bit
+        Expr::Float(f) => builder.f32_const((*f) as f32),
 
         Expr::IBinOp(BinOp { op, arg1, arg2 }) => {
             builder.get_local(builder.id_wasm_local(*arg1));
             builder.get_local(builder.id_wasm_local(*arg2));
             match op {
-                IntBinOp::Add => builder.i64_add(),
-                IntBinOp::Sub => builder.i64_sub(),
+                IntBinOp::Add => builder.i32_add(),
+                IntBinOp::Sub => builder.i32_sub(),
             }
         }
 
@@ -79,10 +80,10 @@ fn codegen_expr(
             builder.get_local(builder.id_wasm_local(*arg1));
             builder.get_local(builder.id_wasm_local(*arg2));
             match op {
-                FloatBinOp::Add => builder.f64_add(),
-                FloatBinOp::Sub => builder.f64_sub(),
-                FloatBinOp::Mul => builder.f64_mul(),
-                FloatBinOp::Div => builder.f64_div(),
+                FloatBinOp::Add => builder.f32_add(),
+                FloatBinOp::Sub => builder.f32_sub(),
+                FloatBinOp::Mul => builder.f32_mul(),
+                FloatBinOp::Div => builder.f32_div(),
             }
         }
 
@@ -121,7 +122,7 @@ fn codegen_expr(
 
         Expr::Var(var) => builder.get_local(builder.id_wasm_local(*var)),
 
-        Expr::App(fun, args, ret_ty) => {
+        Expr::App(fun, args, _) => {
             let fun_idx = *func_idxs.get(fun).unwrap();
             for arg in args {
                 builder.get_local(builder.id_wasm_local(*arg))
@@ -133,7 +134,7 @@ fn codegen_expr(
 
         Expr::TupleGet(_, _, _) => todo!(),
 
-        Expr::ArrayAlloc { len, elem } => todo!(),
+        Expr::ArrayAlloc { len: _, elem: _ } => todo!(),
 
         Expr::ArrayGet(_, _) => todo!(),
 
@@ -141,7 +142,6 @@ fn codegen_expr(
     }
 }
 
-// NB. word size = 8
 fn alloc(
     builder: &mut FunctionBuilder,
     hp_global: &GlobalId,
@@ -149,12 +149,12 @@ fn alloc(
     n_words: u32,
 ) {
     builder.global_get(hp_global);
-    let amt: i64 = (n_words * 8).try_into().unwrap();
-    builder.i64_const(amt);
-    builder.i64_add();
+    let amt: i32 = (n_words * 4).try_into().unwrap();
+    builder.i32_const(amt);
+    builder.i32_add();
 
     builder.global_get(hp_lim_global);
-    builder.i64_lt_s();
+    builder.i32_lt_s();
 
     builder.block(RepType::Word, |builder| {
         builder.br_if(1);
@@ -165,8 +165,8 @@ fn alloc(
         builder.memory_grow();
 
         builder.global_get(hp_lim_global);
-        builder.i64_const(65536);
-        builder.i64_add();
+        builder.i32_const(65536);
+        builder.i32_add();
         builder.global_set(hp_lim_global);
     });
 
@@ -174,8 +174,8 @@ fn alloc(
     builder.global_get(hp_global);
 
     builder.global_get(hp_global);
-    builder.i64_const(amt);
-    builder.i64_add();
+    builder.i32_const(amt);
+    builder.i32_add();
     builder.global_set(hp_global);
 }
 
@@ -185,20 +185,20 @@ fn codegen_cmp(ctx: &mut Ctx, builder: &mut FunctionBuilder, v1: VarId, v2: VarI
     builder.get_local(builder.id_wasm_local(v1));
     match ty {
         RepType::Word => match cmp {
-            Cmp::Equal => builder.i64_eq(),
-            Cmp::NotEqual => builder.i64_ne(),
-            Cmp::LessThan => builder.i64_lt_s(),
-            Cmp::LessThanOrEqual => builder.i64_le_s(),
-            Cmp::GreaterThan => builder.i64_gt_s(),
-            Cmp::GreaterThanOrEqual => builder.i64_ge_s(),
+            Cmp::Equal => builder.i32_eq(),
+            Cmp::NotEqual => builder.i32_ne(),
+            Cmp::LessThan => builder.i32_lt_s(),
+            Cmp::LessThanOrEqual => builder.i32_le_s(),
+            Cmp::GreaterThan => builder.i32_gt_s(),
+            Cmp::GreaterThanOrEqual => builder.i32_ge_s(),
         },
         RepType::Float => match cmp {
-            Cmp::Equal => builder.f64_eq(),
-            Cmp::NotEqual => builder.f64_ne(),
-            Cmp::LessThan => builder.f64_lt(),
-            Cmp::LessThanOrEqual => builder.f64_le(),
-            Cmp::GreaterThan => builder.f64_gt(),
-            Cmp::GreaterThanOrEqual => builder.f64_ge(),
+            Cmp::Equal => builder.f32_eq(),
+            Cmp::NotEqual => builder.f32_ne(),
+            Cmp::LessThan => builder.f32_lt(),
+            Cmp::LessThanOrEqual => builder.f32_le(),
+            Cmp::GreaterThan => builder.f32_gt(),
+            Cmp::GreaterThanOrEqual => builder.f32_ge(),
         },
     }
 }

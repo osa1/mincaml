@@ -157,6 +157,33 @@ fn compile_expr(
     Some(object_code)
 }
 
+fn compile_expr_wasm(
+    expr_str: &str,
+    dump_cc: bool,
+    dump_cg: bool,
+    show_pass_stats: bool,
+) -> Option<Vec<u8>> {
+    let mut pass_stats: Vec<PassStats> = Vec::with_capacity(10);
+
+    let mut ctx = Default::default();
+
+    let (funs, main) = prepare_expr(expr_str, dump_cc, &mut ctx, &mut pass_stats)?;
+
+    if dump_cg {
+        println!("### Code generation:\n");
+    }
+
+    let wasm_module = record_pass_stats(&mut pass_stats, "codegen", || {
+        wasm_codegen::codegen(&mut ctx, &funs, main)
+    });
+
+    if show_pass_stats {
+        report_pass_stats(&pass_stats);
+    }
+
+    Some(wasm_module)
+}
+
 fn report_pass_stats(pass_stats: &[PassStats]) {
     // TODO: align columns
     // TODO: show percentage of allocs and times of each pass
@@ -194,6 +221,22 @@ pub fn compile_file(
     match compile_expr(&contents, dump_cc, dump_cg, show_pass_stats) {
         None => 1,
         Some(object_code) => link(path, out_dir, object_code),
+    }
+}
+
+pub fn compile_file_wasm(
+    path: &str,
+    _out_dir: Option<&str>,
+    dump_cc: bool,
+    dump_cg: bool,
+    show_pass_stats: bool,
+) -> i32 {
+    let contents = std::fs::read_to_string(path).unwrap();
+    match compile_expr_wasm(&contents, dump_cc, dump_cg, show_pass_stats) {
+        None => 1,
+        Some(_object_code) => {
+            todo!()
+        }
     }
 }
 

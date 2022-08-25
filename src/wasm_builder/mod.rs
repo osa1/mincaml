@@ -457,72 +457,144 @@ impl<'a> FunctionBuilder<'a> {
         self.code.extend_from_slice(&val.to_le_bytes());
     }
 
+    pub fn i32_add(&mut self) {
+        self.code.push(0x6A);
+    }
+
     pub fn i64_add(&mut self) {
         self.code.push(0x7C);
+    }
+
+    pub fn i32_sub(&mut self) {
+        self.code.push(0x6B);
     }
 
     pub fn i64_sub(&mut self) {
         self.code.push(0x7D);
     }
 
+    pub fn f32_add(&mut self) {
+        self.code.push(0x92);
+    }
+
     pub fn f64_add(&mut self) {
         self.code.push(0xA0);
+    }
+
+    pub fn f32_sub(&mut self) {
+        self.code.push(0x93);
     }
 
     pub fn f64_sub(&mut self) {
         self.code.push(0xA1);
     }
 
+    pub fn f32_mul(&mut self) {
+        self.code.push(0x94);
+    }
+
     pub fn f64_mul(&mut self) {
         self.code.push(0xA2);
+    }
+
+    pub fn f32_div(&mut self) {
+        self.code.push(0x95);
     }
 
     pub fn f64_div(&mut self) {
         self.code.push(0xA3);
     }
 
+    pub fn i32_eq(&mut self) {
+        self.code.push(0x5B);
+    }
+
     pub fn i64_eq(&mut self) {
         self.code.push(0x51);
+    }
+
+    pub fn i32_ne(&mut self) {
+        self.code.push(0x5C);
     }
 
     pub fn i64_ne(&mut self) {
         self.code.push(0x52);
     }
 
+    pub fn i32_lt_s(&mut self) {
+        self.code.push(0x48);
+    }
+
     pub fn i64_lt_s(&mut self) {
         self.code.push(0x53);
+    }
+
+    pub fn i32_le_s(&mut self) {
+        self.code.push(0x4C);
     }
 
     pub fn i64_le_s(&mut self) {
         self.code.push(0x57);
     }
 
+    pub fn i32_gt_s(&mut self) {
+        self.code.push(0x4A);
+    }
+
     pub fn i64_gt_s(&mut self) {
         self.code.push(0x55);
+    }
+
+    pub fn i32_ge_s(&mut self) {
+        self.code.push(0x4E);
     }
 
     pub fn i64_ge_s(&mut self) {
         self.code.push(0x59);
     }
 
+    pub fn f32_eq(&mut self) {
+        self.code.push(0x5B);
+    }
+
     pub fn f64_eq(&mut self) {
         self.code.push(0x61);
+    }
+
+    pub fn f32_ne(&mut self) {
+        self.code.push(0x5C);
     }
 
     pub fn f64_ne(&mut self) {
         self.code.push(0x62);
     }
 
+    pub fn f32_lt(&mut self) {
+        self.code.push(0x5D);
+    }
+
     pub fn f64_lt(&mut self) {
         self.code.push(0x63);
+    }
+
+    pub fn f32_le(&mut self) {
+        self.code.push(0x5F);
     }
 
     pub fn f64_le(&mut self) {
         self.code.push(0x65);
     }
 
+    pub fn f32_gt(&mut self) {
+        self.code.push(0x5E);
+    }
+
     pub fn f64_gt(&mut self) {
         self.code.push(0x64);
+    }
+
+    pub fn f32_ge(&mut self) {
+        self.code.push(0x60);
     }
 
     pub fn f64_ge(&mut self) {
