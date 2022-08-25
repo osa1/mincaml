@@ -3,7 +3,7 @@ use crate::closure_convert::{Expr, Fun};
 use crate::common::{BinOp, Cmp, FloatBinOp, IntBinOp};
 use crate::ctx::{Ctx, VarId};
 use crate::type_check::Type;
-use crate::wasm_builder::{FunctionBuilder, GlobalId, ModuleBuilder};
+use crate::wasm_builder::{FunctionBuilder, GlobalId, ModuleBuilder, ValType};
 
 use fxhash::FxHashMap;
 
@@ -16,6 +16,10 @@ pub fn codegen(ctx: &mut Ctx, funs: &[Fun], main_id: VarId) -> Vec<u8> {
     // Table index of a function is the same as its index in the module.
     let mut func_idxs: FxHashMap<VarId, usize> = Default::default();
 
+    // Allocate hp (heap pointer) and hp_lim globals (heap pointer limit)
+    let hp = builder.new_global(ValType::I32);
+    let hp_lim = builder.new_global(ValType::I32);
+
     // Allocate function indices
     for fun in funs {
         let old_fun_idx = func_idxs.insert(fun.name, func_idxs.len());
@@ -23,7 +27,7 @@ pub fn codegen(ctx: &mut Ctx, funs: &[Fun], main_id: VarId) -> Vec<u8> {
     }
 
     for fun in funs {
-        codegen_fun(ctx, &mut builder, &func_idxs, fun);
+        codegen_fun(ctx, &mut builder, &func_idxs, fun, hp, hp_lim);
     }
 
     builder.encode(main_id)
@@ -34,6 +38,8 @@ fn codegen_fun(
     builder: &mut ModuleBuilder,
     func_idxs: &FxHashMap<VarId, usize>,
     fun: &Fun,
+    hp: GlobalId,
+    hp_lim: GlobalId,
 ) {
     let Fun {
         name,
@@ -49,7 +55,7 @@ fn codegen_fun(
 
     let mut func_builder = builder.new_function(*name, args.clone(), *return_type);
 
-    codegen_expr(ctx, &mut func_builder, func_idxs, body);
+    codegen_expr(ctx, &mut func_builder, func_idxs, body, &hp, &hp_lim);
 
     func_builder.finish();
 }
@@ -59,6 +65,8 @@ fn codegen_expr(
     builder: &mut FunctionBuilder,
     func_idxs: &FxHashMap<VarId, usize>,
     expr: &Expr,
+    hp: &GlobalId,
+    hp_lim: &GlobalId,
 ) {
     match expr {
         Expr::Unit => builder.i32_const(0),
@@ -107,18 +115,18 @@ fn codegen_expr(
             builder.block(block_ty, |builder| {
                 builder.block(block_ty, |builder| {
                     builder.br_if(1);
-                    codegen_expr(ctx, builder, func_idxs, else_);
+                    codegen_expr(ctx, builder, func_idxs, else_, hp, hp_lim);
                     builder.br(2);
                 });
-                codegen_expr(ctx, builder, func_idxs, then_);
+                codegen_expr(ctx, builder, func_idxs, then_, hp, hp_lim);
             });
         }
 
         Expr::Let { id, rhs, body } => {
-            codegen_expr(ctx, builder, func_idxs, rhs);
+            codegen_expr(ctx, builder, func_idxs, rhs, hp, hp_lim);
             let id_local = builder.new_local(*id, ctx.var_rep_type(*id));
             builder.set_local(id_local);
-            codegen_expr(ctx, builder, func_idxs, body);
+            codegen_expr(ctx, builder, func_idxs, body, hp, hp_lim);
         }
 
         Expr::Var(var) => builder.get_local(builder.id_wasm_local(*var)),
@@ -131,7 +139,24 @@ fn codegen_expr(
             builder.call(fun_idx);
         }
 
-        Expr::Tuple(_) => todo!(),
+        Expr::Tuple(elems) => {
+            let len: i32 = elems.len().try_into().unwrap();
+
+            let tuple = builder.new_local_(RepType::Word);
+            alloc(builder, &hp, &hp_lim, |builder| builder.i32_const(len));
+            builder.set_local(tuple);
+
+            for (elem_idx, elem) in elems.iter().enumerate() {
+                builder.get_local(tuple);
+                builder.i32_const((elem_idx as i32) * 4);
+                builder.i32_add();
+
+                builder.get_local_id(elem);
+                builder.i32_store(0);
+            }
+
+            builder.get_local(tuple);
+        }
 
         Expr::TupleGet(tuple, idx, rep_ty) => {
             builder.get_local_id(tuple);
@@ -146,7 +171,36 @@ fn codegen_expr(
             }
         }
 
-        Expr::ArrayAlloc { len: _, elem: _ } => todo!(),
+        Expr::ArrayAlloc { len, elem } => {
+            let array = builder.new_local_(RepType::Word);
+            alloc(builder, &hp, &hp_lim, |builder| builder.get_local_id(len));
+            builder.set_local(array);
+
+            // Initialized as 0
+            let counter = builder.new_local_(RepType::Word);
+
+            builder.loop_(RepType::Word, |builder| {
+                builder.get_local(counter);
+                builder.get_local_id(len);
+                builder.i32_eq();
+
+                builder.block(RepType::Word, |builder| {
+                    builder.br_if(1);
+
+                    // Store address
+                    builder.get_local(counter);
+                    builder.i32_const(4);
+                    builder.i32_mul();
+                    builder.get_local(array);
+                    builder.i32_add();
+
+                    builder.get_local_id(elem);
+                    builder.i32_store(0);
+                });
+            });
+
+            builder.get_local(array);
+        }
 
         Expr::ArrayGet(array, idx) => {
             builder.get_local_id(array);
@@ -198,15 +252,18 @@ fn codegen_expr(
     }
 }
 
-fn alloc(
+fn alloc<F>(
     builder: &mut FunctionBuilder,
     hp_global: &GlobalId,
     hp_lim_global: &GlobalId,
-    n_words: u32,
-) {
+    push_words: F,
+) where
+    F: Fn(&mut FunctionBuilder),
+{
     builder.global_get(hp_global);
-    let amt: i32 = (n_words * 4).try_into().unwrap();
-    builder.i32_const(amt);
+    push_words(builder);
+    builder.i32_const(4);
+    builder.i32_mul();
     builder.i32_add();
 
     builder.global_get(hp_lim_global);
@@ -227,10 +284,13 @@ fn alloc(
     });
 
     // hp + (amt * 8) < hp_lim
-    builder.global_get(hp_global);
+    builder.global_get(hp_global); // return value
 
+    // Update hp
     builder.global_get(hp_global);
-    builder.i32_const(amt);
+    push_words(builder);
+    builder.i32_const(4);
+    builder.i32_mul();
     builder.i32_add();
     builder.global_set(hp_global);
 }

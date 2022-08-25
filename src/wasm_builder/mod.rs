@@ -72,14 +72,20 @@ pub struct GlobalId(u32);
 /// A Wasm value type
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ValType {
+    I32,
+    #[allow(unused)]
     I64,
+    F32,
+    #[allow(unused)]
     F64,
 }
 
 impl ValType {
     fn binary(&self) -> u8 {
         match self {
+            ValType::I32 => 0x7F,
             ValType::I64 => 0x7E,
+            ValType::F32 => 0x7D,
             ValType::F64 => 0x7C,
         }
     }
@@ -99,8 +105,8 @@ pub struct FuncType {
 impl ValType {
     pub fn from_rep_type(rep_ty: RepType) -> Self {
         match rep_ty {
-            RepType::Word => ValType::I64,
-            RepType::Float => ValType::F64,
+            RepType::Word => ValType::I32,
+            RepType::Float => ValType::F32,
         }
     }
 }
@@ -403,11 +409,21 @@ impl ModuleBuilder {
 }
 
 impl<'a> FunctionBuilder<'a> {
-    /// Create a new Wasm local in the function for [id].
+    /// Create a new Wasm local in the function for [id]. The [FunctionLocalId] for the [id] can be
+    /// later obtained with [id_wasm_local].
     pub fn new_local(&mut self, id: VarId, ty: RepType) -> FunctionLocalId {
-        let id = FunctionLocalId(self.locals.len().try_into().unwrap());
+        let local_id = FunctionLocalId(self.locals.len().try_into().unwrap());
         self.locals.push(ValType::from_rep_type(ty));
-        id
+        let old = self.local_indices.insert(id, local_id);
+        assert_eq!(old, None);
+        local_id
+    }
+
+    /// Creates a new Wasm local in the function.
+    pub fn new_local_(&mut self, ty: RepType) -> FunctionLocalId {
+        let local_id = FunctionLocalId(self.locals.len().try_into().unwrap());
+        self.locals.push(ValType::from_rep_type(ty));
+        local_id
     }
 
     /// Get [FunctionLocalId] for a local variable.
@@ -444,11 +460,19 @@ impl<'a> FunctionBuilder<'a> {
         self.code.push(0x0B);
     }
 
+    pub fn loop_<F: FnOnce(&mut Self)>(&mut self, ty: RepType, f: F) {
+        self.code.push(0x03);
+        self.code.push(ValType::from_rep_type(ty).binary());
+        f(self);
+        self.code.push(0x0B);
+    }
+
     pub fn i32_const(&mut self, val: i32) {
         self.code.push(0x42);
         leb128::write::signed(&mut self.code, val.into()).unwrap();
     }
 
+    #[allow(unused)]
     pub fn i64_const(&mut self, val: i64) {
         self.code.push(0x42);
         leb128::write::signed(&mut self.code, val).unwrap();
@@ -459,6 +483,7 @@ impl<'a> FunctionBuilder<'a> {
         self.code.extend_from_slice(&val.to_le_bytes());
     }
 
+    #[allow(unused)]
     pub fn f64_const(&mut self, val: f64) {
         self.code.push(0x44);
         self.code.extend_from_slice(&val.to_le_bytes());
@@ -468,6 +493,7 @@ impl<'a> FunctionBuilder<'a> {
         self.code.push(0x6A);
     }
 
+    #[allow(unused)]
     pub fn i64_add(&mut self) {
         self.code.push(0x7C);
     }
@@ -476,6 +502,7 @@ impl<'a> FunctionBuilder<'a> {
         self.code.push(0x6B);
     }
 
+    #[allow(unused)]
     pub fn i64_sub(&mut self) {
         self.code.push(0x7D);
     }
@@ -488,6 +515,7 @@ impl<'a> FunctionBuilder<'a> {
         self.code.push(0x92);
     }
 
+    #[allow(unused)]
     pub fn f64_add(&mut self) {
         self.code.push(0xA0);
     }
@@ -496,6 +524,7 @@ impl<'a> FunctionBuilder<'a> {
         self.code.push(0x93);
     }
 
+    #[allow(unused)]
     pub fn f64_sub(&mut self) {
         self.code.push(0xA1);
     }
@@ -504,6 +533,7 @@ impl<'a> FunctionBuilder<'a> {
         self.code.push(0x94);
     }
 
+    #[allow(unused)]
     pub fn f64_mul(&mut self) {
         self.code.push(0xA2);
     }
@@ -512,6 +542,7 @@ impl<'a> FunctionBuilder<'a> {
         self.code.push(0x95);
     }
 
+    #[allow(unused)]
     pub fn f64_div(&mut self) {
         self.code.push(0xA3);
     }
@@ -520,6 +551,7 @@ impl<'a> FunctionBuilder<'a> {
         self.code.push(0x5B);
     }
 
+    #[allow(unused)]
     pub fn i64_eq(&mut self) {
         self.code.push(0x51);
     }
@@ -528,6 +560,7 @@ impl<'a> FunctionBuilder<'a> {
         self.code.push(0x5C);
     }
 
+    #[allow(unused)]
     pub fn i64_ne(&mut self) {
         self.code.push(0x52);
     }
@@ -536,6 +569,7 @@ impl<'a> FunctionBuilder<'a> {
         self.code.push(0x48);
     }
 
+    #[allow(unused)]
     pub fn i64_lt_s(&mut self) {
         self.code.push(0x53);
     }
@@ -544,6 +578,7 @@ impl<'a> FunctionBuilder<'a> {
         self.code.push(0x4C);
     }
 
+    #[allow(unused)]
     pub fn i64_le_s(&mut self) {
         self.code.push(0x57);
     }
@@ -552,6 +587,7 @@ impl<'a> FunctionBuilder<'a> {
         self.code.push(0x4A);
     }
 
+    #[allow(unused)]
     pub fn i64_gt_s(&mut self) {
         self.code.push(0x55);
     }
@@ -560,6 +596,7 @@ impl<'a> FunctionBuilder<'a> {
         self.code.push(0x4E);
     }
 
+    #[allow(unused)]
     pub fn i64_ge_s(&mut self) {
         self.code.push(0x59);
     }
@@ -568,6 +605,7 @@ impl<'a> FunctionBuilder<'a> {
         self.code.push(0x5B);
     }
 
+    #[allow(unused)]
     pub fn f64_eq(&mut self) {
         self.code.push(0x61);
     }
@@ -576,6 +614,7 @@ impl<'a> FunctionBuilder<'a> {
         self.code.push(0x5C);
     }
 
+    #[allow(unused)]
     pub fn f64_ne(&mut self) {
         self.code.push(0x62);
     }
@@ -584,6 +623,7 @@ impl<'a> FunctionBuilder<'a> {
         self.code.push(0x5D);
     }
 
+    #[allow(unused)]
     pub fn f64_lt(&mut self) {
         self.code.push(0x63);
     }
@@ -592,6 +632,7 @@ impl<'a> FunctionBuilder<'a> {
         self.code.push(0x5F);
     }
 
+    #[allow(unused)]
     pub fn f64_le(&mut self) {
         self.code.push(0x65);
     }
@@ -600,6 +641,7 @@ impl<'a> FunctionBuilder<'a> {
         self.code.push(0x5E);
     }
 
+    #[allow(unused)]
     pub fn f64_gt(&mut self) {
         self.code.push(0x64);
     }
@@ -608,6 +650,7 @@ impl<'a> FunctionBuilder<'a> {
         self.code.push(0x60);
     }
 
+    #[allow(unused)]
     pub fn f64_ge(&mut self) {
         self.code.push(0x66);
     }
@@ -655,6 +698,7 @@ impl<'a> FunctionBuilder<'a> {
         leb128::write::unsigned(&mut self.code, offset.into()).unwrap();
     }
 
+    #[allow(unused)]
     pub fn i64_load(&mut self, offset: u32) {
         self.code.push(0x29);
         self.code.push(0); // align
@@ -667,6 +711,7 @@ impl<'a> FunctionBuilder<'a> {
         leb128::write::unsigned(&mut self.code, offset.into()).unwrap();
     }
 
+    #[allow(unused)]
     pub fn f64_load(&mut self, offset: u32) {
         self.code.push(0x2B);
         self.code.push(0); // align
@@ -679,6 +724,7 @@ impl<'a> FunctionBuilder<'a> {
         leb128::write::unsigned(&mut self.code, offset.into()).unwrap();
     }
 
+    #[allow(unused)]
     pub fn i64_store(&mut self, offset: u32) {
         self.code.push(0x37);
         self.code.push(0); // align
@@ -691,6 +737,7 @@ impl<'a> FunctionBuilder<'a> {
         leb128::write::unsigned(&mut self.code, offset.into()).unwrap();
     }
 
+    #[allow(unused)]
     pub fn f64_store(&mut self, offset: u32) {
         self.code.push(0x39);
         self.code.push(0); // align
