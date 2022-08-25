@@ -2,6 +2,7 @@ use crate::cg_types::RepType;
 use crate::closure_convert::{Expr, Fun};
 use crate::common::{BinOp, Cmp, FloatBinOp, IntBinOp};
 use crate::ctx::{Ctx, VarId};
+use crate::type_check::Type;
 use crate::wasm_builder::{FunctionBuilder, GlobalId, ModuleBuilder};
 
 use fxhash::FxHashMap;
@@ -132,13 +133,68 @@ fn codegen_expr(
 
         Expr::Tuple(_) => todo!(),
 
-        Expr::TupleGet(_, _, _) => todo!(),
+        Expr::TupleGet(tuple, idx, rep_ty) => {
+            builder.get_local_id(tuple);
+            let offset = idx * 4;
+            match rep_ty {
+                RepType::Word => {
+                    builder.i32_load(offset.try_into().unwrap());
+                }
+                RepType::Float => {
+                    builder.f32_load(offset.try_into().unwrap());
+                }
+            }
+        }
 
         Expr::ArrayAlloc { len: _, elem: _ } => todo!(),
 
-        Expr::ArrayGet(_, _) => todo!(),
+        Expr::ArrayGet(array, idx) => {
+            builder.get_local_id(array);
+            builder.get_local_id(idx);
+            builder.i32_const(4);
+            builder.i32_mul();
+            builder.i32_add();
 
-        Expr::ArrayPut(_, _, _) => todo!(),
+            let array_type = ctx.var_type(*array);
+            let elem_type = match &*array_type {
+                Type::Array(elem_type) => RepType::from(&**elem_type),
+                other => panic!(
+                    "Non-array {} in array location: {:?}",
+                    ctx.get_var(*array),
+                    other
+                ),
+            };
+
+            match elem_type {
+                RepType::Word => builder.i32_load(0),
+                RepType::Float => builder.i32_load(0),
+            }
+        }
+
+        Expr::ArrayPut(array, idx, value) => {
+            builder.get_local_id(array);
+            builder.get_local_id(idx);
+            builder.i32_const(4);
+            builder.i32_mul();
+            builder.i32_add();
+
+            builder.get_local_id(value);
+
+            let value_type = ctx.var_type(*value);
+            let elem_type = match &*value_type {
+                Type::Array(elem_type) => RepType::from(&**elem_type),
+                other => panic!(
+                    "Non-array {} in array location: {:?}",
+                    ctx.get_var(*array),
+                    other
+                ),
+            };
+
+            match elem_type {
+                RepType::Word => builder.i32_store(0),
+                RepType::Float => builder.f32_store(0),
+            }
+        }
     }
 }
 

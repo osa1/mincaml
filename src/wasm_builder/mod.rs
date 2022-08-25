@@ -424,6 +424,13 @@ impl<'a> FunctionBuilder<'a> {
         leb128::write::unsigned(&mut self.code, id.0.into()).unwrap();
     }
 
+    /// Read a local variable. Pushes the value to Wasm stack.
+    pub fn get_local_id(&mut self, id: &VarId) {
+        let id = self.id_wasm_local(*id);
+        self.code.push(0x20);
+        leb128::write::unsigned(&mut self.code, id.0.into()).unwrap();
+    }
+
     /// Set a local variable. Value is popped from the Wasm stack.
     pub fn set_local(&mut self, id: FunctionLocalId) {
         self.code.push(0x21);
@@ -471,6 +478,10 @@ impl<'a> FunctionBuilder<'a> {
 
     pub fn i64_sub(&mut self) {
         self.code.push(0x7D);
+    }
+
+    pub fn i32_mul(&mut self) {
+        self.code.push(0x6C);
     }
 
     pub fn f32_add(&mut self) {
