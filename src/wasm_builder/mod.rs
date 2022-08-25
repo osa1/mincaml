@@ -1,5 +1,5 @@
 use crate::cg_types::RepType;
-use crate::ctx::VarId;
+use crate::ctx::{Ctx, VarId};
 
 use fxhash::FxHashMap;
 
@@ -48,16 +48,6 @@ struct Function {
     ty: FuncType,
     locals: Vec<ValType>,
     code: Vec<u8>,
-}
-
-/// A Wasm function local variable
-#[derive(Debug)]
-struct Local {
-    /// Index of the local in the function
-    idx: u32,
-
-    /// Wasm type of the local
-    ty: ValType,
 }
 
 /// A Wasm global. Currently we only generate mutable globals, and globals are initialized as 0.
@@ -427,11 +417,11 @@ impl<'a> FunctionBuilder<'a> {
     }
 
     /// Get [FunctionLocalId] for a local variable.
-    pub fn id_wasm_local(&self, id: VarId) -> FunctionLocalId {
+    pub fn id_wasm_local(&self, ctx: &Ctx, id: VarId) -> FunctionLocalId {
         *self
             .local_indices
             .get(&id)
-            .unwrap_or_else(|| panic!("Wasm local not defined for id {:?}", id))
+            .unwrap_or_else(|| panic!("Wasm local not defined for id {}", ctx.get_var(id)))
     }
 
     /// Read a local variable. Pushes the value to Wasm stack.
@@ -441,8 +431,8 @@ impl<'a> FunctionBuilder<'a> {
     }
 
     /// Read a local variable. Pushes the value to Wasm stack.
-    pub fn get_local_id(&mut self, id: &VarId) {
-        let id = self.id_wasm_local(*id);
+    pub fn get_local_id(&mut self, ctx: &Ctx, id: &VarId) {
+        let id = self.id_wasm_local(ctx, *id);
         self.code.push(0x20);
         leb128::write::unsigned(&mut self.code, id.0.into()).unwrap();
     }

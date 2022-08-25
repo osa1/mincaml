@@ -234,8 +234,9 @@ pub fn compile_file_wasm(
     let contents = std::fs::read_to_string(path).unwrap();
     match compile_expr_wasm(&contents, dump_cc, dump_cg, show_pass_stats) {
         None => 1,
-        Some(_object_code) => {
-            todo!()
+        Some(object_code) => {
+            std::fs::write("out.wasm", object_code).unwrap();
+            0
         }
     }
 }

@@ -77,8 +77,8 @@ fn codegen_expr(
         Expr::Float(f) => builder.f32_const((*f) as f32),
 
         Expr::IBinOp(BinOp { op, arg1, arg2 }) => {
-            builder.get_local(builder.id_wasm_local(*arg1));
-            builder.get_local(builder.id_wasm_local(*arg2));
+            builder.get_local(builder.id_wasm_local(ctx, *arg1));
+            builder.get_local(builder.id_wasm_local(ctx, *arg2));
             match op {
                 IntBinOp::Add => builder.i32_add(),
                 IntBinOp::Sub => builder.i32_sub(),
@@ -86,8 +86,8 @@ fn codegen_expr(
         }
 
         Expr::FBinOp(BinOp { op, arg1, arg2 }) => {
-            builder.get_local(builder.id_wasm_local(*arg1));
-            builder.get_local(builder.id_wasm_local(*arg2));
+            builder.get_local(builder.id_wasm_local(ctx, *arg1));
+            builder.get_local(builder.id_wasm_local(ctx, *arg2));
             match op {
                 FloatBinOp::Add => builder.f32_add(),
                 FloatBinOp::Sub => builder.f32_sub(),
@@ -129,12 +129,12 @@ fn codegen_expr(
             codegen_expr(ctx, builder, func_idxs, body, hp, hp_lim);
         }
 
-        Expr::Var(var) => builder.get_local(builder.id_wasm_local(*var)),
+        Expr::Var(var) => builder.get_local(builder.id_wasm_local(ctx, *var)),
 
         Expr::App(fun, args, _) => {
             let fun_idx = *func_idxs.get(fun).unwrap();
             for arg in args {
-                builder.get_local(builder.id_wasm_local(*arg))
+                builder.get_local(builder.id_wasm_local(ctx, *arg))
             }
             builder.call(fun_idx);
         }
@@ -151,7 +151,7 @@ fn codegen_expr(
                 builder.i32_const((elem_idx as i32) * 4);
                 builder.i32_add();
 
-                builder.get_local_id(elem);
+                builder.get_local_id(ctx, elem);
                 builder.i32_store(0);
             }
 
@@ -159,7 +159,7 @@ fn codegen_expr(
         }
 
         Expr::TupleGet(tuple, idx, rep_ty) => {
-            builder.get_local_id(tuple);
+            builder.get_local_id(ctx, tuple);
             let offset = idx * 4;
             match rep_ty {
                 RepType::Word => {
@@ -173,7 +173,9 @@ fn codegen_expr(
 
         Expr::ArrayAlloc { len, elem } => {
             let array = builder.new_local_(RepType::Word);
-            alloc(builder, &hp, &hp_lim, |builder| builder.get_local_id(len));
+            alloc(builder, &hp, &hp_lim, |builder| {
+                builder.get_local_id(ctx, len)
+            });
             builder.set_local(array);
 
             // Initialized as 0
@@ -181,7 +183,7 @@ fn codegen_expr(
 
             builder.loop_(RepType::Word, |builder| {
                 builder.get_local(counter);
-                builder.get_local_id(len);
+                builder.get_local_id(ctx, len);
                 builder.i32_eq();
 
                 builder.block(RepType::Word, |builder| {
@@ -194,7 +196,7 @@ fn codegen_expr(
                     builder.get_local(array);
                     builder.i32_add();
 
-                    builder.get_local_id(elem);
+                    builder.get_local_id(ctx, elem);
                     builder.i32_store(0);
                 });
             });
@@ -203,8 +205,8 @@ fn codegen_expr(
         }
 
         Expr::ArrayGet(array, idx) => {
-            builder.get_local_id(array);
-            builder.get_local_id(idx);
+            builder.get_local_id(ctx, array);
+            builder.get_local_id(ctx, idx);
             builder.i32_const(4);
             builder.i32_mul();
             builder.i32_add();
@@ -226,13 +228,13 @@ fn codegen_expr(
         }
 
         Expr::ArrayPut(array, idx, value) => {
-            builder.get_local_id(array);
-            builder.get_local_id(idx);
+            builder.get_local_id(ctx, array);
+            builder.get_local_id(ctx, idx);
             builder.i32_const(4);
             builder.i32_mul();
             builder.i32_add();
 
-            builder.get_local_id(value);
+            builder.get_local_id(ctx, value);
 
             let value_type = ctx.var_type(*value);
             let elem_type = match &*value_type {
@@ -297,8 +299,8 @@ fn alloc<F>(
 
 fn codegen_cmp(ctx: &mut Ctx, builder: &mut FunctionBuilder, v1: VarId, v2: VarId, cmp: Cmp) {
     let ty = ctx.var_rep_type(v1);
-    builder.get_local(builder.id_wasm_local(v2));
-    builder.get_local(builder.id_wasm_local(v1));
+    builder.get_local(builder.id_wasm_local(ctx, v2));
+    builder.get_local(builder.id_wasm_local(ctx, v1));
     match ty {
         RepType::Word => match cmp {
             Cmp::Equal => builder.i32_eq(),
