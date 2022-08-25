@@ -17,6 +17,9 @@ pub struct ModuleBuilder {
 
     /// Function codes in the module.
     functions: Vec<Function>,
+
+    /// Glboals in the module
+    globals: Vec<Global>,
 }
 
 /// A Wasm function builder
@@ -56,6 +59,15 @@ struct Local {
     /// Wasm type of the local
     ty: ValType,
 }
+
+/// A Wasm global. Currently we only generate mutable globals, and globals are initialized as 0.
+#[derive(Debug, Clone, Copy)]
+struct Global {
+    ty: ValType,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct GlobalId(u32);
 
 /// A Wasm value type
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -102,6 +114,7 @@ impl ModuleBuilder {
             func_types: Default::default(),
             func_idxs: Default::default(),
             functions: Vec::new(),
+            globals: Vec::new(),
         }
     }
 
@@ -138,6 +151,12 @@ impl ModuleBuilder {
 
             code: Vec::new(),
         }
+    }
+
+    pub fn new_global(&mut self, ty: ValType) -> GlobalId {
+        let global_id = self.globals.len().try_into().unwrap();
+        self.globals.push(Global { ty });
+        GlobalId(global_id)
     }
 
     pub fn encode(self, main_fn_id: VarId) -> Vec<u8> {
@@ -247,6 +266,30 @@ impl ModuleBuilder {
         }
 
         // TODO: Do we need memory section? (5)
+
+        // Global section
+        {
+            encoded.push(6);
+
+            let mut global_section_body: Vec<u8> = Vec::new();
+
+            // Global vector length
+            leb128::write::unsigned(
+                &mut global_section_body,
+                self.globals.len().try_into().unwrap(),
+            )
+            .unwrap();
+
+            for global in self.globals {
+                global_section_body.push(global.ty.binary());
+                global_section_body.push(0x01); // mut
+            }
+
+            leb128::write::unsigned(&mut encoded, global_section_body.len().try_into().unwrap())
+                .unwrap();
+
+            encoded.extend_from_slice(&global_section_body);
+        }
 
         // Start section
         {
@@ -411,6 +454,16 @@ impl<'a> FunctionBuilder<'a> {
 
     pub fn f64_div(&mut self) {
         self.code.push(0xA3);
+    }
+
+    pub fn global_get(&mut self, global: &GlobalId) {
+        self.code.push(0x23);
+        leb128::write::unsigned(&mut self.code, global.0.into()).unwrap();
+    }
+
+    pub fn global_set(&mut self, global: &GlobalId) {
+        self.code.push(0x24);
+        leb128::write::unsigned(&mut self.code, global.0.into()).unwrap();
     }
 
     /// Generate a `call_indirect` instruction. Table index assumed to be 0.
