@@ -3,7 +3,7 @@ use crate::closure_convert::{Expr, Fun};
 use crate::common::{BinOp, Cmp, FloatBinOp, IntBinOp};
 use crate::ctx::{Ctx, VarId};
 use crate::type_check::Type;
-use crate::wasm_builder::{FunctionBuilder, GlobalId, ModuleBuilder, ValType};
+use crate::wasm_builder::{FuncType, FunctionBuilder, GlobalId, ModuleBuilder, ValType};
 
 use fxhash::FxHashMap;
 
@@ -131,12 +131,24 @@ fn codegen_expr(
 
         Expr::Var(var) => builder.get_local(builder.id_wasm_local(ctx, *var)),
 
-        Expr::App(fun, args, _) => {
-            let fun_idx = *func_idxs.get(fun).unwrap();
+        Expr::App(fun, args, ret_ty) => {
+            let arg_val_tys: Vec<ValType> = args
+                .iter()
+                .map(|arg| ValType::from_rep_type(ctx.var_rep_type(*arg)))
+                .collect();
+
+            let fun_ty = FuncType {
+                args: arg_val_tys,
+                ret: ValType::from_rep_type(*ret_ty),
+            };
+
             for arg in args {
-                builder.get_local(builder.id_wasm_local(ctx, *arg))
+                builder.get_local_id(ctx, arg);
             }
-            builder.call(fun_idx);
+
+            builder.get_local_id(ctx, fun);
+
+            builder.call_indirect(fun_ty);
         }
 
         Expr::Tuple(elems) => {

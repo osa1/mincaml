@@ -663,6 +663,7 @@ impl<'a> FunctionBuilder<'a> {
         self.code.push(0); // table index
     }
 
+    #[allow(unused)]
     pub fn call(&mut self, idx: usize) {
         self.code.push(0x10);
         leb128::write::unsigned(&mut self.code, idx.try_into().unwrap()).unwrap();
