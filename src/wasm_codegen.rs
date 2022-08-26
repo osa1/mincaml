@@ -13,8 +13,6 @@ pub fn codegen(ctx: &mut Ctx, funs: &[Fun], main_id: VarId) -> Vec<u8> {
     let mut builder = ModuleBuilder::new();
     let mut env = Env::new();
 
-    let mut next_func_idx = 0u32;
-
     // Import built-in functions and initialize closures for built-in functions.
     //
     // Built-in function closures are 1-tuples as built-in functions don't capture variables.
@@ -43,8 +41,10 @@ pub fn codegen(ctx: &mut Ctx, funs: &[Fun], main_id: VarId) -> Vec<u8> {
         let import_func_idx =
             builder.new_import("builtins", &ctx.get_var(*builtin_var_id).name(), func_ty);
 
-        // TODO: add closure, not function
-        // env.add_fun(*builtin_var_id, import_func_idx);
+        let addr = data.len() as u32;
+        data.extend_from_slice(&import_func_idx.to_le_bytes());
+
+        env.add_closure(*builtin_var_id, addr);
     }
 
     // Maps function ids to their indices in the module. Used in `call` instructions and for table
@@ -76,6 +76,8 @@ pub fn codegen(ctx: &mut Ctx, funs: &[Fun], main_id: VarId) -> Vec<u8> {
     for fun in funs {
         codegen_fun(ctx, &mut builder, &func_idxs, fun, hp, hp_lim);
     }
+
+    builder.set_data(data);
 
     builder.encode(main_id)
 }

@@ -25,6 +25,9 @@ pub struct ModuleBuilder {
 
     /// Glboals in the module
     globals: Vec<Global>,
+
+    /// Data section contents. Currently we generate one data segment.
+    data: Vec<u8>,
 }
 
 /// A Wasm function builder
@@ -117,6 +120,7 @@ impl ModuleBuilder {
             func_idxs: Default::default(),
             functions: Vec::new(),
             globals: Vec::new(),
+            data: Vec::new(),
         }
     }
 
@@ -183,6 +187,10 @@ impl ModuleBuilder {
         let global_id = self.globals.len().try_into().unwrap();
         self.globals.push(Global { ty });
         GlobalId(global_id)
+    }
+
+    pub fn set_data(&mut self, data: Vec<u8>) {
+        self.data = data;
     }
 
     pub fn encode(self, main_fn_id: VarId) -> Vec<u8> {
@@ -442,6 +450,29 @@ impl ModuleBuilder {
 
             encoded.extend_from_slice(&code_section_body);
         }
+
+        // Data section
+        {
+            encoded.push(11); // data section id
+
+            let mut data_section_body: Vec<u8> = Vec::new();
+
+            data_section_body.push(1); // vec length = 1
+            data_section_body.push(0); // active
+            data_section_body.push(0x42); // i32.const
+            data_section_body.push(0);
+            data_section_body.push(0x0B); // end expr
+            data_section_body.extend_from_slice(&self.data);
+
+            leb128::write::unsigned(&mut encoded, data_section_body.len().try_into().unwrap())
+                .unwrap();
+
+            encoded.extend_from_slice(&data_section_body);
+        }
+
+        // Data count section
+        encoded.push(12); // data count section id
+        encoded.push(1);
 
         encoded
     }
