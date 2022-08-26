@@ -18,7 +18,7 @@ pub struct ModuleBuilder {
     imports: Vec<(String, String, u32)>,
 
     /// Maps ids for functions to their indices in [functions]
-    func_idxs: FxHashMap<VarId, usize>,
+    func_idxs: FxHashMap<VarId, u32>,
 
     /// Function codes in the module.
     functions: Vec<Function>,
@@ -126,7 +126,13 @@ impl ModuleBuilder {
 
     /// Add a function import. Returns function index.
     // TODO: Somehow make sure that we won't add more imports after adding a function
-    pub fn new_import(&mut self, module_name: &str, import_name: &str, ty: FuncType) -> u32 {
+    pub fn new_import(
+        &mut self,
+        module_name: &str,
+        import_name: &str,
+        var: &VarId,
+        ty: FuncType,
+    ) -> u32 {
         let n_func_tys: u32 = self.func_types.len().try_into().unwrap();
 
         let ty_idx: u32 = match self.func_types.entry(ty) {
@@ -137,12 +143,22 @@ impl ModuleBuilder {
             }
         };
 
-        let n_funcs = self.imports.len();
+        let fun_id = self.imports.len() as u32;
 
         self.imports
             .push((module_name.to_owned(), import_name.to_owned(), ty_idx));
 
-        n_funcs.try_into().unwrap()
+        let old = self.func_idxs.insert(*var, fun_id);
+        debug_assert_eq!(old, None);
+
+        fun_id
+    }
+
+    pub fn allocate_function_idx(&mut self, var: VarId) -> u32 {
+        let fun_id = self.func_idxs.len() as u32;
+        let old = self.func_idxs.insert(var, fun_id);
+        debug_assert_eq!(old, None);
+        fun_id
     }
 
     pub fn new_function(
@@ -832,7 +848,7 @@ impl<'a> FunctionBuilder<'a> {
             ty,
             local_indices: _,
         } = self;
-        let idx = module_builder.functions.len();
+        let idx = module_builder.functions.len() as u32;
         module_builder.functions.push(Function { ty, locals, code });
         let old_idx = module_builder.func_idxs.insert(id, idx);
         assert_eq!(old_idx, None);

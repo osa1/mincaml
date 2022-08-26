@@ -38,35 +38,30 @@ pub fn codegen(ctx: &mut Ctx, funs: &[Fun], main_id: VarId) -> Vec<u8> {
             ),
         };
 
-        let import_func_idx =
-            builder.new_import("builtins", &ctx.get_var(*builtin_var_id).name(), func_ty);
+        let import_func_idx = builder.new_import(
+            "builtins",
+            &ctx.get_var(*builtin_var_id).name(),
+            builtin_var_id,
+            func_ty,
+        );
 
         let addr = data.len() as u32;
         data.extend_from_slice(&import_func_idx.to_le_bytes());
 
         env.add_closure(*builtin_var_id, addr);
-    }
 
-    // Maps function ids to their indices in the module. Used in `call` instructions and for table
-    // indices of the functions.
-    //
-    // Table index of a function is the same as its index in the module.
-    let mut func_idxs: FxHashMap<VarId, usize> = Default::default();
+        println!("  = {} (addr = {})", import_func_idx, addr);
+    }
 
     // Initialize function indices. Closures for these are allocated in closure-converted code, so
     // we don't allocate closures here.
     for fun in funs {
-        let fun_idx = func_idxs.len();
-        let old_fun_idx = func_idxs.insert(fun.name, fun_idx);
-        debug_assert_eq!(old_fun_idx, None);
-
         println!("Adding function {}", ctx.get_var(fun.name));
-        env.add_fun(fun.name, fun_idx.try_into().unwrap());
-    }
 
-    for (builtin_var_id, _ty_id) in ctx.builtins() {
-        // TODO: Generate imports!
-        println!("Adding builtin {}", ctx.get_var(*builtin_var_id));
+        let fun_idx = builder.allocate_function_idx(fun.name);
+        env.add_fun(fun.name, fun_idx);
+
+        println!("  = {}", fun_idx);
     }
 
     // Add hp (heap pointer) and hp_lim globals (heap pointer limit)
@@ -74,7 +69,7 @@ pub fn codegen(ctx: &mut Ctx, funs: &[Fun], main_id: VarId) -> Vec<u8> {
     let hp_lim = builder.new_global(ValType::I32);
 
     for fun in funs {
-        codegen_fun(ctx, &mut builder, &func_idxs, fun, hp, hp_lim);
+        codegen_fun(ctx, &mut builder, &env, fun, hp, hp_lim);
     }
 
     builder.set_data(data);
@@ -140,7 +135,7 @@ impl Env {
 fn codegen_fun(
     ctx: &mut Ctx,
     builder: &mut ModuleBuilder,
-    func_idxs: &FxHashMap<VarId, usize>,
+    env: &Env,
     fun: &Fun,
     hp: GlobalId,
     hp_lim: GlobalId,
@@ -159,7 +154,7 @@ fn codegen_fun(
 
     let mut func_builder = builder.new_function(*name, args.clone(), *return_type);
 
-    codegen_expr(ctx, &mut func_builder, func_idxs, body, &hp, &hp_lim);
+    codegen_expr(ctx, &mut func_builder, env, body, &hp, &hp_lim);
 
     func_builder.finish();
 }
@@ -167,7 +162,7 @@ fn codegen_fun(
 fn codegen_expr(
     ctx: &mut Ctx,
     builder: &mut FunctionBuilder,
-    func_idxs: &FxHashMap<VarId, usize>,
+    env: &Env,
     expr: &Expr,
     hp: &GlobalId,
     hp_lim: &GlobalId,
@@ -219,18 +214,18 @@ fn codegen_expr(
             builder.block(block_ty, |builder| {
                 builder.block(block_ty, |builder| {
                     builder.br_if(1);
-                    codegen_expr(ctx, builder, func_idxs, else_, hp, hp_lim);
+                    codegen_expr(ctx, builder, env, else_, hp, hp_lim);
                     builder.br(2);
                 });
-                codegen_expr(ctx, builder, func_idxs, then_, hp, hp_lim);
+                codegen_expr(ctx, builder, env, then_, hp, hp_lim);
             });
         }
 
         Expr::Let { id, rhs, body } => {
-            codegen_expr(ctx, builder, func_idxs, rhs, hp, hp_lim);
+            codegen_expr(ctx, builder, env, rhs, hp, hp_lim);
             let id_local = builder.new_local(*id, ctx.var_rep_type(*id));
             builder.set_local(id_local);
-            codegen_expr(ctx, builder, func_idxs, body, hp, hp_lim);
+            codegen_expr(ctx, builder, env, body, hp, hp_lim);
         }
 
         Expr::Var(var) => builder.get_local(builder.id_wasm_local(ctx, *var)),
