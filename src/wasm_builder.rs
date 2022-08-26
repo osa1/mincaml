@@ -1,6 +1,8 @@
 use crate::cg_types::RepType;
 use crate::ctx::{Ctx, VarId};
 
+use std::collections::hash_map::Entry;
+
 use fxhash::FxHashMap;
 
 /// A Wasm module builder
@@ -11,6 +13,9 @@ pub struct ModuleBuilder {
     /// Type indices are used in `call_indirect` instructions for the type of the function being
     /// called.
     func_types: FxHashMap<FuncType, u32>,
+
+    /// Function imports: (module name, function name, function type index)
+    imports: Vec<(String, String, u32)>,
 
     /// Maps ids for functions to their indices in [functions]
     func_idxs: FxHashMap<VarId, usize>,
@@ -108,10 +113,32 @@ impl ModuleBuilder {
     pub fn new() -> Self {
         ModuleBuilder {
             func_types: Default::default(),
+            imports: Vec::new(),
             func_idxs: Default::default(),
             functions: Vec::new(),
             globals: Vec::new(),
         }
+    }
+
+    /// Add a function import. Returns function index.
+    // TODO: Somehow make sure that we won't add more imports after adding a function
+    pub fn new_import(&mut self, module_name: &str, import_name: &str, ty: FuncType) -> u32 {
+        let n_func_tys: u32 = self.func_types.len().try_into().unwrap();
+
+        let ty_idx: u32 = match self.func_types.entry(ty) {
+            Entry::Occupied(entry) => *entry.get(),
+            Entry::Vacant(entry) => {
+                entry.insert(n_func_tys);
+                n_func_tys
+            }
+        };
+
+        let n_funcs = self.imports.len();
+
+        self.imports
+            .push((module_name.to_owned(), import_name.to_owned(), ty_idx));
+
+        n_funcs.try_into().unwrap()
     }
 
     pub fn new_function(
@@ -207,6 +234,36 @@ impl ModuleBuilder {
             leb128::write::unsigned(&mut encoded, type_section_body.len().try_into().unwrap())
                 .unwrap();
             encoded.extend_from_slice(&type_section_body);
+        }
+
+        // Import section
+        {
+            encoded.push(2); // import section id
+
+            let mut import_section_body: Vec<u8> = Vec::new();
+
+            leb128::write::unsigned(
+                &mut import_section_body,
+                self.imports.len().try_into().unwrap(),
+            )
+            .unwrap();
+
+            for (module_name, fun_name, ty_idx) in &self.imports {
+                leb128::write::unsigned(&mut import_section_body, module_name.len() as u64)
+                    .unwrap();
+
+                import_section_body.extend_from_slice(module_name.as_bytes());
+
+                leb128::write::unsigned(&mut import_section_body, fun_name.len() as u64).unwrap();
+
+                import_section_body.extend_from_slice(fun_name.as_bytes());
+
+                leb128::write::unsigned(&mut import_section_body, (*ty_idx).into()).unwrap();
+            }
+
+            leb128::write::unsigned(&mut encoded, import_section_body.len().try_into().unwrap())
+                .unwrap();
+            encoded.extend_from_slice(&import_section_body);
         }
 
         // Function section

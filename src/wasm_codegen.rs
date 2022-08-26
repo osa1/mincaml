@@ -3,12 +3,49 @@ use crate::closure_convert::{Expr, Fun};
 use crate::common::{BinOp, Cmp, FloatBinOp, IntBinOp};
 use crate::ctx::{Ctx, VarId};
 use crate::type_check::Type;
-use crate::wasm_builder::{FuncType, FunctionBuilder, GlobalId, ModuleBuilder, ValType};
+use crate::wasm_builder::{
+    FuncType, FunctionBuilder, FunctionLocalId, GlobalId, ModuleBuilder, ValType,
+};
 
 use fxhash::FxHashMap;
 
 pub fn codegen(ctx: &mut Ctx, funs: &[Fun], main_id: VarId) -> Vec<u8> {
     let mut builder = ModuleBuilder::new();
+    let mut env = Env::new();
+
+    let mut next_func_idx = 0u32;
+
+    // Import built-in functions and initialize closures for built-in functions.
+    //
+    // Built-in function closures are 1-tuples as built-in functions don't capture variables.
+    let mut data: Vec<u8> = Vec::new();
+
+    for (builtin_var_id, _ty_id) in ctx.builtins() {
+        println!("Adding builtin {}", ctx.get_var(*builtin_var_id));
+
+        let builtin_ty = ctx.var_type(*builtin_var_id);
+        let func_ty = match &*builtin_ty {
+            Type::Fun { args, ret } => {
+                let args = args
+                    .iter()
+                    .map(|ty| ValType::from_rep_type(RepType::from(ty)))
+                    .collect();
+                let ret = ValType::from_rep_type(RepType::from(&**ret));
+                FuncType { args, ret }
+            }
+            other => panic!(
+                "Built-in type is not function: {} : {:?}",
+                ctx.get_var(*builtin_var_id),
+                other
+            ),
+        };
+
+        let import_func_idx =
+            builder.new_import("builtins", &ctx.get_var(*builtin_var_id).name(), func_ty);
+
+        // TODO: add closure, not function
+        // env.add_fun(*builtin_var_id, import_func_idx);
+    }
 
     // Maps function ids to their indices in the module. Used in `call` instructions and for table
     // indices of the functions.
@@ -16,21 +53,86 @@ pub fn codegen(ctx: &mut Ctx, funs: &[Fun], main_id: VarId) -> Vec<u8> {
     // Table index of a function is the same as its index in the module.
     let mut func_idxs: FxHashMap<VarId, usize> = Default::default();
 
-    // Allocate hp (heap pointer) and hp_lim globals (heap pointer limit)
+    // Initialize function indices. Closures for these are allocated in closure-converted code, so
+    // we don't allocate closures here.
+    for fun in funs {
+        let fun_idx = func_idxs.len();
+        let old_fun_idx = func_idxs.insert(fun.name, fun_idx);
+        debug_assert_eq!(old_fun_idx, None);
+
+        println!("Adding function {}", ctx.get_var(fun.name));
+        env.add_fun(fun.name, fun_idx.try_into().unwrap());
+    }
+
+    for (builtin_var_id, _ty_id) in ctx.builtins() {
+        // TODO: Generate imports!
+        println!("Adding builtin {}", ctx.get_var(*builtin_var_id));
+    }
+
+    // Add hp (heap pointer) and hp_lim globals (heap pointer limit)
     let hp = builder.new_global(ValType::I32);
     let hp_lim = builder.new_global(ValType::I32);
-
-    // Allocate function indices
-    for fun in funs {
-        let old_fun_idx = func_idxs.insert(fun.name, func_idxs.len());
-        debug_assert_eq!(old_fun_idx, None);
-    }
 
     for fun in funs {
         codegen_fun(ctx, &mut builder, &func_idxs, fun, hp, hp_lim);
     }
 
     builder.encode(main_id)
+}
+
+/// Value of a variable ([VarId])
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum VarVal {
+    /// Variable is a function local (argument or otherwise)
+    Local(FunctionLocalId),
+
+    /// Variable is a function
+    Fun { fun_idx: u32 },
+
+    /// Variable is a reference to a closure at given address
+    Closure { addr: u32 },
+}
+
+/// Maps variables ([VarId]) to their values
+#[derive(Debug)]
+struct Env(FxHashMap<VarId, VarVal>);
+
+impl Env {
+    fn new() -> Self {
+        Env(Default::default())
+    }
+
+    fn add_local(&mut self, var: VarId, local: FunctionLocalId) {
+        let old = self.0.insert(var, VarVal::Local(local));
+        debug_assert_eq!(old, None);
+    }
+
+    fn add_fun(&mut self, var: VarId, fun_idx: u32) {
+        let old = self.0.insert(var, VarVal::Fun { fun_idx });
+        debug_assert_eq!(old, None);
+    }
+
+    fn add_closure(&mut self, var: VarId, addr: u32) {
+        let old = self.0.insert(var, VarVal::Closure { addr });
+        debug_assert_eq!(old, None);
+    }
+
+    fn use_var(&self, ctx: &Ctx, builder: &mut FunctionBuilder, var: &VarId) {
+        match self.0.get(var) {
+            Some(VarVal::Local(local_id)) => {
+                builder.get_local(*local_id);
+            }
+            Some(VarVal::Fun { fun_idx }) => {
+                builder.i32_const((*fun_idx).try_into().unwrap());
+            }
+            Some(VarVal::Closure { addr }) => {
+                builder.i32_const((*addr).try_into().unwrap());
+            }
+            None => {
+                panic!("Variable {} not in environment", ctx.get_var(*var));
+            }
+        }
+    }
 }
 
 fn codegen_fun(
