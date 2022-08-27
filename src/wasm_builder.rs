@@ -437,6 +437,11 @@ impl ModuleBuilder {
             encoded.extend_from_slice(&element_section_body);
         }
 
+        // Data count section
+        encoded.push(12); // data count section id
+        encoded.push(1); // section size
+        encoded.push(1); // data count = 1
+
         // Code section
         {
             encoded.push(10);
@@ -501,11 +506,6 @@ impl ModuleBuilder {
 
             encoded.extend_from_slice(&data_section_body);
         }
-
-        // Data count section
-        encoded.push(12); // data count section id
-        encoded.push(1); // section size
-        encoded.push(1); // data count = 1
 
         encoded
     }
