@@ -346,11 +346,24 @@ impl ModuleBuilder {
             encoded.extend_from_slice(&table_section_body);
         }
 
-        // TODO: Do we need memory section? (5)
+        // Memory section
+        {
+            encoded.push(5); // memory section id
+
+            let mut memory_section_body: Vec<u8> = Vec::new();
+
+            memory_section_body.push(1); // mem vector length
+            memory_section_body.push(0x00); // limits, no max
+            memory_section_body.push(0x00); // min = 0 (not sure if this is correct with the data section?)
+
+            leb128::write::unsigned(&mut encoded, memory_section_body.len() as u64).unwrap();
+
+            encoded.extend_from_slice(&memory_section_body);
+        }
 
         // Global section
         {
-            encoded.push(6);
+            encoded.push(6); // global section id
 
             let mut global_section_body: Vec<u8> = Vec::new();
 
