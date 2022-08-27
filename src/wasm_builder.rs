@@ -396,6 +396,9 @@ impl ModuleBuilder {
 
             let mut element_section_body: Vec<u8> = Vec::new();
 
+            // vec length
+            element_section_body.push(1);
+
             // element kind 0: expr for start offset, a vector of func indices
             element_section_body.push(0);
 
