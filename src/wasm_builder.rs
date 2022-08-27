@@ -493,6 +493,7 @@ impl ModuleBuilder {
             data_section_body.push(0x42); // i32.const
             data_section_body.push(0);
             data_section_body.push(0x0B); // end expr
+            leb128::write::unsigned(&mut data_section_body, self.data.len() as u64).unwrap();
             data_section_body.extend_from_slice(&self.data);
 
             leb128::write::unsigned(&mut encoded, data_section_body.len().try_into().unwrap())
@@ -503,7 +504,8 @@ impl ModuleBuilder {
 
         // Data count section
         encoded.push(12); // data count section id
-        encoded.push(1);
+        encoded.push(1); // section size
+        encoded.push(1); // data count = 1
 
         encoded
     }
