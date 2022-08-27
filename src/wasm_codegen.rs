@@ -69,7 +69,7 @@ pub fn codegen(ctx: &mut Ctx, funs: &[Fun], main_id: VarId) -> Vec<u8> {
     let hp_lim = builder.new_global(ValType::I32);
 
     for fun in funs {
-        codegen_fun(ctx, &mut builder, &env, fun, hp, hp_lim);
+        codegen_fun(ctx, &mut builder, &mut env, fun, hp, hp_lim);
     }
 
     builder.set_data(data);
@@ -104,6 +104,11 @@ impl Env {
         debug_assert_eq!(old, None);
     }
 
+    fn remove_local(&mut self, var: &VarId) {
+        let old = self.0.remove(var);
+        assert!(old.is_some());
+    }
+
     fn add_fun(&mut self, var: VarId, fun_idx: u32) {
         let old = self.0.insert(var, VarVal::Fun { fun_idx });
         debug_assert_eq!(old, None);
@@ -117,7 +122,7 @@ impl Env {
     fn use_var(&self, ctx: &Ctx, builder: &mut FunctionBuilder, var: &VarId) {
         match self.0.get(var) {
             Some(VarVal::Local(local_id)) => {
-                builder.get_local(*local_id);
+                builder.local_get(*local_id);
             }
             Some(VarVal::Fun { fun_idx }) => {
                 builder.i32_const((*fun_idx).try_into().unwrap());
@@ -135,7 +140,7 @@ impl Env {
 fn codegen_fun(
     ctx: &mut Ctx,
     builder: &mut ModuleBuilder,
-    env: &Env,
+    env: &mut Env,
     fun: &Fun,
     hp: GlobalId,
     hp_lim: GlobalId,
@@ -162,7 +167,7 @@ fn codegen_fun(
 fn codegen_expr(
     ctx: &mut Ctx,
     builder: &mut FunctionBuilder,
-    env: &Env,
+    env: &mut Env,
     expr: &Expr,
     hp: &GlobalId,
     hp_lim: &GlobalId,
@@ -176,8 +181,8 @@ fn codegen_expr(
         Expr::Float(f) => builder.f32_const((*f) as f32),
 
         Expr::IBinOp(BinOp { op, arg1, arg2 }) => {
-            builder.get_local(builder.id_wasm_local(ctx, *arg1));
-            builder.get_local(builder.id_wasm_local(ctx, *arg2));
+            env.use_var(ctx, builder, arg1);
+            env.use_var(ctx, builder, arg2);
             match op {
                 IntBinOp::Add => builder.i32_add(),
                 IntBinOp::Sub => builder.i32_sub(),
@@ -185,8 +190,8 @@ fn codegen_expr(
         }
 
         Expr::FBinOp(BinOp { op, arg1, arg2 }) => {
-            builder.get_local(builder.id_wasm_local(ctx, *arg1));
-            builder.get_local(builder.id_wasm_local(ctx, *arg2));
+            env.use_var(ctx, builder, arg1);
+            env.use_var(ctx, builder, arg2);
             match op {
                 FloatBinOp::Add => builder.f32_add(),
                 FloatBinOp::Sub => builder.f32_sub(),
@@ -209,7 +214,7 @@ fn codegen_expr(
             //   end
             //   <then branch>
             // end
-            codegen_cmp(ctx, builder, *v1, *v2, *cmp);
+            codegen_cmp(ctx, builder, env, *v1, *v2, *cmp);
             let block_ty = expr_type(ctx, then_);
             builder.block(block_ty, |builder| {
                 builder.block(block_ty, |builder| {
@@ -224,11 +229,13 @@ fn codegen_expr(
         Expr::Let { id, rhs, body } => {
             codegen_expr(ctx, builder, env, rhs, hp, hp_lim);
             let id_local = builder.new_local(*id, ctx.var_rep_type(*id));
+            env.add_local(*id, id_local);
             builder.set_local(id_local);
             codegen_expr(ctx, builder, env, body, hp, hp_lim);
+            env.remove_local(id);
         }
 
-        Expr::Var(var) => builder.get_local(builder.id_wasm_local(ctx, *var)),
+        Expr::Var(var) => env.use_var(ctx, builder, var),
 
         Expr::App(fun, args, ret_ty) => {
             let arg_val_tys: Vec<ValType> = args
@@ -242,10 +249,10 @@ fn codegen_expr(
             };
 
             for arg in args {
-                builder.get_local_id(ctx, arg);
+                env.use_var(ctx, builder, arg);
             }
 
-            builder.get_local_id(ctx, fun);
+            env.use_var(ctx, builder, fun);
 
             builder.call_indirect(fun_ty);
         }
@@ -258,19 +265,19 @@ fn codegen_expr(
             builder.set_local(tuple);
 
             for (elem_idx, elem) in elems.iter().enumerate() {
-                builder.get_local(tuple);
+                builder.local_get(tuple);
                 builder.i32_const((elem_idx as i32) * 4);
                 builder.i32_add();
 
-                builder.get_local_id(ctx, elem);
+                env.use_var(ctx, builder, elem);
                 builder.i32_store(0);
             }
 
-            builder.get_local(tuple);
+            builder.local_get(tuple);
         }
 
         Expr::TupleGet(tuple, idx, rep_ty) => {
-            builder.get_local_id(ctx, tuple);
+            env.use_var(ctx, builder, tuple);
             let offset = idx * 4;
             match rep_ty {
                 RepType::Word => {
@@ -285,7 +292,7 @@ fn codegen_expr(
         Expr::ArrayAlloc { len, elem } => {
             let array = builder.new_local_(RepType::Word);
             alloc(builder, &hp, &hp_lim, |builder| {
-                builder.get_local_id(ctx, len)
+                env.use_var(ctx, builder, len);
             });
             builder.set_local(array);
 
@@ -293,31 +300,31 @@ fn codegen_expr(
             let counter = builder.new_local_(RepType::Word);
 
             builder.loop_(RepType::Word, |builder| {
-                builder.get_local(counter);
-                builder.get_local_id(ctx, len);
+                builder.local_get(counter);
+                env.use_var(ctx, builder, len);
                 builder.i32_eq();
 
                 builder.block(RepType::Word, |builder| {
                     builder.br_if(1);
 
                     // Store address
-                    builder.get_local(counter);
+                    builder.local_get(counter);
                     builder.i32_const(4);
                     builder.i32_mul();
-                    builder.get_local(array);
+                    builder.local_get(array);
                     builder.i32_add();
 
-                    builder.get_local_id(ctx, elem);
+                    env.use_var(ctx, builder, elem);
                     builder.i32_store(0);
                 });
             });
 
-            builder.get_local(array);
+            builder.local_get(array);
         }
 
         Expr::ArrayGet(array, idx) => {
-            builder.get_local_id(ctx, array);
-            builder.get_local_id(ctx, idx);
+            env.use_var(ctx, builder, array);
+            env.use_var(ctx, builder, idx);
             builder.i32_const(4);
             builder.i32_mul();
             builder.i32_add();
@@ -339,13 +346,13 @@ fn codegen_expr(
         }
 
         Expr::ArrayPut(array, idx, value) => {
-            builder.get_local_id(ctx, array);
-            builder.get_local_id(ctx, idx);
+            env.use_var(ctx, builder, array);
+            env.use_var(ctx, builder, idx);
             builder.i32_const(4);
             builder.i32_mul();
             builder.i32_add();
 
-            builder.get_local_id(ctx, value);
+            env.use_var(ctx, builder, value);
 
             let value_type = ctx.var_type(*value);
             let elem_type = match &*value_type {
@@ -408,10 +415,17 @@ fn alloc<F>(
     builder.global_set(hp_global);
 }
 
-fn codegen_cmp(ctx: &mut Ctx, builder: &mut FunctionBuilder, v1: VarId, v2: VarId, cmp: Cmp) {
+fn codegen_cmp(
+    ctx: &mut Ctx,
+    builder: &mut FunctionBuilder,
+    env: &Env,
+    v1: VarId,
+    v2: VarId,
+    cmp: Cmp,
+) {
     let ty = ctx.var_rep_type(v1);
-    builder.get_local(builder.id_wasm_local(ctx, v2));
-    builder.get_local(builder.id_wasm_local(ctx, v1));
+    env.use_var(ctx, builder, &v2);
+    env.use_var(ctx, builder, &v1);
     match ty {
         RepType::Word => match cmp {
             Cmp::Equal => builder.i32_eq(),

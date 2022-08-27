@@ -520,26 +520,26 @@ impl<'a> FunctionBuilder<'a> {
         local_id
     }
 
-    /// Get [FunctionLocalId] for a local variable.
-    pub fn id_wasm_local(&self, ctx: &Ctx, id: VarId) -> FunctionLocalId {
-        *self
-            .local_indices
-            .get(&id)
-            .unwrap_or_else(|| panic!("Wasm local not defined for id {}", ctx.get_var(id)))
-    }
+    // Get [FunctionLocalId] for a local variable.
+    // pub fn id_wasm_local(&self, ctx: &Ctx, id: VarId) -> FunctionLocalId {
+    //     *self
+    //         .local_indices
+    //         .get(&id)
+    //         .unwrap_or_else(|| panic!("Wasm local not defined for id {}", ctx.get_var(id)))
+    // }
 
-    /// Read a local variable. Pushes the value to Wasm stack.
-    pub fn get_local(&mut self, id: FunctionLocalId) {
+    /// `local.get`: read a local variable. Pushes the value to Wasm stack.
+    pub fn local_get(&mut self, id: FunctionLocalId) {
         self.code.push(0x20);
         leb128::write::unsigned(&mut self.code, id.0.into()).unwrap();
     }
 
-    /// Read a local variable. Pushes the value to Wasm stack.
-    pub fn get_local_id(&mut self, ctx: &Ctx, id: &VarId) {
-        let id = self.id_wasm_local(ctx, *id);
-        self.code.push(0x20);
-        leb128::write::unsigned(&mut self.code, id.0.into()).unwrap();
-    }
+    // Read a local variable. Pushes the value to Wasm stack.
+    // pub fn get_local_id(&mut self, ctx: &Ctx, id: &VarId) {
+    //     let id = self.id_wasm_local(ctx, *id);
+    //     self.code.push(0x20);
+    //     leb128::write::unsigned(&mut self.code, id.0.into()).unwrap();
+    // }
 
     /// Set a local variable. Value is popped from the Wasm stack.
     pub fn set_local(&mut self, id: FunctionLocalId) {
@@ -850,7 +850,9 @@ impl<'a> FunctionBuilder<'a> {
         } = self;
         let idx = module_builder.functions.len() as u32;
         module_builder.functions.push(Function { ty, locals, code });
-        let old_idx = module_builder.func_idxs.insert(id, idx);
-        assert_eq!(old_idx, None);
+        let _old_idx = module_builder.func_idxs.insert(id, idx);
+        // This doesn't hold: we registered the function before generting code for it, to allocate
+        // the function index
+        // assert_eq!(old_idx, None);
     }
 }
