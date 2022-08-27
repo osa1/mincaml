@@ -373,7 +373,7 @@ impl ModuleBuilder {
             for global in self.globals {
                 global_section_body.push(global.ty.binary()); // valtype
                 global_section_body.push(0x01); // mut = var
-                global_section_body.push(0x42); // i32.const
+                global_section_body.push(0x41); // i32.const
                 global_section_body.push(0);
                 global_section_body.push(0x0B); // end expr
             }
@@ -495,7 +495,7 @@ impl ModuleBuilder {
 
             data_section_body.push(1); // vec length = 1
             data_section_body.push(0); // active
-            data_section_body.push(0x42); // i32.const
+            data_section_body.push(0x41); // i32.const
             data_section_body.push(0);
             data_section_body.push(0x0B); // end expr
             leb128::write::unsigned(&mut data_section_body, self.data.len() as u64).unwrap();
@@ -579,7 +579,7 @@ impl<'a> FunctionBuilder<'a> {
     }
 
     pub fn i32_const(&mut self, val: i32) {
-        self.code.push(0x42);
+        self.code.push(0x41);
         leb128::write::signed(&mut self.code, val.into()).unwrap();
     }
 
