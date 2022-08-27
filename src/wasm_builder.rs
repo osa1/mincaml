@@ -859,10 +859,11 @@ impl<'a> FunctionBuilder<'a> {
             module_builder,
             id,
             locals,
-            code,
+            mut code,
             ty,
             local_indices: _,
         } = self;
+        code.push(0x0B); // end expr
         let idx = module_builder.functions.len() as u32;
         module_builder.functions.push(Function { ty, locals, code });
         let _old_idx = module_builder.func_idxs.insert(id, idx);
