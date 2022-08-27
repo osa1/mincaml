@@ -866,11 +866,7 @@ impl<'a> FunctionBuilder<'a> {
             local_indices: _,
         } = self;
         code.push(0x0B); // end expr
-        let idx = module_builder.functions.len() as u32;
+        debug_assert!(module_builder.func_idxs.contains_key(&id));
         module_builder.functions.push(Function { ty, locals, code });
-        let _old_idx = module_builder.func_idxs.insert(id, idx);
-        // This doesn't hold: we registered the function before generting code for it, to allocate
-        // the function index
-        // assert_eq!(old_idx, None);
     }
 }
