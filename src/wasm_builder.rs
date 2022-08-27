@@ -1,5 +1,5 @@
 use crate::cg_types::RepType;
-use crate::ctx::{Ctx, VarId};
+use crate::ctx::VarId;
 
 use std::collections::hash_map::Entry;
 
@@ -282,6 +282,7 @@ impl ModuleBuilder {
 
                 import_section_body.extend_from_slice(fun_name.as_bytes());
 
+                import_section_body.push(0); // function type
                 leb128::write::unsigned(&mut import_section_body, (*ty_idx).into()).unwrap();
             }
 
@@ -354,19 +355,17 @@ impl ModuleBuilder {
             let mut global_section_body: Vec<u8> = Vec::new();
 
             // Global vector length
-            leb128::write::unsigned(
-                &mut global_section_body,
-                self.globals.len().try_into().unwrap(),
-            )
-            .unwrap();
+            leb128::write::unsigned(&mut global_section_body, self.globals.len() as u64).unwrap();
 
             for global in self.globals {
-                global_section_body.push(global.ty.binary());
-                global_section_body.push(0x01); // mut
+                global_section_body.push(global.ty.binary()); // valtype
+                global_section_body.push(0x01); // mut = var
+                global_section_body.push(0x42); // i32.const
+                global_section_body.push(0);
+                global_section_body.push(0x0B); // end expr
             }
 
-            leb128::write::unsigned(&mut encoded, global_section_body.len().try_into().unwrap())
-                .unwrap();
+            leb128::write::unsigned(&mut encoded, global_section_body.len() as u64).unwrap();
 
             encoded.extend_from_slice(&global_section_body);
         }
