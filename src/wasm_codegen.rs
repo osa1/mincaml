@@ -28,7 +28,7 @@ pub fn codegen(ctx: &mut Ctx, funs: &[Fun], main_id: VarId) -> Vec<u8> {
                     .iter()
                     .map(|ty| ValType::from_rep_type(RepType::from(ty)))
                     .collect();
-                let ret = ValType::from_rep_type(RepType::from(&**ret));
+                let ret = vec![ValType::from_rep_type(RepType::from(&**ret))];
                 FuncType { args, ret }
             }
             other => panic!(
@@ -245,7 +245,7 @@ fn codegen_expr(
 
             let fun_ty = FuncType {
                 args: arg_val_tys,
-                ret: ValType::from_rep_type(*ret_ty),
+                ret: vec![ValType::from_rep_type(*ret_ty)],
             };
 
             for arg in args {

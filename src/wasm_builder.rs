@@ -17,7 +17,7 @@ pub struct ModuleBuilder {
     /// Function imports: (module name, function name, function type index)
     imports: Vec<(String, String, u32)>,
 
-    /// Maps ids for functions to their indices in [functions]
+    /// Maps ids for functions to their indices in the module.
     func_idxs: FxHashMap<VarId, u32>,
 
     /// Function codes in the module.
@@ -97,7 +97,7 @@ pub struct FuncType {
     pub args: Vec<ValType>,
 
     /// Return type
-    pub ret: ValType,
+    pub ret: Vec<ValType>,
 }
 
 impl ValType {
@@ -172,7 +172,7 @@ impl ModuleBuilder {
                 .iter()
                 .map(|(_, ty)| ValType::from_rep_type(*ty))
                 .collect(),
-            ret: ValType::from_rep_type(ret_ty),
+            ret: vec![ValType::from_rep_type(ret_ty)],
         };
 
         self.add_func_type(func_ty.clone());
@@ -209,7 +209,27 @@ impl ModuleBuilder {
         self.data = data;
     }
 
-    pub fn encode(self, main_fn_id: VarId) -> Vec<u8> {
+    pub fn encode(mut self, main_fn_id: VarId) -> Vec<u8> {
+        // HACK: Wasm start function needs to have type `[] -> []`, but the mincaml expression type
+        // will be returning `()`, which we represent as `0`.
+        //
+        // To make our main function have the right type, we find the main function, update its
+        // type, and add a `drop` at the end of it.
+        let wasm_main_fn_type = FuncType {
+            args: vec![],
+            ret: vec![],
+        };
+
+        // Register the type
+        self.add_func_type(wasm_main_fn_type.clone());
+
+        let main_fn_idx = self.func_idxs.get(&main_fn_id).unwrap();
+        let main_fn = &mut self.functions[(*main_fn_idx) as usize - self.imports.len()];
+        main_fn.ty = wasm_main_fn_type;
+        let n_instructions = main_fn.code.len();
+        main_fn.code[n_instructions - 1] = 0x1A; // convert 'end' into 'drop'
+        main_fn.code.push(0x0B); // end
+
         let mut encoded = Vec::new();
 
         encoded.extend_from_slice(&[0x00, 0x61, 0x73, 0x6D]); // Wasm magic number
@@ -240,19 +260,18 @@ impl ModuleBuilder {
                 type_section_body.push(0x60);
 
                 // Argument `resulttype` vector length
-                leb128::write::unsigned(
-                    &mut type_section_body,
-                    func_ty.args.len().try_into().unwrap(),
-                )
-                .unwrap();
+                leb128::write::unsigned(&mut type_section_body, func_ty.args.len() as u64).unwrap();
 
                 for arg in func_ty.args {
                     type_section_body.push(arg.binary());
                 }
 
                 // Return `resulttype` vector length
-                type_section_body.push(1);
-                type_section_body.push(func_ty.ret.binary());
+                leb128::write::unsigned(&mut type_section_body, func_ty.ret.len() as u64).unwrap();
+
+                for ret in func_ty.ret {
+                    type_section_body.push(ret.binary());
+                }
             }
 
             leb128::write::unsigned(&mut encoded, type_section_body.len().try_into().unwrap())
@@ -513,8 +532,8 @@ impl ModuleBuilder {
     fn add_func_type(&mut self, func_type: FuncType) -> u32 {
         let next_idx: u32 = self.func_types.len().try_into().unwrap();
         match self.func_types.entry(func_type) {
-            std::collections::hash_map::Entry::Occupied(entry) => *entry.get(),
-            std::collections::hash_map::Entry::Vacant(entry) => *entry.insert(next_idx),
+            Entry::Occupied(entry) => *entry.get(),
+            Entry::Vacant(entry) => *entry.insert(next_idx),
         }
     }
 }
