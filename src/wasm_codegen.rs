@@ -4,7 +4,8 @@ use crate::common::{BinOp, Cmp, FloatBinOp, IntBinOp};
 use crate::ctx::{Ctx, VarId};
 use crate::type_check::Type;
 use crate::wasm_builder::{
-    FuncType, FunctionBuilder, FunctionLocalId, GlobalId, ModuleBuilder, ValType,
+    FuncType, FunctionBuilder, FunctionLocalId, GlobalId, ModuleBuilder, Mutability, NumType,
+    ValType,
 };
 
 use fxhash::FxHashMap;
@@ -26,9 +27,9 @@ pub fn codegen(ctx: &mut Ctx, funs: &[Fun], main_id: VarId) -> Vec<u8> {
             Type::Fun { args, ret } => {
                 let args = args
                     .iter()
-                    .map(|ty| ValType::from_rep_type(RepType::from(ty)))
+                    .map(|ty| NumType::from_rep_type(RepType::from(ty)))
                     .collect();
-                let ret = vec![ValType::from_rep_type(RepType::from(&**ret))];
+                let ret = vec![NumType::from_rep_type(RepType::from(&**ret))];
                 FuncType { args, ret }
             }
             other => panic!(
@@ -65,8 +66,8 @@ pub fn codegen(ctx: &mut Ctx, funs: &[Fun], main_id: VarId) -> Vec<u8> {
     }
 
     // Add hp (heap pointer) and hp_lim globals (heap pointer limit)
-    let hp = builder.new_global(ValType::I32);
-    let hp_lim = builder.new_global(ValType::I32);
+    let hp = builder.new_global(ValType::Num(NumType::I32), Mutability::Mut);
+    let hp_lim = builder.new_global(ValType::Num(NumType::I32), Mutability::Mut);
 
     for fun in funs {
         codegen_fun(ctx, &mut builder, &mut env, fun, hp, hp_lim);
@@ -238,14 +239,14 @@ fn codegen_expr(
         Expr::Var(var) => env.use_var(ctx, builder, var),
 
         Expr::App(fun, args, ret_ty) => {
-            let arg_val_tys: Vec<ValType> = args
+            let arg_val_tys: Vec<NumType> = args
                 .iter()
-                .map(|arg| ValType::from_rep_type(ctx.var_rep_type(*arg)))
+                .map(|arg| NumType::from_rep_type(ctx.var_rep_type(*arg)))
                 .collect();
 
             let fun_ty = FuncType {
                 args: arg_val_tys,
-                ret: vec![ValType::from_rep_type(*ret_ty)],
+                ret: vec![NumType::from_rep_type(*ret_ty)],
             };
 
             for arg in args {

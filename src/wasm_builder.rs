@@ -42,7 +42,7 @@ pub struct FunctionBuilder<'a> {
     id: VarId,
 
     /// Locals in the function. Includes function arguments. Indexed by [FunctionLocalId].
-    locals: Vec<ValType>,
+    locals: Vec<NumType>,
 
     /// Maps ids to local indices, to index [locals].
     local_indices: FxHashMap<VarId, FunctionLocalId>,
@@ -54,22 +54,38 @@ pub struct FunctionBuilder<'a> {
 #[derive(Debug)]
 struct Function {
     ty: FuncType,
-    locals: Vec<ValType>,
+    locals: Vec<NumType>,
     code: Vec<u8>,
 }
 
-/// A Wasm global. Currently we only generate mutable globals, and globals are initialized as 0.
+/// A Wasm global. Currently we only generate mutable globals.
 #[derive(Debug, Clone, Copy)]
 struct Global {
     ty: ValType,
+    mutbl: Mutability,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mutability {
+    Mut,
+    Immut,
+}
+
+impl Mutability {
+    fn binary(&self) -> u8 {
+        match self {
+            Mutability::Mut => 0x01,
+            Mutability::Immut => 0x00,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct GlobalId(u32);
 
-/// A Wasm value type
+/// A Wasm numeric type
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ValType {
+pub enum NumType {
     I32,
     #[allow(unused)]
     I64,
@@ -78,13 +94,43 @@ pub enum ValType {
     F64,
 }
 
+impl NumType {
+    fn binary(&self) -> u8 {
+        match self {
+            NumType::I32 => 0x7F,
+            NumType::I64 => 0x7E,
+            NumType::F32 => 0x7D,
+            NumType::F64 => 0x7C,
+        }
+    }
+}
+
+/// A Wasm value type
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ValType {
+    Num(NumType),
+    Ref(RefType),
+}
+
 impl ValType {
     fn binary(&self) -> u8 {
         match self {
-            ValType::I32 => 0x7F,
-            ValType::I64 => 0x7E,
-            ValType::F32 => 0x7D,
-            ValType::F64 => 0x7C,
+            ValType::Num(num_type) => num_type.binary(),
+            ValType::Ref(ref_type) => ref_type.binary(),
+        }
+    }
+}
+
+/// A Wasm reference type
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RefType {
+    FuncRef,
+}
+
+impl RefType {
+    fn binary(&self) -> u8 {
+        match self {
+            RefType::FuncRef => 0x70,
         }
     }
 }
@@ -94,17 +140,17 @@ impl ValType {
 pub struct FuncType {
     /// Argument types
     // NB. Can be represented as a bit vector since `ValType` is one bit of information
-    pub args: Vec<ValType>,
+    pub args: Vec<NumType>,
 
     /// Return type
-    pub ret: Vec<ValType>,
+    pub ret: Vec<NumType>,
 }
 
-impl ValType {
+impl NumType {
     pub fn from_rep_type(rep_ty: RepType) -> Self {
         match rep_ty {
-            RepType::Word => ValType::I32,
-            RepType::Float => ValType::F32,
+            RepType::Word => NumType::I32,
+            RepType::Float => NumType::F32,
         }
     }
 }
@@ -170,9 +216,9 @@ impl ModuleBuilder {
         let func_ty = FuncType {
             args: args
                 .iter()
-                .map(|(_, ty)| ValType::from_rep_type(*ty))
+                .map(|(_, ty)| NumType::from_rep_type(*ty))
                 .collect(),
-            ret: vec![ValType::from_rep_type(ret_ty)],
+            ret: vec![NumType::from_rep_type(ret_ty)],
         };
 
         self.add_func_type(func_ty.clone());
@@ -186,7 +232,7 @@ impl ModuleBuilder {
 
             locals: args
                 .iter()
-                .map(|(_, v)| (ValType::from_rep_type(*v)))
+                .map(|(_, v)| (NumType::from_rep_type(*v)))
                 .collect(),
 
             local_indices: args
@@ -199,9 +245,9 @@ impl ModuleBuilder {
         }
     }
 
-    pub fn new_global(&mut self, ty: ValType) -> GlobalId {
+    pub fn new_global(&mut self, ty: ValType, mutbl: Mutability) -> GlobalId {
         let global_id = self.globals.len().try_into().unwrap();
-        self.globals.push(Global { ty });
+        self.globals.push(Global { ty, mutbl });
         GlobalId(global_id)
     }
 
@@ -389,11 +435,34 @@ impl ModuleBuilder {
             // Global vector length
             leb128::write::unsigned(&mut global_section_body, self.globals.len() as u64).unwrap();
 
-            for global in self.globals {
-                global_section_body.push(global.ty.binary()); // valtype
-                global_section_body.push(0x01); // mut = var
-                global_section_body.push(0x41); // i32.const
-                global_section_body.push(0);
+            for Global { ty, mutbl } in self.globals {
+                global_section_body.push(ty.binary());
+                global_section_body.push(mutbl.binary());
+                // global_section_body.push(0x41); // i32.const
+                // Initial value
+                match ty {
+                    ValType::Num(num_ty) => match num_ty {
+                        NumType::I32 => {
+                            global_section_body.push(0x41); // i32.const
+                            global_section_body.push(0x00);
+                        }
+                        NumType::I64 => {
+                            global_section_body.push(0x42); // i64.const
+                            global_section_body.push(0x00);
+                        }
+                        NumType::F32 => {
+                            global_section_body.push(0x43); // f32.const
+                            global_section_body.extend_from_slice(&0f32.to_le_bytes());
+                        }
+                        NumType::F64 => {
+                            global_section_body.push(0x44); // f64.const
+                            global_section_body.extend_from_slice(&0f64.to_le_bytes());
+                        }
+                    },
+                    ValType::Ref(ref_ty) => match ref_ty {
+                        RefType::FuncRef => panic!("FuncRef globals not supported"),
+                    },
+                }
                 global_section_body.push(0x0B); // end expr
             }
 
@@ -543,7 +612,7 @@ impl<'a> FunctionBuilder<'a> {
     /// later obtained with [id_wasm_local].
     pub fn new_local(&mut self, id: VarId, ty: RepType) -> FunctionLocalId {
         let local_id = FunctionLocalId(self.locals.len().try_into().unwrap());
-        self.locals.push(ValType::from_rep_type(ty));
+        self.locals.push(NumType::from_rep_type(ty));
         let old = self.local_indices.insert(id, local_id);
         assert_eq!(old, None);
         local_id
@@ -552,7 +621,7 @@ impl<'a> FunctionBuilder<'a> {
     /// Creates a new Wasm local in the function.
     pub fn new_local_(&mut self, ty: RepType) -> FunctionLocalId {
         let local_id = FunctionLocalId(self.locals.len().try_into().unwrap());
-        self.locals.push(ValType::from_rep_type(ty));
+        self.locals.push(NumType::from_rep_type(ty));
         local_id
     }
 
@@ -585,14 +654,14 @@ impl<'a> FunctionBuilder<'a> {
 
     pub fn block<F: FnOnce(&mut Self)>(&mut self, ty: RepType, f: F) {
         self.code.push(0x02);
-        self.code.push(ValType::from_rep_type(ty).binary());
+        self.code.push(NumType::from_rep_type(ty).binary());
         f(self);
         self.code.push(0x0B);
     }
 
     pub fn loop_<F: FnOnce(&mut Self)>(&mut self, ty: RepType, f: F) {
         self.code.push(0x03);
-        self.code.push(ValType::from_rep_type(ty).binary());
+        self.code.push(NumType::from_rep_type(ty).binary());
         f(self);
         self.code.push(0x0B);
     }
