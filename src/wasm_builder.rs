@@ -15,7 +15,7 @@ pub struct ModuleBuilder {
     func_types: FxHashMap<FuncType, u32>,
 
     /// Function imports: (module name, function name, function type index)
-    imports: Vec<(String, String, u32)>,
+    func_imports: Vec<(String, String, u32)>,
 
     /// Maps ids for functions to their indices in the module.
     func_idxs: FxHashMap<VarId, u32>,
@@ -162,7 +162,7 @@ impl ModuleBuilder {
     pub fn new() -> Self {
         ModuleBuilder {
             func_types: Default::default(),
-            imports: Vec::new(),
+            func_imports: Vec::new(),
             func_idxs: Default::default(),
             functions: Vec::new(),
             globals: Vec::new(),
@@ -189,9 +189,9 @@ impl ModuleBuilder {
             }
         };
 
-        let fun_id = self.imports.len() as u32;
+        let fun_id = self.func_imports.len() as u32;
 
-        self.imports
+        self.func_imports
             .push((module_name.to_owned(), import_name.to_owned(), ty_idx));
 
         let old = self.func_idxs.insert(*var, fun_id);
@@ -270,7 +270,7 @@ impl ModuleBuilder {
         self.add_func_type(wasm_main_fn_type.clone());
 
         let main_fn_idx = self.func_idxs.get(&main_fn_id).unwrap();
-        let main_fn = &mut self.functions[(*main_fn_idx) as usize - self.imports.len()];
+        let main_fn = &mut self.functions[(*main_fn_idx) as usize - self.func_imports.len()];
         main_fn.ty = wasm_main_fn_type;
         let n_instructions = main_fn.code.len();
         main_fn.code[n_instructions - 1] = 0x1A; // convert 'end' into 'drop'
@@ -333,11 +333,11 @@ impl ModuleBuilder {
 
             leb128::write::unsigned(
                 &mut import_section_body,
-                self.imports.len().try_into().unwrap(),
+                self.func_imports.len().try_into().unwrap(),
             )
             .unwrap();
 
-            for (module_name, fun_name, ty_idx) in &self.imports {
+            for (module_name, fun_name, ty_idx) in &self.func_imports {
                 leb128::write::unsigned(&mut import_section_body, module_name.len() as u64)
                     .unwrap();
 
