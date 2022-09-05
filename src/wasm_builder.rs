@@ -17,6 +17,9 @@ pub struct ModuleBuilder {
     /// Function imports: (module name, function name, function type index)
     func_imports: Vec<(String, String, u32)>,
 
+    /// Global imports: (module name, global name, global type)
+    global_imports: Vec<(String, String, Global)>,
+
     /// Maps ids for functions to their indices in the module.
     func_idxs: FxHashMap<VarId, u32>,
 
@@ -58,11 +61,11 @@ struct Function {
     code: Vec<u8>,
 }
 
-/// A Wasm global. Currently we only generate mutable globals.
+/// A Wasm global
 #[derive(Debug, Clone, Copy)]
-struct Global {
-    ty: ValType,
-    mutbl: Mutability,
+pub struct Global {
+    pub ty: ValType,
+    pub mutbl: Mutability,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -163,6 +166,7 @@ impl ModuleBuilder {
         ModuleBuilder {
             func_types: Default::default(),
             func_imports: Vec::new(),
+            global_imports: Vec::new(),
             func_idxs: Default::default(),
             functions: Vec::new(),
             globals: Vec::new(),
@@ -172,7 +176,7 @@ impl ModuleBuilder {
 
     /// Add a function import. Returns function index.
     // TODO: Somehow make sure that we won't add more imports after adding a function
-    pub fn new_import(
+    pub fn new_func_import(
         &mut self,
         module_name: &str,
         import_name: &str,
@@ -198,6 +202,20 @@ impl ModuleBuilder {
         debug_assert_eq!(old, None);
 
         fun_id
+    }
+
+    pub fn new_global_import(
+        &mut self,
+        module_name: &str,
+        import_name: &str,
+        global_ty: Global,
+    ) -> u32 {
+        let global_idx = self.global_imports.len() as u32;
+
+        self.global_imports
+            .push((module_name.to_owned(), import_name.to_owned(), global_ty));
+
+        global_idx
     }
 
     pub fn allocate_function_idx(&mut self, var: VarId) -> u32 {
@@ -246,7 +264,7 @@ impl ModuleBuilder {
     }
 
     pub fn new_global(&mut self, ty: ValType, mutbl: Mutability) -> GlobalId {
-        let global_id = self.globals.len().try_into().unwrap();
+        let global_id = (self.global_imports.len() + self.globals.len()) as u32;
         self.globals.push(Global { ty, mutbl });
         GlobalId(global_id)
     }
@@ -347,8 +365,26 @@ impl ModuleBuilder {
 
                 import_section_body.extend_from_slice(fun_name.as_bytes());
 
-                import_section_body.push(0); // function type
+                import_section_body.push(0x00); // function
                 leb128::write::unsigned(&mut import_section_body, (*ty_idx).into()).unwrap();
+            }
+
+            for (module_name, global_name, global_ty) in &self.global_imports {
+                leb128::write::unsigned(&mut import_section_body, module_name.len() as u64)
+                    .unwrap();
+
+                import_section_body.extend_from_slice(module_name.as_bytes());
+
+                leb128::write::unsigned(&mut import_section_body, global_name.len() as u64)
+                    .unwrap();
+
+                import_section_body.extend_from_slice(global_name.as_bytes());
+
+                import_section_body.push(0x03); // global
+
+                let Global { ty, mutbl } = global_ty;
+                import_section_body.push(ty.binary());
+                import_section_body.push(mutbl.binary());
             }
 
             leb128::write::unsigned(&mut encoded, import_section_body.len().try_into().unwrap())
