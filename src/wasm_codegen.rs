@@ -40,7 +40,7 @@ pub fn codegen(ctx: &mut Ctx, funs: &[Fun], main_id: VarId) -> Vec<u8> {
 
         let import_func_idx = builder.new_import(
             "builtins",
-            &ctx.get_var(*builtin_var_id).name(),
+            &("mc_".to_string() + &*ctx.get_var(*builtin_var_id).name()),
             builtin_var_id,
             func_ty,
         );
