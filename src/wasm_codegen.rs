@@ -4,8 +4,8 @@ use crate::common::{BinOp, Cmp, FloatBinOp, IntBinOp};
 use crate::ctx::{Ctx, VarId};
 use crate::type_check::Type;
 use crate::wasm_builder::{
-    FuncType, FunctionBuilder, FunctionLocalId, GlobalId, ModuleBuilder, Mutability, NumType,
-    ValType,
+    FuncType, FunctionBuilder, FunctionLocalId, Global, GlobalId, ModuleBuilder, Mutability,
+    NumType, RefType, ValType,
 };
 
 use fxhash::FxHashMap;
@@ -14,14 +14,28 @@ pub fn codegen(ctx: &mut Ctx, funs: &[Fun], main_id: VarId) -> Vec<u8> {
     let mut builder = ModuleBuilder::new();
     let mut env = Env::new();
 
+    /*
     // Import built-in functions and initialize closures for built-in functions.
     //
     // Built-in function closures are 1-tuples as built-in functions don't capture variables.
     let mut data: Vec<u8> = Vec::new();
+    */
 
     for (builtin_var_id, _ty_id) in ctx.builtins() {
         println!("Adding builtin {}", ctx.get_var(*builtin_var_id));
 
+        let global_id = builder.new_global_import(
+            "builtins",
+            &("mc_".to_string() + &*ctx.get_var(*builtin_var_id).name()),
+            Global {
+                ty: ValType::Num(NumType::I32),
+                mutbl: Mutability::Immut,
+            },
+        );
+
+        env.add_closure_import(*builtin_var_id, global_id);
+
+        /*
         let builtin_ty = ctx.var_type(*builtin_var_id);
         let func_ty = match &*builtin_ty {
             Type::Fun { args, ret } => {
@@ -52,6 +66,7 @@ pub fn codegen(ctx: &mut Ctx, funs: &[Fun], main_id: VarId) -> Vec<u8> {
         env.add_closure(*builtin_var_id, addr);
 
         println!("  = {} (addr = {})", import_func_idx, addr);
+        */
     }
 
     // Initialize function indices. Closures for these are allocated in closure-converted code, so
@@ -73,7 +88,7 @@ pub fn codegen(ctx: &mut Ctx, funs: &[Fun], main_id: VarId) -> Vec<u8> {
         codegen_fun(ctx, &mut builder, &mut env, fun, hp, hp_lim);
     }
 
-    builder.set_data(data);
+    // builder.set_data(data);
 
     builder.encode(main_id)
 }
@@ -89,6 +104,9 @@ enum VarVal {
 
     /// Variable is a reference to a closure at given address
     Closure { addr: u32 },
+
+    /// Variable is an imported closure
+    ClosureImport { global_id: GlobalId },
 }
 
 /// Maps variables ([VarId]) to their values
@@ -120,6 +138,11 @@ impl Env {
         debug_assert_eq!(old, None);
     }
 
+    fn add_closure_import(&mut self, var: VarId, global_id: GlobalId) {
+        let old = self.0.insert(var, VarVal::ClosureImport { global_id });
+        debug_assert_eq!(old, None);
+    }
+
     fn use_var(&self, ctx: &Ctx, builder: &mut FunctionBuilder, var: &VarId) {
         match self.0.get(var) {
             Some(VarVal::Local(local_id)) => {
@@ -130,6 +153,9 @@ impl Env {
             }
             Some(VarVal::Closure { addr }) => {
                 builder.i32_const((*addr).try_into().unwrap());
+            }
+            Some(VarVal::ClosureImport { global_id }) => {
+                builder.global_get(global_id);
             }
             None => {
                 panic!("Variable {} not in environment", ctx.get_var(*var));

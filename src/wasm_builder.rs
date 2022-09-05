@@ -127,13 +127,13 @@ impl ValType {
 /// A Wasm reference type
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RefType {
-    FuncRef,
+    Func,
 }
 
 impl RefType {
     fn binary(&self) -> u8 {
         match self {
-            RefType::FuncRef => 0x70,
+            RefType::Func => 0x70,
         }
     }
 }
@@ -209,13 +209,13 @@ impl ModuleBuilder {
         module_name: &str,
         import_name: &str,
         global_ty: Global,
-    ) -> u32 {
+    ) -> GlobalId {
         let global_idx = self.global_imports.len() as u32;
 
         self.global_imports
             .push((module_name.to_owned(), import_name.to_owned(), global_ty));
 
-        global_idx
+        GlobalId(global_idx)
     }
 
     pub fn allocate_function_idx(&mut self, var: VarId) -> u32 {
@@ -351,7 +351,7 @@ impl ModuleBuilder {
 
             leb128::write::unsigned(
                 &mut import_section_body,
-                self.func_imports.len().try_into().unwrap(),
+                (self.func_imports.len() + self.global_imports.len()) as u64,
             )
             .unwrap();
 
@@ -496,7 +496,7 @@ impl ModuleBuilder {
                         }
                     },
                     ValType::Ref(ref_ty) => match ref_ty {
-                        RefType::FuncRef => panic!("FuncRef globals not supported"),
+                        RefType::Func => panic!("FuncRef globals not supported"),
                     },
                 }
                 global_section_body.push(0x0B); // end expr
