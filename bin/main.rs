@@ -5,7 +5,8 @@ fn main() {
     match args.as_slice() {
         [_, ref file] => {
             libmc::compile_file_wasm(file, None, false, false, false);
-            exit(libmc::compile_file(file, None, true, true, true));
+            exit(0);
+            // exit(libmc::compile_file(file, None, true, true, true));
         }
         _ => {
             println!("What do you mean?");
