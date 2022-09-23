@@ -1,7 +1,7 @@
+#![allow(unused)]
 use crate::ast::ParsedExpr;
 use crate::common::{Cmp, FloatBinOp, IntBinOp};
 use crate::lexer::Token;
-use parsegen::parser;
 #[derive(Debug, Clone, Copy)]
 enum LRAction {
     Shift {
@@ -120883,7 +120883,7 @@ fn nt19p1_action(value_stack: &mut Vec<SemanticActionResult>) {
     }));
 }
 fn nt20p0_action(value_stack: &mut Vec<SemanticActionResult>) {
-    let mut rest = value_stack.pop().unwrap().non_terminal_5();
+    let rest = value_stack.pop().unwrap().non_terminal_5();
     value_stack.pop();
     let expr = value_stack.pop().unwrap().non_terminal_0();
     value_stack.pop();
@@ -120898,7 +120898,7 @@ fn nt21p0_action(value_stack: &mut Vec<SemanticActionResult>) {
     value_stack.push(SemanticActionResult::NonTerminal5((Vec::new(), None)));
 }
 fn nt21p1_action(value_stack: &mut Vec<SemanticActionResult>) {
-    let mut rest = value_stack.pop().unwrap().non_terminal_5();
+    let rest = value_stack.pop().unwrap().non_terminal_5();
     value_stack.pop();
     let expr = value_stack.pop().unwrap().non_terminal_0();
     value_stack.pop();
@@ -121074,7 +121074,7 @@ fn parse_generic<R, E: Clone>(
 pub struct Expr;
 impl Expr {
     pub fn parse<E: Clone>(
-        mut input: impl Iterator<Item = Result<Token, E>>,
+        input: impl Iterator<Item = Result<Token, E>>,
     ) -> Result<ParsedExpr, ParseError_<E>> {
         parse_generic(input, SemanticActionResult::non_terminal_0, 0u32, 1usize)
     }
