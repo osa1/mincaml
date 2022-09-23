@@ -79,7 +79,7 @@ fn prepare_expr(
     // println!("{:#?}", tokens);
 
     let expr = match record_pass_stats(pass_stats, "parse", || {
-        parser::Expr::parse(tokens.into_iter().map(Ok::<_, ()>))
+        parser::ExprParser::new().parse(tokens.into_iter().map(Ok::<_, &'static str>))
     }) {
         Err(err) => {
             println!("Parser error: {:#?}", err);
