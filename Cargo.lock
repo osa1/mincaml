@@ -231,6 +231,7 @@ dependencies = [
  "lexgen",
  "lexgen_util",
  "parsegen",
+ "wasm_syntax",
 ]
 
 [[package]]
@@ -379,3 +380,20 @@ name = "unicode-width"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ed742d4ea2bd1176e236172c8429aaf54486e7ac098db29ffe6529e0ce50973"
+
+[[package]]
+name = "wasm_syntax"
+version = "0.1.0"
+dependencies = [
+ "wasm_syntax_gen",
+]
+
+[[package]]
+name = "wasm_syntax_gen"
+version = "0.1.0"
+dependencies = [
+ "leb128",
+ "proc-macro2",
+ "quote",
+ "syn",
+]

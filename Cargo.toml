@@ -28,6 +28,7 @@ leb128 = "0.2.5"
 lexgen = "0.12.0"
 lexgen_util = "0.12.0"
 parsegen = "0.1"
+wasm_syntax = { path = "../wasm_syntax/crates/wasm_syntax" }
 
 [profile.release]
 lto = true

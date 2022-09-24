@@ -16,6 +16,7 @@ mod utils;
 mod var;
 mod wasm_builder;
 mod wasm_codegen;
+mod wasm_linker;
 
 use anormal::anormal;
 use closure_convert::closure_convert;
@@ -235,7 +236,9 @@ pub fn compile_file_wasm(
     match compile_expr_wasm(&contents, dump_cc, dump_cg, show_pass_stats) {
         None => 1,
         Some(object_code) => {
-            std::fs::write("out.wasm", object_code).unwrap();
+            std::fs::write("out.wasm", &object_code).unwrap();
+            let rts_wasm = std::fs::read("rts.wasm").unwrap();
+            wasm_linker::link_rts(&object_code, &rts_wasm);
             0
         }
     }
