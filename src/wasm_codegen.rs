@@ -102,9 +102,6 @@ enum VarVal {
     /// Variable is a function
     Fun { fun_idx: u32 },
 
-    /// Variable is a reference to a closure at given address
-    Closure { addr: u32 },
-
     /// Variable is an imported closure
     ClosureImport { global_id: GlobalId },
 }
@@ -133,11 +130,6 @@ impl Env {
         debug_assert_eq!(old, None);
     }
 
-    fn add_closure(&mut self, var: VarId, addr: u32) {
-        let old = self.0.insert(var, VarVal::Closure { addr });
-        debug_assert_eq!(old, None);
-    }
-
     fn add_closure_import(&mut self, var: VarId, global_id: GlobalId) {
         let old = self.0.insert(var, VarVal::ClosureImport { global_id });
         debug_assert_eq!(old, None);
@@ -150,9 +142,6 @@ impl Env {
             }
             Some(VarVal::Fun { fun_idx }) => {
                 builder.i32_const((*fun_idx).try_into().unwrap());
-            }
-            Some(VarVal::Closure { addr }) => {
-                builder.i32_const((*addr).try_into().unwrap());
             }
             Some(VarVal::ClosureImport { global_id }) => {
                 builder.global_get(global_id);
