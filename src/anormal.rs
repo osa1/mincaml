@@ -16,6 +16,7 @@ pub enum Expr {
     If(VarId, VarId, Cmp, Box<Expr>, Box<Expr>),
     Let {
         id: VarId,
+        #[allow(unused)]
         ty_id: TypeId,
         rhs: Box<Expr>,
         body: Box<Expr>,

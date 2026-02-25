@@ -2,7 +2,7 @@ use crate::cg_types::RepType;
 use crate::common::{BinOp, Cmp, FloatBinOp, IntBinOp};
 use crate::ctx::VarId;
 
-use cranelift_entity::{entity_impl, PrimaryMap};
+use cranelift_entity::{PrimaryMap, entity_impl};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BlockIdx(u32);

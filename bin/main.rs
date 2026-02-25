@@ -3,7 +3,7 @@ use std::process::exit;
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     match args.as_slice() {
-        [_, ref file] => {
+        [_, file] => {
             exit(libmc::compile_file(file, None, true, true, true));
         }
         _ => {

@@ -34,6 +34,7 @@ impl Type {
 }
 */
 
+#[allow(unused)]
 #[derive(Debug)]
 pub enum TypeErr {
     /// Can't unify these two types
@@ -198,11 +199,7 @@ fn type_check(
             Ok(e2_ty)
         }
 
-        Expr::Let {
-            bndr,
-            ref mut rhs,
-            body,
-        } => {
+        Expr::Let { bndr, rhs, body } => {
             let bndr_ty = Type::Var(ctx.fresh_tyvar());
             ty_env.insert(*bndr, bndr_ty.clone());
             let rhs_ty = type_check(ctx, ty_env, subst_env, scope, rhs)?;
@@ -220,7 +217,7 @@ fn type_check(
             ret
         }
 
-        Expr::Var(ref mut var) => match scope.get(&ctx.var_name(*var)) {
+        Expr::Var(var) => match scope.get(&ctx.var_name(*var)) {
             Some(Binder { binder, ty }) => {
                 *var = *binder;
                 Ok(ty.clone())
@@ -230,13 +227,13 @@ fn type_check(
 
         Expr::LetRec {
             bndr,
-            ref args,
+            args,
             rhs,
             body,
         } => {
             // Type variables for the arguments
             let mut arg_tys: Vec<Type> = Vec::with_capacity(args.len());
-            for arg in args {
+            for arg in args.iter() {
                 let arg_ty = Type::Var(ctx.fresh_tyvar());
                 arg_tys.push(arg_ty.clone());
                 ty_env.insert(*arg, arg_ty);
@@ -308,13 +305,9 @@ fn type_check(
             Ok(Type::Tuple(arg_tys))
         }
 
-        Expr::LetTuple {
-            ref bndrs,
-            rhs,
-            body,
-        } => {
+        Expr::LetTuple { bndrs, rhs, body } => {
             let mut arg_tys: Vec<Type> = Vec::with_capacity(bndrs.len());
-            for bndr in bndrs {
+            for bndr in bndrs.iter() {
                 let bndr_ty = Type::Var(ctx.fresh_tyvar());
                 ty_env.insert(*bndr, bndr_ty.clone());
                 arg_tys.push(bndr_ty);

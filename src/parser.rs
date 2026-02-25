@@ -349,7 +349,7 @@ mod test {
 
     fn parse(s: &str) -> ParsedExpr {
         let tokens = tokenize(s).unwrap();
-        Expr::parse(tokens.into_iter().map(|r| Ok::<_, ()>(r))).unwrap()
+        Expr::parse(tokens.into_iter().map(Ok::<_, ()>)).unwrap()
     }
 
     #[test]

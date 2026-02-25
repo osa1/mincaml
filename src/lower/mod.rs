@@ -8,7 +8,6 @@ use crate::ctx::{Ctx, VarId};
 use crate::type_check::Type;
 use crate::var::CompilerPhase::ClosureConvert;
 
-pub use print::*;
 pub use types::*;
 
 use cranelift_entity::PrimaryMap;

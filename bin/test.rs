@@ -3,7 +3,7 @@ use std::ffi::OsStr;
 use std::fs;
 use std::io::Write;
 use std::path::Path;
-use std::process::{exit, Command, ExitStatus, Output, Stdio};
+use std::process::{Command, ExitStatus, Output, Stdio, exit};
 
 fn run_ocaml(file_path: &str) -> String {
     let ret: Output = Command::new("ocaml")
@@ -46,7 +46,7 @@ fn run_mc(file_path_str: &str) -> Result<String, McError> {
         status,
         stdout,
         stderr,
-    } = Command::new(&format!("_test/{}", file_stem_str))
+    } = Command::new(format!("_test/{}", file_stem_str))
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()

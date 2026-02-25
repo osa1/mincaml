@@ -1,15 +1,15 @@
 use cranelift_codegen::binemit::NullTrapSink;
 use cranelift_codegen::entity::EntityRef;
+use cranelift_codegen::ir::MemFlags;
 use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::entities::{Block, FuncRef, SigRef, Value};
 use cranelift_codegen::ir::types::*;
-use cranelift_codegen::ir::MemFlags;
 use cranelift_codegen::ir::{AbiParam, InstBuilder, Signature};
 use cranelift_codegen::isa::CallConv;
 use cranelift_codegen::settings;
 use cranelift_codegen::verifier::verify_function;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
-use cranelift_module::{default_libcall_names, DataId, FuncId, Linkage, Module};
+use cranelift_module::{DataId, FuncId, Linkage, Module, default_libcall_names};
 use cranelift_object::{ObjectBackend, ObjectBuilder, ObjectProduct};
 
 use fxhash::{FxHashMap, FxHashSet};
@@ -143,6 +143,7 @@ impl Env {
             }
             Some(VarVal::Data(data_id)) => {
                 let data_ref = module.declare_data_in_func(data_id, builder.func);
+                #[allow(clippy::let_and_return)]
                 let val = builder.ins().global_value(I64, data_ref);
                 // self.0.insert(var, VarVal::Known(val));
                 val

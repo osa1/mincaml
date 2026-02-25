@@ -13,7 +13,7 @@ pub struct InternId {
 
 impl InternId {
     fn from_u32(i: u32) -> InternId {
-        assert!(i < std::u32::MAX);
+        assert!(i < u32::MAX);
         InternId {
             value: unsafe { NonZeroU32::new_unchecked(i + 1) },
         }

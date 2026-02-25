@@ -18,7 +18,7 @@ mod var;
 use anormal::anormal;
 use closure_convert::closure_convert;
 use codegen::codegen;
-use lexer::{tokenize, Token};
+use lexer::{Token, tokenize};
 use lower::lower_fun;
 use type_check::type_check_pgm;
 
@@ -92,13 +92,11 @@ fn prepare_expr(
 
     let mut expr = record_pass_stats(pass_stats, "intern", || expr.intern(ctx));
 
-    match record_pass_stats(pass_stats, "type check", || type_check_pgm(ctx, &mut expr)) {
-        Err(err) => {
-            println!("Type error: {:#?}", err);
-            return None;
-        }
-        Ok(()) => {}
-    };
+    if let Err(err) = record_pass_stats(pass_stats, "type check", || type_check_pgm(ctx, &mut expr))
+    {
+        println!("Type error: {:#?}", err);
+        return None;
+    }
 
     // println!("Type-checked expr: {:#?}", expr);
 
@@ -201,14 +199,14 @@ fn link(path: &str, out_dir: Option<&str>, object_code: ObjectCode) -> i32 {
     let file_stem = path.file_stem().unwrap().to_str().unwrap();
     let o_file_name = format!("{}.o", file_stem);
 
-    File::create(&format!("{}/{}", out_dir, o_file_name))
+    File::create(format!("{}/{}", out_dir, o_file_name))
         .unwrap()
         .write_all(&object_code)
         .unwrap();
 
     // Build RTS
     let output = Command::new("gcc")
-        .args(&["rts.c", "-c", "-o", &format!("{}/rts.o", out_dir)])
+        .args(["rts.c", "-c", "-o", &format!("{}/rts.o", out_dir)])
         .spawn()
         .unwrap()
         .wait_with_output()
@@ -218,7 +216,7 @@ fn link(path: &str, out_dir: Option<&str>, object_code: ObjectCode) -> i32 {
 
     // Link
     let output = Command::new("gcc")
-        .args(&[
+        .args([
             &o_file_name,
             "rts.o",
             "-o",

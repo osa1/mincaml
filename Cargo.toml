@@ -2,7 +2,7 @@
 name = "mincaml"
 version = "0.1.0"
 authors = ["Ömer Sinan Ağacan <omeragacan@gmail.com>"]
-edition = "2021"
+edition = "2024"
 
 [lib]
 name = "libmc"
@@ -24,8 +24,8 @@ cranelift-module = "0.66"
 cranelift-native = "0.66"
 cranelift-object = "0.66"
 fxhash = "0.2.1"
-lexgen = "0.14.0"
-lexgen_util = "0.14.0"
+lexgen = "0.16.0"
+lexgen_util = "0.16.0"
 parsegen = "0.1"
 
 [profile.release]

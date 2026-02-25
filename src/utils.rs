@@ -64,13 +64,13 @@ pub fn base62_encode(uniq: Uniq, w: &mut dyn Write) -> fmt::Result {
     let mut c = uniq.0.get() as usize;
     loop {
         if c < 62 {
-            w.write_char(char::from(BASE62_CHARS[c as usize]))?;
+            w.write_char(char::from(BASE62_CHARS[c]))?;
             break;
         }
 
         let q = c % 62;
         let r = c / 62;
-        w.write_char(char::from(BASE62_CHARS[q as usize]))?;
+        w.write_char(char::from(BASE62_CHARS[q]))?;
         c = r;
     }
 
