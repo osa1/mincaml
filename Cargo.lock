@@ -144,6 +144,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "elegance"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "018c61886694ceac26d10ee7faa99828ecdec83630d5ac1e8b624b971e477386"
+dependencies = [
+ "unicode-width",
+]
+
+[[package]]
 name = "fxhash"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -230,6 +239,7 @@ dependencies = [
  "cranelift-module",
  "cranelift-native",
  "cranelift-object",
+ "elegance",
  "fxhash",
  "lalrpop-util",
  "lexgen",

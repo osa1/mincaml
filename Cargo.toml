@@ -27,6 +27,7 @@ fxhash = "0.2.1"
 lexgen = "0.16.0"
 lexgen_util = "0.16.0"
 lalrpop-util = "0.22"
+elegance = "0.4.0"
 
 [profile.release]
 lto = true

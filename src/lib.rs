@@ -116,12 +116,9 @@ fn prepare_expr(
     if dump_cc {
         println!("### Closure conversion:\n");
 
-        let mut s = String::new();
         for fun in &funs {
-            fun.pp(ctx, &mut s).unwrap();
+            println!("{}\n", fun.pp(ctx));
         }
-
-        println!("{}", s);
     }
 
     Some((funs, main))

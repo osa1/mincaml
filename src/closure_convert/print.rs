@@ -2,116 +2,155 @@ use crate::closure_convert::{Expr, Fun};
 use crate::common::BinOp;
 use crate::ctx::Ctx;
 
-use std::fmt;
+use elegance::Printer;
 
 impl Expr {
-    pub fn pp(&self, ctx: &Ctx, indent: usize, w: &mut dyn fmt::Write) -> fmt::Result {
+    pub fn pp(&self, ctx: &Ctx, p: &mut Printer) -> Result<(), std::convert::Infallible> {
         match self {
-            Expr::Unit => write!(w, "{}()", indent_str(indent)),
+            Expr::Unit => p.text("()")?,
 
-            Expr::Int(i) => write!(w, "{}{}", indent_str(indent), i),
+            Expr::Int(i) => p.text_owned(i.to_string())?,
 
-            Expr::Float(f) => write!(w, "{}{}", indent_str(indent), f),
+            Expr::Float(f) => p.text_owned(f.to_string())?,
 
             Expr::IBinOp(BinOp { op, arg1, arg2 }) => {
                 let arg1 = ctx.get_var(*arg1);
                 let arg2 = ctx.get_var(*arg2);
-                write!(w, "{}{} {} {}", indent_str(indent), arg1, op.as_str(), arg2)
+                p.text_owned(arg1.to_string())?;
+                p.text(" ")?;
+                p.text(op.as_str())?;
+                p.text(" ")?;
+                p.text_owned(arg2.to_string())?;
             }
 
             Expr::FBinOp(BinOp { op, arg1, arg2 }) => {
                 let arg1 = ctx.get_var(*arg1);
                 let arg2 = ctx.get_var(*arg2);
-                write!(w, "{}{} {} {}", indent_str(indent), arg1, op.as_str(), arg2)
+                p.text_owned(arg1.to_string())?;
+                p.text(" ")?;
+                p.text(op.as_str())?;
+                p.text(" ")?;
+                p.text_owned(arg2.to_string())?;
             }
 
-            Expr::Neg(var) => write!(w, "{}-{}", indent_str(indent), ctx.get_var(*var)),
+            Expr::Neg(var) => {
+                p.text("-")?;
+                p.text_owned(ctx.get_var(*var).to_string())?;
+            }
 
-            Expr::FNeg(var) => write!(w, "{}-.{}", indent_str(indent), ctx.get_var(*var)),
+            Expr::FNeg(var) => {
+                p.text("-.")?;
+                p.text_owned(ctx.get_var(*var).to_string())?;
+            }
 
             Expr::If(var1, var2, cmp, then_, else_) => {
-                let var1 = ctx.get_var(*var1);
-                let var2 = ctx.get_var(*var2);
-                writeln!(
-                    w,
-                    "{}if {} {} {} then",
-                    indent_str(indent),
-                    var1,
-                    cmp.as_str(),
-                    var2
-                )?;
-                then_.pp(ctx, indent + 2, w)?;
-                writeln!(w)?;
-                else_.pp(ctx, indent + 2, w)
+                p.text("if")?;
+                p.text(" ")?;
+                p.text_owned(ctx.get_var(*var1).to_string())?;
+                p.text(" ")?;
+                p.text(cmp.as_str())?;
+                p.text(" ")?;
+                p.text_owned(ctx.get_var(*var2).to_string())?;
+                p.text(" ")?;
+                p.text("then")?;
+                p.igroup(4, |p| {
+                    p.hard_break()?;
+                    then_.pp(ctx, p)?;
+                    Ok(())
+                })?;
+                p.hard_break()?;
+                p.text("else")?;
+                p.igroup(4, |p| {
+                    p.hard_break()?;
+                    else_.pp(ctx, p)?;
+                    Ok(())
+                })?;
             }
 
             Expr::Let { id, rhs, body } => {
                 let id = ctx.get_var(*id);
-                write!(w, "{}let {} = ", indent_str(indent), id)?;
-                rhs.pp(ctx, 0, w)?; // FIXME
-                writeln!(w, " in")?;
-                body.pp(ctx, indent, w)
+                p.text("let")?;
+                p.text(" ")?;
+                p.text_owned(id.to_string())?;
+                p.text(" ")?;
+                p.text("=")?;
+                p.cgroup(0, |p| {
+                    p.cgroup(4, |p| {
+                        p.space()?;
+                        rhs.pp(ctx, p)?;
+                        Ok(())
+                    })?;
+                    p.space()?;
+                    p.text("in")?;
+                    Ok(())
+                })?;
+                p.hard_break()?;
+                body.pp(ctx, p)?;
             }
 
             Expr::Var(var) => {
-                let var = ctx.get_var(*var);
-                write!(w, "{}{}", indent_str(indent), var)
+                p.text_owned(ctx.get_var(*var).to_string())?;
             }
 
             Expr::App(fun, args, _) => {
-                let fun = ctx.get_var(*fun);
-                write!(w, "{}{}", indent_str(indent), fun)?;
+                p.text_owned(ctx.get_var(*fun).to_string())?;
                 for arg in args {
-                    write!(w, " {}", ctx.get_var(*arg))?;
+                    p.text(" ")?;
+                    p.text_owned(ctx.get_var(*arg).to_string())?;
                 }
-                Ok(())
             }
 
             Expr::Tuple(vars) => {
-                write!(w, "{}(", indent_str(indent))?;
-                for (var_idx, var) in vars.iter().enumerate() {
-                    write!(w, "{}", ctx.get_var(*var))?;
-                    if var_idx != vars.len() - 1 {
-                        write!(w, ", ")?;
+                p.text("(")?;
+                for (i, var) in vars.iter().enumerate() {
+                    if i > 0 {
+                        p.text(",")?;
+                        p.text(" ")?;
                     }
+                    p.text_owned(ctx.get_var(*var).to_string())?;
                 }
-                write!(w, ")")
+                p.text(")")?;
             }
 
             Expr::TupleGet(var, idx, _) => {
-                write!(w, "{}{}.{}", indent_str(indent), ctx.get_var(*var), idx)
+                p.text_owned(ctx.get_var(*var).to_string())?;
+                p.text(".")?;
+                p.text_owned(idx.to_string())?;
             }
 
-            Expr::ArrayAlloc { len, elem } => write!(
-                w,
-                "{}Array.create {} {}",
-                indent_str(indent),
-                ctx.get_var(*len),
-                ctx.get_var(*elem)
-            ),
+            Expr::ArrayAlloc { len, elem } => {
+                p.text("Array.create")?;
+                p.text(" ")?;
+                p.text_owned(ctx.get_var(*len).to_string())?;
+                p.text(" ")?;
+                p.text_owned(ctx.get_var(*elem).to_string())?;
+            }
 
-            Expr::ArrayGet(arr, idx) => write!(
-                w,
-                "{}{}[{}]",
-                indent_str(indent),
-                ctx.get_var(*arr),
-                ctx.get_var(*idx)
-            ),
+            Expr::ArrayGet(arr, idx) => {
+                p.text_owned(ctx.get_var(*arr).to_string())?;
+                p.text("[")?;
+                p.text_owned(ctx.get_var(*idx).to_string())?;
+                p.text("]")?;
+            }
 
-            Expr::ArrayPut(arr, idx, val) => write!(
-                w,
-                "{}{}[{}] = {}",
-                indent_str(indent),
-                ctx.get_var(*arr),
-                ctx.get_var(*idx),
-                ctx.get_var(*val)
-            ),
+            Expr::ArrayPut(arr, idx, val) => {
+                p.text_owned(ctx.get_var(*arr).to_string())?;
+                p.text("[")?;
+                p.text_owned(ctx.get_var(*idx).to_string())?;
+                p.text("]")?;
+                p.text(" ")?;
+                p.text("=")?;
+                p.text(" ")?;
+                p.text_owned(ctx.get_var(*val).to_string())?;
+            }
         }
+
+        Ok(())
     }
 }
 
 impl Fun {
-    pub fn pp(&self, ctx: &Ctx, w: &mut dyn fmt::Write) -> fmt::Result {
+    pub fn pp(&self, ctx: &Ctx) -> String {
         let Fun {
             name,
             args,
@@ -119,17 +158,21 @@ impl Fun {
             return_type: _,
         } = self;
 
-        write!(w, "let rec {} ", ctx.get_var(*name))?;
+        let mut p = Printer::new(String::new(), 80);
+        p.text("let rec ").unwrap();
+        p.text_owned(ctx.get_var(*name).to_string()).unwrap();
         for arg in args {
-            write!(w, "{} ", ctx.get_var(*arg))?;
+            p.space().unwrap();
+            p.text_owned(ctx.get_var(*arg).to_string()).unwrap();
         }
-        writeln!(w, "=")?;
-        body.pp(ctx, 2, w)
+        p.space().unwrap();
+        p.text("=").unwrap();
+        p.igroup(4, |p| {
+            p.hard_break()?;
+            body.pp(ctx, p)?;
+            Ok(())
+        })
+        .unwrap();
+        p.finish().unwrap()
     }
-}
-
-static SPACES: &str = "                                   ";
-
-fn indent_str(i: usize) -> &'static str {
-    &SPACES[0..i]
 }
