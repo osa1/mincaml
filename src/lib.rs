@@ -29,36 +29,67 @@ use std::path::Path;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-#[cfg(debug_assertions)]
-#[global_allocator]
-static A: perf::AllocCounter = perf::AllocCounter;
-
-#[derive(Debug)]
-struct PassStats {
-    name: &'static str,
-    time: Duration,
-    allocs: usize,
-}
-
-fn record_pass_stats<A, F: FnOnce() -> A>(
-    stats: &mut Vec<PassStats>,
-    pass_name: &'static str,
-    pass: F,
-) -> A {
-    let allocs_before = perf::get_allocated();
-    let start_time = Instant::now();
-    let ret = pass();
-    let elapsed = start_time.elapsed();
-    let allocs_after = perf::get_allocated();
-    stats.push(PassStats {
-        name: pass_name,
-        time: elapsed,
-        allocs: allocs_after - allocs_before,
-    });
-    ret
+pub fn compile_file(
+    path: &str,
+    out_dir: Option<&str>,
+    dump_cc: bool,
+    dump_cg: bool,
+    dump_lower: bool,
+    show_pass_stats: bool,
+) -> i32 {
+    let contents = std::fs::read_to_string(path).unwrap();
+    match compile_expr(&contents, dump_cc, dump_cg, dump_lower, show_pass_stats) {
+        None => 1,
+        Some(object_code) => link(path, out_dir, object_code),
+    }
 }
 
 type ObjectCode = Vec<u8>;
+
+fn compile_expr(
+    expr_str: &str,
+    dump_cc: bool,
+    dump_lower: bool,
+    dump_cg: bool,
+    show_pass_stats: bool,
+) -> Option<ObjectCode> {
+    let mut pass_stats: Vec<PassStats> = Vec::with_capacity(10);
+
+    let mut ctx = Default::default();
+
+    let (funs, main) = prepare_expr(expr_str, dump_cc, &mut ctx, &mut pass_stats)?;
+
+    if dump_lower {
+        println!("### Lowered:\n");
+    }
+
+    let funs: Vec<lower::Fun> = funs
+        .into_iter()
+        .map(|fun| {
+            let fun = lower_fun(&mut ctx, fun);
+            if dump_lower {
+                let mut s = String::new();
+                fun.pp(&ctx, &mut s).unwrap();
+                println!("{}", s);
+            }
+            fun
+        })
+        .collect();
+
+    if dump_cg {
+        println!("### Code generation:\n");
+    }
+
+    let object_code = record_pass_stats(&mut pass_stats, "codegen", || {
+        codegen(&mut ctx, &funs, main, dump_cg)
+    });
+
+    if show_pass_stats {
+        report_pass_stats(&pass_stats);
+    }
+
+    Some(object_code)
+}
 
 /// Prepare an expression for code generation: parse, type check, convert to a-normal form, do
 /// closure conversion.
@@ -124,77 +155,6 @@ fn prepare_expr(
     Some((funs, main))
 }
 
-fn compile_expr(
-    expr_str: &str,
-    dump_cc: bool,
-    dump_cg: bool,
-    show_pass_stats: bool,
-) -> Option<ObjectCode> {
-    let mut pass_stats: Vec<PassStats> = Vec::with_capacity(10);
-
-    let mut ctx = Default::default();
-
-    let (funs, main) = prepare_expr(expr_str, dump_cc, &mut ctx, &mut pass_stats)?;
-    let funs: Vec<lower::Fun> = funs
-        .into_iter()
-        .map(|fun| lower_fun(&mut ctx, fun))
-        .collect();
-
-    if dump_cg {
-        println!("### Code generation:\n");
-    }
-
-    let object_code = record_pass_stats(&mut pass_stats, "codegen", || {
-        codegen(&mut ctx, &funs, main, dump_cg)
-    });
-
-    if show_pass_stats {
-        report_pass_stats(&pass_stats);
-    }
-
-    Some(object_code)
-}
-
-fn report_pass_stats(pass_stats: &[PassStats]) {
-    // TODO: align columns
-    // TODO: show percentage of allocs and times of each pass
-    // TODO: maintain a counter for max res?
-    println!("--------------------------------------------------------");
-    let mut total_elapsed: Duration = Duration::from_micros(0);
-    let mut total_allocated: usize = 0;
-    for PassStats { name, time, allocs } in pass_stats {
-        println!(
-            "{}: {} ms, {} bytes",
-            name,
-            time.as_millis(),
-            utils::comma_sep(&format!("{}", allocs))
-        );
-        total_elapsed += *time;
-        total_allocated += allocs;
-    }
-
-    println!(
-        "TOTAL: {} ms, {} bytes",
-        total_elapsed.as_millis(),
-        utils::comma_sep(&format!("{}", total_allocated))
-    );
-    println!("--------------------------------------------------------");
-}
-
-pub fn compile_file(
-    path: &str,
-    out_dir: Option<&str>,
-    dump_cc: bool,
-    dump_cg: bool,
-    show_pass_stats: bool,
-) -> i32 {
-    let contents = std::fs::read_to_string(path).unwrap();
-    match compile_expr(&contents, dump_cc, dump_cg, show_pass_stats) {
-        None => 1,
-        Some(object_code) => link(path, out_dir, object_code),
-    }
-}
-
 fn link(path: &str, out_dir: Option<&str>, object_code: ObjectCode) -> i32 {
     let out_dir = out_dir.unwrap_or(".");
     let path = Path::new(path);
@@ -234,4 +194,59 @@ fn link(path: &str, out_dir: Option<&str>, object_code: ObjectCode) -> i32 {
     assert!(output.status.success());
 
     0
+}
+
+fn report_pass_stats(pass_stats: &[PassStats]) {
+    // TODO: align columns
+    // TODO: show percentage of allocs and times of each pass
+    // TODO: maintain a counter for max res?
+    println!("--------------------------------------------------------");
+    let mut total_elapsed: Duration = Duration::from_micros(0);
+    let mut total_allocated: usize = 0;
+    for PassStats { name, time, allocs } in pass_stats {
+        println!(
+            "{}: {} ms, {} bytes",
+            name,
+            time.as_millis(),
+            utils::comma_sep(&format!("{}", allocs))
+        );
+        total_elapsed += *time;
+        total_allocated += allocs;
+    }
+
+    println!(
+        "TOTAL: {} ms, {} bytes",
+        total_elapsed.as_millis(),
+        utils::comma_sep(&format!("{}", total_allocated))
+    );
+    println!("--------------------------------------------------------");
+}
+
+#[cfg(debug_assertions)]
+#[global_allocator]
+static A: perf::AllocCounter = perf::AllocCounter;
+
+#[derive(Debug)]
+struct PassStats {
+    name: &'static str,
+    time: Duration,
+    allocs: usize,
+}
+
+fn record_pass_stats<A, F: FnOnce() -> A>(
+    stats: &mut Vec<PassStats>,
+    pass_name: &'static str,
+    pass: F,
+) -> A {
+    let allocs_before = perf::get_allocated();
+    let start_time = Instant::now();
+    let ret = pass();
+    let elapsed = start_time.elapsed();
+    let allocs_after = perf::get_allocated();
+    stats.push(PassStats {
+        name: pass_name,
+        time: elapsed,
+        allocs: allocs_after - allocs_before,
+    });
+    ret
 }
