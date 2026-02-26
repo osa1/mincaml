@@ -10,7 +10,7 @@ use cranelift_codegen::settings;
 use cranelift_codegen::verifier::verify_function;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use cranelift_module::{DataId, FuncId, Linkage, Module, default_libcall_names};
-use cranelift_object::{ObjectBackend, ObjectBuilder, ObjectProduct};
+use cranelift_object::{ObjectBuilder, ObjectModule, ObjectProduct};
 
 use fxhash::{FxHashMap, FxHashSet};
 
@@ -24,11 +24,11 @@ pub fn codegen(ctx: &mut Ctx, funs: &[lower::Fun], main_id: VarId, dump: bool) -
     // Module and FunctionBuilderContext are used for the whole compilation unit. Each function
     // gets its own FunctionBuilder.
     let codegen_flags: settings::Flags = settings::Flags::new(settings::builder());
-    let mut module: Module<ObjectBackend> = Module::new(
+    let mut module: ObjectModule = ObjectModule::new(
         ObjectBuilder::new(
             // How does this know I'm building for x86_64 Linux?
             cranelift_native::builder().unwrap().finish(codegen_flags),
-            [1, 2, 3, 4, 5, 6, 7, 8], // TODO: what is this?
+            "mincaml",
             default_libcall_names(),
         )
         .unwrap(),
@@ -63,8 +63,6 @@ pub fn codegen(ctx: &mut Ctx, funs: &[lower::Fun], main_id: VarId, dump: bool) -
 
     // Generate main
     make_main(&mut module, &mut fn_builder_ctx, main_fun_id, dump);
-
-    module.finalize_definitions();
 
     let object: ObjectProduct = module.finish();
     object.emit().unwrap()
@@ -117,7 +115,7 @@ impl Env {
     fn use_var(
         &mut self,
         ctx: &Ctx,
-        module: &Module<ObjectBackend>,
+        module: &ObjectModule,
         builder: &mut FunctionBuilder,
         var: VarId,
     ) -> Value {
@@ -157,7 +155,7 @@ impl Env {
     }
 }
 
-fn declare_malloc(module: &mut Module<ObjectBackend>) -> FuncId {
+fn declare_malloc(module: &mut ObjectModule) -> FuncId {
     module
         .declare_function(
             "malloc",
@@ -173,7 +171,7 @@ fn declare_malloc(module: &mut Module<ObjectBackend>) -> FuncId {
 
 fn init_module_env(
     ctx: &mut Ctx,
-    module: &mut Module<ObjectBackend>,
+    module: &mut ObjectModule,
     funs: &[lower::Fun],
     main_id: VarId,
 ) -> (Env, FuncId) {
@@ -186,7 +184,7 @@ fn init_module_env(
         let name = var.symbol_name();
 
         let id: DataId = module
-            .declare_data(&name, Linkage::Import, false, false, None)
+            .declare_data(&name, Linkage::Import, false, false)
             .unwrap();
         env.add_data(*builtin_var_id, id);
     }
@@ -232,7 +230,7 @@ fn init_module_env(
 
 fn codegen_fun(
     ctx: &mut Ctx,
-    module: &mut Module<ObjectBackend>,
+    module: &mut ObjectModule,
     global_env: &Env,
     malloc_id: FuncId,
     fun: &lower::Fun,
@@ -424,7 +422,7 @@ fn codegen_fun(
 
 fn codegen_expr(
     ctx: &mut Ctx,
-    module: &Module<ObjectBackend>,
+    module: &ObjectModule,
     block: Block,
     builder: &mut FunctionBuilder,
     env: &mut Env,
@@ -587,7 +585,7 @@ fn codegen_expr(
 }
 
 fn make_main(
-    module: &mut Module<ObjectBackend>,
+    module: &mut ObjectModule,
     fun_ctx: &mut FunctionBuilderContext,
     main_id: FuncId,
     dump: bool,
