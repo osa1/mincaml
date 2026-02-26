@@ -12,9 +12,26 @@ pub use types::*;
 
 use cranelift_entity::PrimaryMap;
 
-// Used when debugging
-#[allow(unused_imports)]
-use crate::utils;
+pub fn lower_fun(ctx: &mut Ctx, fun: cc::Fun) -> Fun {
+    let mut ctx = LowerCtx::new(ctx);
+
+    let cc::Fun {
+        name,
+        args,
+        body,
+        return_type,
+    } = fun;
+
+    let block = ctx.create_block();
+    cc_block(&mut ctx, block, Sequel::Return, body);
+
+    Fun {
+        name,
+        args,
+        blocks: ctx.blocks,
+        return_type,
+    }
+}
 
 #[derive(Debug, Clone)]
 enum Sequel {
@@ -26,7 +43,7 @@ enum Sequel {
 }
 
 impl Sequel {
-    fn get_ret_var(&self, ctx: &mut CcCtx, ret_ty: RepType) -> VarId {
+    fn get_ret_var(&self, ctx: &mut LowerCtx, ret_ty: RepType) -> VarId {
         use Sequel::*;
         match self {
             Asgn(var, _) => *var,
@@ -60,14 +77,15 @@ impl BlockBuilder {
     }
 }
 
-// Closure conversion state
-struct CcCtx<'ctx> {
+// Lowering context.
+struct LowerCtx<'ctx> {
     ctx: &'ctx mut Ctx,
-    // Blocks generated so far for the current function
+
+    /// Blocks generated so far for the current function.
     blocks: PrimaryMap<BlockIdx, BlockData>,
 }
 
-impl<'ctx> CcCtx<'ctx> {
+impl<'ctx> LowerCtx<'ctx> {
     fn new(ctx: &'ctx mut Ctx) -> Self {
         Self {
             ctx,
@@ -152,29 +170,8 @@ impl<'ctx> CcCtx<'ctx> {
     }
 }
 
-pub fn lower_fun(ctx: &mut Ctx, fun: cc::Fun) -> Fun {
-    let mut ctx = CcCtx::new(ctx);
-
-    let cc::Fun {
-        name,
-        args,
-        body,
-        return_type,
-    } = fun;
-
-    let block = ctx.create_block();
-    cc_block(&mut ctx, block, Sequel::Return, body);
-
-    Fun {
-        name,
-        args,
-        blocks: ctx.blocks,
-        return_type,
-    }
-}
-
 // Returns whether the added block was a fork (i.e. then or else branch of an if)
-fn cc_block(ctx: &mut CcCtx, mut block: BlockBuilder, sequel: Sequel, expr: cc::Expr) {
+fn cc_block(ctx: &mut LowerCtx, mut block: BlockBuilder, sequel: Sequel, expr: cc::Expr) {
     match expr {
         cc::Expr::Unit => ctx.finish_block(block, sequel, Atom::Unit),
 
