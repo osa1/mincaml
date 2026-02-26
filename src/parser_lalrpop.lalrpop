@@ -1,0 +1,295 @@
+use crate::ast::ParsedExpr;
+use crate::common::{Cmp, FloatBinOp, IntBinOp};
+use crate::lexer::Token;
+
+grammar;
+
+extern {
+    type Location = usize;
+    type Error = ();
+
+    enum Token {
+        "(" => Token::LParen,
+        ")" => Token::RParen,
+        "bool" => Token::Bool(<bool>),
+        "not" => Token::Not,
+        "if" => Token::If,
+        "then" => Token::Then,
+        "else" => Token::Else,
+        "let" => Token::Let,
+        "rec" => Token::Rec,
+        "in" => Token::In,
+        "-" => Token::Minus,
+        "-." => Token::MinusDot,
+        "+" => Token::Plus,
+        "+." => Token::PlusDot,
+        "*." => Token::AstDot,
+        "/." => Token::SlashDot,
+        "=" => Token::Equal,
+        "<>" => Token::LessGreater,
+        "<=" => Token::LessEqual,
+        "<-" => Token::LessMinus,
+        "<" => Token::Less,
+        ">=" => Token::GreaterEqual,
+        ">" => Token::Greater,
+        "." => Token::Dot,
+        "," => Token::Comma,
+        ";" => Token::Semicolon,
+        "_" => Token::Underscore,
+        "Array.create" => Token::ArrayCreate,
+        "id" => Token::Id(<String>),
+        "int" => Token::Int(<i64>),
+        "float" => Token::Float(<f64>),
+    }
+}
+
+// Entry point
+pub Expr: ParsedExpr = {
+    StmtExpr,
+};
+
+// Three-level split to handle `;` without ambiguity:
+//
+// StmtExpr: top-level, includes `;` and `let`.
+//   - `let` body is StmtExpr (greedy for `;`)
+//   - Only ClosedExpr can be LHS of `;`
+//
+// OpenExpr: like ClosedExpr but `if`'s else takes OpenExpr.
+//   Used ONLY as the `else` branch of ClosedExpr's `if`.
+//   "Open" means `;` can follow (it leaks out).
+//
+// ClosedExpr: everything except `let` and `;`.
+//   `if`'s else takes ClosedExpr — "closed" means `;` after it is unambiguous.
+//
+// The key insight: ClosedExpr is the LHS of `;`, and its `if`
+// takes ClosedExpr for `else`, so `;` after `if...else expr` is
+// unambiguously at the StmtExpr level.
+
+StmtExpr: ParsedExpr = {
+    ClosedExpr,
+    OpenExpr,
+    "let" <bndr:Binder> "=" <rhs:StmtExpr> "in" <body:StmtExpr> =>
+        ParsedExpr::Let { bndr, rhs: Box::new(rhs), body: Box::new(body) },
+    "let" "rec" <bndr:Binder> <args:Binders1> "=" <rhs:StmtExpr> "in" <body:StmtExpr> =>
+        ParsedExpr::LetRec { bndr, args, rhs: Box::new(rhs), body: Box::new(body) },
+    "let" "(" <bndr:Binder> <mut bndrs:CommaBinder1Rev> ")" "=" <rhs:StmtExpr> "in" <body:StmtExpr> => {
+        bndrs.push(bndr);
+        bndrs.reverse();
+        ParsedExpr::LetTuple { bndrs, rhs: Box::new(rhs), body: Box::new(body) }
+    },
+    <e1:ClosedExpr> ";" <e2:StmtExpr> =>
+        ParsedExpr::Let { bndr: "_".to_string(), rhs: Box::new(e1), body: Box::new(e2) },
+};
+
+// OpenExpr: `if` with else taking OpenExpr (allows `;` after `else`'s content to
+// leak to the outer StmtExpr). Used where we need `if...else expr ;` to work.
+// Also includes `if...else let...` via promotion to StmtExpr in else.
+OpenExpr: ParsedExpr = {
+    // if-then-else where else is open (can be followed by `;` at outer level)
+    "if" <e1:StmtExpr> "then" <e2:StmtExpr> "else" <e3:OpenExpr> =>
+        ParsedExpr::If(Box::new(e1), Box::new(e2), Box::new(e3)),
+    // if-then-else where else is let (can be followed by `;` because let body consumes it)
+    "if" <e1:StmtExpr> "then" <e2:StmtExpr> "else" "let" <bndr:Binder> "=" <rhs:StmtExpr> "in" <body:StmtExpr> =>
+        ParsedExpr::If(Box::new(e1), Box::new(e2), Box::new(
+            ParsedExpr::Let { bndr, rhs: Box::new(rhs), body: Box::new(body) }
+        )),
+    "if" <e1:StmtExpr> "then" <e2:StmtExpr> "else" "let" "rec" <bndr:Binder> <args:Binders1> "=" <rhs:StmtExpr> "in" <body:StmtExpr> =>
+        ParsedExpr::If(Box::new(e1), Box::new(e2), Box::new(
+            ParsedExpr::LetRec { bndr, args, rhs: Box::new(rhs), body: Box::new(body) }
+        )),
+    "if" <e1:StmtExpr> "then" <e2:StmtExpr> "else" "let" "(" <bndr:Binder> <mut bndrs:CommaBinder1Rev> ")" "=" <rhs:StmtExpr> "in" <body:StmtExpr> => {
+        bndrs.push(bndr);
+        bndrs.reverse();
+        ParsedExpr::If(Box::new(e1), Box::new(e2), Box::new(
+            ParsedExpr::LetTuple { bndrs, rhs: Box::new(rhs), body: Box::new(body) }
+        ))
+    },
+    // Array put where value is open
+    <arr:SimpleExpr> <indices:DotIndex+> "<-" <val:OpenExpr> => {
+        let mut indices = indices;
+        let put_idx = indices.pop().unwrap();
+        let mut expr = arr;
+        for idx in indices {
+            expr = ParsedExpr::Get(Box::new(expr), Box::new(idx));
+        }
+        ParsedExpr::Put(Box::new(expr), Box::new(put_idx), Box::new(val))
+    },
+    // Array put where value is let
+    <arr:SimpleExpr> <indices:DotIndex+> "<-" "let" <bndr:Binder> "=" <rhs:StmtExpr> "in" <body:StmtExpr> => {
+        let mut indices = indices;
+        let put_idx = indices.pop().unwrap();
+        let mut expr = arr;
+        for idx in indices {
+            expr = ParsedExpr::Get(Box::new(expr), Box::new(idx));
+        }
+        ParsedExpr::Put(Box::new(expr), Box::new(put_idx), Box::new(
+            ParsedExpr::Let { bndr, rhs: Box::new(rhs), body: Box::new(body) }
+        ))
+    },
+};
+
+// ClosedExpr: expressions without `let`, `;`, or open `if`.
+// Closed w.r.t. `;` — safe to be LHS of `;`.
+ClosedExpr: ParsedExpr = {
+    TupleExpr,
+    // Closed if: else takes ClosedExpr
+    "if" <e1:StmtExpr> "then" <e2:StmtExpr> "else" <e3:ClosedExpr> =>
+        ParsedExpr::If(Box::new(e1), Box::new(e2), Box::new(e3)),
+    // Closed array put: value is ClosedExpr
+    <arr:SimpleExpr> <indices:DotIndex+> "<-" <val:ClosedExpr> => {
+        let mut indices = indices;
+        let put_idx = indices.pop().unwrap();
+        let mut expr = arr;
+        for idx in indices {
+            expr = ParsedExpr::Get(Box::new(expr), Box::new(idx));
+        }
+        ParsedExpr::Put(Box::new(expr), Box::new(put_idx), Box::new(val))
+    },
+};
+
+DotIndex: ParsedExpr = {
+    "." "(" <StmtExpr> ")",
+};
+
+Binder: String = {
+    "_" => "_".to_owned(),
+    <id:"id"> => id,
+};
+
+CommaBinder1Rev: Vec<String> = {
+    "," <bndr:Binder> <mut bndrs:CommaBinder0Rev> => {
+        bndrs.push(bndr);
+        bndrs
+    }
+};
+
+CommaBinder0Rev: Vec<String> = {
+    => vec![],
+    "," <bndr:Binder> <mut bndrs:CommaBinder0Rev> => {
+        bndrs.push(bndr);
+        bndrs
+    }
+};
+
+Binders1: Vec<String> = {
+    <bndr:Binder> <mut bndrs:Binders0Rev> => {
+        bndrs.push(bndr);
+        bndrs.reverse();
+        bndrs
+    }
+};
+
+Binders0Rev: Vec<String> = {
+    => vec![],
+    <bndr:"id"> <mut bndrs:Binders0Rev> => {
+        bndrs.push(bndr);
+        bndrs
+    },
+    "_" <mut bndrs:Binders0Rev> => {
+        bndrs.push("_".to_owned());
+        bndrs
+    },
+};
+
+TupleExpr: ParsedExpr = {
+    CmpOpExpr,
+    <expr:CmpOpExpr> <mut exprs:CommaExpr1> => {
+        exprs.push(expr);
+        exprs.reverse();
+        ParsedExpr::Tuple(exprs)
+    },
+};
+
+CommaExpr1: Vec<ParsedExpr> = {
+    "," <expr:CmpOpExpr> <mut exprs:CommaExpr0> => {
+        exprs.push(expr);
+        exprs
+    },
+};
+
+CommaExpr0: Vec<ParsedExpr> = {
+    => vec![],
+    "," <expr:CmpOpExpr> <mut exprs:CommaExpr0> => {
+        exprs.push(expr);
+        exprs
+    },
+};
+
+CmpOpExpr: ParsedExpr = {
+    BinOp1Expr,
+    <e1:CmpOpExpr> <op:CmpOp> <e2:BinOp1Expr> =>
+        ParsedExpr::Cmp(Box::new(e1), op, Box::new(e2)),
+};
+
+CmpOp: Cmp = {
+    "=" => Cmp::Equal,
+    "<>" => Cmp::NotEqual,
+    "<" => Cmp::LessThan,
+    "<=" => Cmp::LessThanOrEqual,
+    ">" => Cmp::GreaterThan,
+    ">=" => Cmp::GreaterThanOrEqual,
+};
+
+BinOp1Expr: ParsedExpr = {
+    BinOp2Expr,
+    <e1:BinOp1Expr> "-" <e2:BinOp2Expr> =>
+        ParsedExpr::IntBinOp(Box::new(e1), IntBinOp::Sub, Box::new(e2)),
+    <e1:BinOp1Expr> "+" <e2:BinOp2Expr> =>
+        ParsedExpr::IntBinOp(Box::new(e1), IntBinOp::Add, Box::new(e2)),
+    <e1:BinOp1Expr> "+." <e2:BinOp2Expr> =>
+        ParsedExpr::FloatBinOp(Box::new(e1), FloatBinOp::Add, Box::new(e2)),
+    <e1:BinOp1Expr> "-." <e2:BinOp2Expr> =>
+        ParsedExpr::FloatBinOp(Box::new(e1), FloatBinOp::Sub, Box::new(e2)),
+};
+
+BinOp2Expr: ParsedExpr = {
+    UnOpExpr,
+    <e1:BinOp2Expr> "*." <e2:UnOpExpr> =>
+        ParsedExpr::FloatBinOp(Box::new(e1), FloatBinOp::Mul, Box::new(e2)),
+    <e1:BinOp2Expr> "/." <e2:UnOpExpr> =>
+        ParsedExpr::FloatBinOp(Box::new(e1), FloatBinOp::Div, Box::new(e2)),
+};
+
+UnOpExpr: ParsedExpr = {
+    AppExpr,
+    "-" <expr:AppExpr> =>
+        match expr {
+            ParsedExpr::Float(f) =>
+                ParsedExpr::FNeg(Box::new(ParsedExpr::Float(f))),
+            other =>
+                ParsedExpr::Neg(Box::new(other)),
+        },
+    "-." <expr:AppExpr> =>
+        ParsedExpr::FNeg(Box::new(expr)),
+    "not" <expr:AppExpr> =>
+        ParsedExpr::Not(Box::new(expr)),
+};
+
+AppExpr: ParsedExpr = {
+    GetExpr,
+    <fun:GetExpr> <args:GetExpr+> =>
+        ParsedExpr::App { fun: Box::new(fun), args },
+    "Array.create" <e1:GetExpr> <e2:GetExpr> =>
+        ParsedExpr::Array { len: Box::new(e1), elem: Box::new(e2) },
+};
+
+#[inline]
+GetExpr: ParsedExpr = {
+    SimpleExpr,
+    <expr:SimpleExpr> <indices:DotIndex+> => {
+        let mut result = expr;
+        for idx in indices {
+            result = ParsedExpr::Get(Box::new(result), Box::new(idx));
+        }
+        result
+    },
+};
+
+SimpleExpr: ParsedExpr = {
+    "(" ")" => ParsedExpr::Unit,
+    "(" <expr:StmtExpr> ")" => expr,
+    <b:"bool"> => ParsedExpr::Bool(b),
+    <i:"int"> => ParsedExpr::Int(i),
+    <f:"float"> => ParsedExpr::Float(f),
+    <var:"id"> => ParsedExpr::Var(var),
+};

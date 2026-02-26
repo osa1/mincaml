@@ -26,10 +26,7 @@ cranelift-object = "0.72"
 fxhash = "0.2.1"
 lexgen = "0.16.0"
 lexgen_util = "0.16.0"
-parsegen = "0.1"
+lalrpop-util = "0.22"
 
 [profile.release]
 lto = true
-
-[profile.dev.package.parsegen]
-opt-level = 3

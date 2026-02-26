@@ -9,7 +9,8 @@ mod interner;
 mod lexer;
 mod locals;
 mod lower;
-mod parser;
+#[allow(unused_imports, unused_parens, clippy::all)]
+mod parser_lalrpop;
 mod perf;
 mod type_check;
 mod utils;
@@ -79,7 +80,11 @@ fn prepare_expr(
     // println!("{:#?}", tokens);
 
     let expr = match record_pass_stats(pass_stats, "parse", || {
-        parser::Expr::parse(tokens.into_iter().map(Ok::<_, ()>))
+        let token_iter = tokens
+            .into_iter()
+            .enumerate()
+            .map(|(i, tok)| Ok((i, tok, i + 1)));
+        parser_lalrpop::ExprParser::new().parse(token_iter)
     }) {
         Err(err) => {
             println!("Parser error: {:#?}", err);
