@@ -5,7 +5,9 @@ use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Linkage;
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
-use inkwell::values::{BasicValueEnum, FunctionValue, GlobalValue, PointerValue};
+use inkwell::values::{
+    BasicMetadataValueEnum, BasicValueEnum, FunctionValue, GlobalValue, PointerValue, ValueKind,
+};
 
 use fxhash::{FxHashMap, FxHashSet};
 
@@ -369,7 +371,43 @@ fn codegen_expr<'a>(
             )
         }
 
-        lower::Expr::App(var_id, var_ids, rep_type) => todo!(),
+        lower::Expr::App(fun, args, ret_type) => {
+            let ret_type: BasicTypeEnum = match ret_type {
+                RepType::Word => context.i64_type().into(),
+                RepType::Float => context.f64_type().into(),
+            };
+
+            let param_types: Vec<BasicMetadataTypeEnum> = args
+                .iter()
+                .map(|arg| match ctx.var_rep_type(*arg) {
+                    RepType::Word => context.i64_type().into(),
+                    RepType::Float => context.f64_type().into(),
+                })
+                .collect();
+
+            let fun_type = ret_type.fn_type(&param_types, false);
+
+            let fun_ptr = use_var(ctx, context, *fun, import_env, fun_env, local_env, builder)
+                .into_pointer_value();
+
+            let arg_vals: Vec<BasicMetadataValueEnum> = args
+                .iter()
+                .map(|arg| {
+                    use_var(ctx, context, *arg, import_env, fun_env, local_env, builder).into()
+                })
+                .collect();
+
+            let call = builder
+                .build_indirect_call(fun_type, fun_ptr, &arg_vals, "call")
+                .unwrap();
+
+            let ret_val = match call.try_as_basic_value() {
+                ValueKind::Basic(v) => v,
+                _ => panic!("Expected basic value from call"),
+            };
+
+            (block, Some(ret_val))
+        }
 
         lower::Expr::Tuple { len } => todo!(),
 

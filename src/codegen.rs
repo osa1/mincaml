@@ -505,7 +505,9 @@ fn codegen_expr(
                 .iter()
                 .map(|arg| env.use_var(ctx, module, builder, *arg))
                 .collect();
+
             let call = builder.ins().call_indirect(fun_sig_ref, callee, &arg_vals);
+
             (block, Some(builder.inst_results(call)[0]))
         }
 
