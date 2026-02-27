@@ -178,7 +178,9 @@ fn init_module_env(
     let mut main_fun_id: Option<FuncId> = None;
     let mut env = Env::new();
 
-    // Declare built-ins
+    // Declare built-ins.
+    //
+    // Built-ins are imported as closures, so they're data rather than functions.
     for (builtin_var_id, _ty_id) in ctx.builtins() {
         let var = ctx.get_var(*builtin_var_id);
         let name = var.symbol_name();
