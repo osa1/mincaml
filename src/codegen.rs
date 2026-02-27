@@ -322,7 +322,7 @@ fn codegen_fun(
             exit,
         } = block;
 
-        let mut cl_block = *label_to_block.get(idx).unwrap();
+        let cl_block = *label_to_block.get(idx).unwrap();
         builder.switch_to_block(cl_block);
 
         for stmt in stmts {
@@ -332,17 +332,12 @@ fn codegen_fun(
 
             match stmt {
                 lower::Stmt::Asgn(lower::Asgn { lhs, rhs }) => {
-                    let (block, val) =
-                        codegen_expr(ctx, module, cl_block, &mut builder, &mut env, malloc, rhs);
-                    cl_block = block;
-
+                    let val = codegen_expr(ctx, module, &mut builder, &mut env, malloc, rhs);
                     let lhs_cl_var = Variable::new(ctx.get_var(*lhs).get_uniq().0.get() as usize);
                     builder.def_var(lhs_cl_var, val.unwrap());
                 }
                 lower::Stmt::Expr(expr) => {
-                    let (block, _) =
-                        codegen_expr(ctx, module, cl_block, &mut builder, &mut env, malloc, expr);
-                    cl_block = block;
+                    codegen_expr(ctx, module, &mut builder, &mut env, malloc, expr);
                 }
             }
         }
@@ -428,19 +423,16 @@ fn codegen_fun(
 fn codegen_expr(
     ctx: &mut Ctx,
     module: &ObjectModule,
-    block: Block,
     builder: &mut FunctionBuilder,
     env: &mut Env,
     malloc: FuncRef,
     rhs: &lower::Expr,
-) -> (Block, Option<Value>) {
+) -> Option<Value> {
     match rhs {
-        lower::Expr::Atom(lower::Atom::Unit) => (block, Some(builder.ins().iconst(I64, 0))),
-        lower::Expr::Atom(lower::Atom::Int(i)) => (block, Some(builder.ins().iconst(I64, *i))),
-        lower::Expr::Atom(lower::Atom::Float(f)) => (block, Some(builder.ins().f64const(*f))),
-        lower::Expr::Atom(lower::Atom::Var(var)) => {
-            (block, Some(env.use_var(ctx, module, builder, *var)))
-        }
+        lower::Expr::Atom(lower::Atom::Unit) => Some(builder.ins().iconst(I64, 0)),
+        lower::Expr::Atom(lower::Atom::Int(i)) => Some(builder.ins().iconst(I64, *i)),
+        lower::Expr::Atom(lower::Atom::Float(f)) => Some(builder.ins().f64const(*f)),
+        lower::Expr::Atom(lower::Atom::Var(var)) => Some(env.use_var(ctx, module, builder, *var)),
 
         lower::Expr::IBinOp(BinOp { op, arg1, arg2 }) => {
             let arg1 = env.use_var(ctx, module, builder, *arg1);
@@ -451,7 +443,7 @@ fn codegen_expr(
                 // IntBinOp::Mul => builder.ins().imul(arg1, arg2),
                 // IntBinOp::Div => builder.ins().sdiv(arg1, arg2),
             };
-            (block, Some(val))
+            Some(val)
         }
 
         lower::Expr::FBinOp(BinOp { op, arg1, arg2 }) => {
@@ -463,17 +455,17 @@ fn codegen_expr(
                 FloatBinOp::Mul => builder.ins().fmul(arg1, arg2),
                 FloatBinOp::Div => builder.ins().fdiv(arg1, arg2),
             };
-            (block, Some(val))
+            Some(val)
         }
 
         lower::Expr::Neg(var) => {
             let arg = env.use_var(ctx, module, builder, *var);
-            (block, Some(builder.ins().ineg(arg)))
+            Some(builder.ins().ineg(arg))
         }
 
         lower::Expr::FNeg(var) => {
             let arg = env.use_var(ctx, module, builder, *var);
-            (block, Some(builder.ins().fneg(arg)))
+            Some(builder.ins().fneg(arg))
         }
 
         lower::Expr::App(fun, args, ret_type) => {
@@ -505,7 +497,7 @@ fn codegen_expr(
                 .map(|arg| env.use_var(ctx, module, builder, *arg))
                 .collect();
             let call = builder.ins().call_indirect(fun_sig_ref, callee, &arg_vals);
-            (block, Some(builder.inst_results(call)[0]))
+            Some(builder.inst_results(call)[0])
         }
 
         lower::Expr::Tuple { len } => {
@@ -514,7 +506,7 @@ fn codegen_expr(
                 .iconst(I64, *len as i64 * i64::from(WORD_SIZE));
             let malloc_call = builder.ins().call(malloc, &[malloc_arg]);
             let tuple = builder.inst_results(malloc_call)[0];
-            (block, Some(tuple))
+            Some(tuple)
         }
 
         lower::Expr::TuplePut(tuple, idx, val) => {
@@ -526,7 +518,7 @@ fn codegen_expr(
                 tuple,
                 (idx * usize::from(WORD_SIZE)) as i32,
             );
-            (block, None)
+            None
         }
 
         lower::Expr::TupleGet(tuple, idx, elem_type) => {
@@ -538,7 +530,7 @@ fn codegen_expr(
                 tuple,
                 (idx * usize::from(WORD_SIZE)) as i32,
             );
-            (block, Some(val))
+            Some(val)
         }
 
         lower::Expr::ArrayAlloc { len } => {
@@ -546,7 +538,7 @@ fn codegen_expr(
             let word_size = builder.ins().iconst(I64, i64::from(WORD_SIZE));
             let size_val = builder.ins().imul(len_val, word_size);
             let malloc_call = builder.ins().call(malloc, &[size_val]);
-            (block, Some(builder.inst_results(malloc_call)[0]))
+            Some(builder.inst_results(malloc_call)[0])
         }
 
         lower::Expr::ArrayGet(array, idx) => {
@@ -564,13 +556,11 @@ fn codegen_expr(
             let idx = env.use_var(ctx, module, builder, *idx);
             let word_size = builder.ins().iconst(I64, i64::from(WORD_SIZE));
             let offset = builder.ins().imul(idx, word_size);
-            (
-                block,
-                Some(
-                    builder
-                        .ins()
-                        .load_complex(elem_type, MemFlags::new(), &[array, offset], 0),
-                ),
+
+            Some(
+                builder
+                    .ins()
+                    .load_complex(elem_type, MemFlags::new(), &[array, offset], 0),
             )
         }
 
@@ -584,7 +574,7 @@ fn codegen_expr(
                 .ins()
                 .store_complex(MemFlags::new(), val, &[array, offset], 0);
             let ret = builder.ins().iconst(I64, 0);
-            (block, Some(ret))
+            Some(ret)
         }
     }
 }
