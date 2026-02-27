@@ -215,16 +215,8 @@ fn codegen_fun(
         for stmt in stmts {
             match stmt {
                 lower::Stmt::Asgn(lower::Asgn { lhs, rhs }) => {
-                    let (block, val) = codegen_expr(
-                        ctx,
-                        context,
-                        &builder,
-                        basic_block,
-                        import_env,
-                        fun_env,
-                        &local_env,
-                        malloc,
-                        rhs,
+                    let val = codegen_expr(
+                        ctx, context, &builder, import_env, fun_env, &local_env, malloc, rhs,
                     );
                 }
 
@@ -238,26 +230,20 @@ fn codegen_expr<'a>(
     ctx: &mut Ctx,
     context: &'a Context,
     builder: &Builder<'a>,
-    block: BasicBlock<'a>,
     import_env: &FxHashMap<VarId, GlobalValue<'a>>,
     fun_env: &FxHashMap<VarId, FunctionValue<'a>>,
     local_env: &FxHashMap<VarId, PointerValue<'a>>,
     malloc: FunctionValue<'a>,
     expr: &lower::Expr,
-) -> (BasicBlock<'a>, Option<BasicValueEnum<'a>>) {
+) -> Option<BasicValueEnum<'a>> {
     match expr {
-        lower::Expr::Atom(lower::Atom::Unit) => {
-            (block, Some(context.i64_type().const_int(0, false).into()))
+        lower::Expr::Atom(lower::Atom::Unit) => Some(context.i64_type().const_int(0, false).into()),
+
+        lower::Expr::Atom(lower::Atom::Int(i)) => {
+            Some(context.i64_type().const_int(*i as u64, false).into())
         }
 
-        lower::Expr::Atom(lower::Atom::Int(i)) => (
-            block,
-            Some(context.i64_type().const_int(*i as u64, false).into()),
-        ),
-
-        lower::Expr::Atom(lower::Atom::Float(f)) => {
-            (block, Some(context.f64_type().const_float(*f).into()))
-        }
+        lower::Expr::Atom(lower::Atom::Float(f)) => Some(context.f64_type().const_float(*f).into()),
 
         lower::Expr::Atom(lower::Atom::Var(var)) => {
             let var_alloca = local_env.get(var).unwrap();
@@ -270,30 +256,24 @@ fn codegen_expr<'a>(
             let val = builder
                 .build_load(var_type, *var_alloca, &*var_name)
                 .unwrap();
-            (block, Some(val))
+            Some(val)
         }
 
         lower::Expr::IBinOp(BinOp { op, arg1, arg2 }) => {
             let val1 = use_var(ctx, context, *arg1, import_env, fun_env, local_env, builder);
             let val2 = use_var(ctx, context, *arg2, import_env, fun_env, local_env, builder);
             match op {
-                IntBinOp::Add => (
-                    block,
-                    Some(
-                        builder
-                            .build_int_add(val1.into_int_value(), val2.into_int_value(), "sum")
-                            .unwrap()
-                            .into(),
-                    ),
+                IntBinOp::Add => Some(
+                    builder
+                        .build_int_add(val1.into_int_value(), val2.into_int_value(), "sum")
+                        .unwrap()
+                        .into(),
                 ),
-                IntBinOp::Sub => (
-                    block,
-                    Some(
-                        builder
-                            .build_int_sub(val1.into_int_value(), val2.into_int_value(), "sum")
-                            .unwrap()
-                            .into(),
-                    ),
+                IntBinOp::Sub => Some(
+                    builder
+                        .build_int_sub(val1.into_int_value(), val2.into_int_value(), "sum")
+                        .unwrap()
+                        .into(),
                 ),
             }
         }
@@ -302,84 +282,51 @@ fn codegen_expr<'a>(
             let val1 = use_var(ctx, context, *arg1, import_env, fun_env, local_env, builder);
             let val2 = use_var(ctx, context, *arg2, import_env, fun_env, local_env, builder);
             match op {
-                FloatBinOp::Add => (
-                    block,
-                    Some(
-                        builder
-                            .build_float_add(
-                                val1.into_float_value(),
-                                val2.into_float_value(),
-                                "add",
-                            )
-                            .unwrap()
-                            .into(),
-                    ),
+                FloatBinOp::Add => Some(
+                    builder
+                        .build_float_add(val1.into_float_value(), val2.into_float_value(), "add")
+                        .unwrap()
+                        .into(),
                 ),
-                FloatBinOp::Sub => (
-                    block,
-                    Some(
-                        builder
-                            .build_float_sub(
-                                val1.into_float_value(),
-                                val2.into_float_value(),
-                                "sub",
-                            )
-                            .unwrap()
-                            .into(),
-                    ),
+                FloatBinOp::Sub => Some(
+                    builder
+                        .build_float_sub(val1.into_float_value(), val2.into_float_value(), "sub")
+                        .unwrap()
+                        .into(),
                 ),
-                FloatBinOp::Mul => (
-                    block,
-                    Some(
-                        builder
-                            .build_float_mul(
-                                val1.into_float_value(),
-                                val2.into_float_value(),
-                                "mul",
-                            )
-                            .unwrap()
-                            .into(),
-                    ),
+                FloatBinOp::Mul => Some(
+                    builder
+                        .build_float_mul(val1.into_float_value(), val2.into_float_value(), "mul")
+                        .unwrap()
+                        .into(),
                 ),
-                FloatBinOp::Div => (
-                    block,
-                    Some(
-                        builder
-                            .build_float_mul(
-                                val1.into_float_value(),
-                                val2.into_float_value(),
-                                "mul",
-                            )
-                            .unwrap()
-                            .into(),
-                    ),
+                FloatBinOp::Div => Some(
+                    builder
+                        .build_float_mul(val1.into_float_value(), val2.into_float_value(), "mul")
+                        .unwrap()
+                        .into(),
                 ),
             }
         }
 
         lower::Expr::Neg(var) => {
             let val = use_var(ctx, context, *var, import_env, fun_env, local_env, builder);
-            (
-                block,
-                Some(
-                    builder
-                        .build_int_neg(val.into_int_value(), "neg")
-                        .unwrap()
-                        .into(),
-                ),
+
+            Some(
+                builder
+                    .build_int_neg(val.into_int_value(), "neg")
+                    .unwrap()
+                    .into(),
             )
         }
 
         lower::Expr::FNeg(var) => {
             let val = use_var(ctx, context, *var, import_env, fun_env, local_env, builder);
-            (
-                block,
-                Some(
-                    builder
-                        .build_int_neg(val.into_int_value(), "neg")
-                        .unwrap()
-                        .into(),
-                ),
+            Some(
+                builder
+                    .build_int_neg(val.into_int_value(), "neg")
+                    .unwrap()
+                    .into(),
             )
         }
 
@@ -415,7 +362,7 @@ fn codegen_expr<'a>(
 
             let ret_val = call.try_as_basic_value().expect_basic("welp");
 
-            (block, Some(ret_val))
+            Some(ret_val)
         }
 
         lower::Expr::Tuple { len } => {
@@ -423,10 +370,7 @@ fn codegen_expr<'a>(
             let malloc_call = builder
                 .build_direct_call(malloc, &[malloc_arg.into()], "malloc")
                 .unwrap();
-            (
-                block,
-                Some(malloc_call.try_as_basic_value().expect_basic("welp")),
-            )
+            Some(malloc_call.try_as_basic_value().expect_basic("welp"))
         }
 
         lower::Expr::TupleGet(tuple, idx, elem_type) => {
@@ -450,7 +394,7 @@ fn codegen_expr<'a>(
             let val = builder
                 .build_load(elem_type, elem_ptr, "tuple.get")
                 .unwrap();
-            (block, Some(val))
+            Some(val)
         }
 
         lower::Expr::TuplePut(tuple, idx, val) => {
@@ -469,7 +413,7 @@ fn codegen_expr<'a>(
             };
             let val = use_var(ctx, context, *val, import_env, fun_env, local_env, builder);
             builder.build_store(elem_ptr, val).unwrap();
-            (block, None)
+            None
         }
 
         lower::Expr::ArrayAlloc { len } => {
@@ -483,7 +427,7 @@ fn codegen_expr<'a>(
                 .unwrap()
                 .try_as_basic_value()
                 .expect_basic("welp");
-            (block, Some(malloc_call))
+            Some(malloc_call)
         }
 
         lower::Expr::ArrayGet(array, idx) => {
@@ -517,11 +461,10 @@ fn codegen_expr<'a>(
             let ret = builder
                 .build_load(elem_type, elem_ptr, "array.get")
                 .unwrap();
-            (block, Some(ret))
+            Some(ret)
         }
 
         lower::Expr::ArrayPut(array, idx, val) => {
-            let var_type = ctx.var_type(*array);
             let array = use_var(
                 ctx, context, *array, import_env, fun_env, local_env, builder,
             );
@@ -538,7 +481,7 @@ fn codegen_expr<'a>(
             };
             let val = use_var(ctx, context, *val, import_env, fun_env, local_env, builder);
             builder.build_store(elem_ptr, val).unwrap();
-            (block, None)
+            None
         }
     }
 }
