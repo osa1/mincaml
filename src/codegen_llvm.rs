@@ -285,15 +285,15 @@ fn codegen_expr<'a>(
         lower::Expr::Atom(lower::Atom::Float(f)) => Some(context.f64_type().const_float(*f).into()),
 
         lower::Expr::Atom(lower::Atom::Var(var)) => {
-            let var_alloca = local_env.get(var).unwrap();
             let var_rep_type = ctx.var_rep_type(*var);
             let var_type: BasicTypeEnum = match var_rep_type {
                 RepType::Word => context.i64_type().into(),
                 RepType::Float => context.f64_type().into(),
             };
             let var_name = ctx.get_var(*var).name();
+            let var_alloca = use_var(ctx, context, *var, import_env, fun_env, local_env, builder);
             let val = builder
-                .build_load(var_type, *var_alloca, &*var_name)
+                .build_load(var_type, var_alloca.into_pointer_value(), &*var_name)
                 .unwrap();
             Some(val)
         }
@@ -341,7 +341,7 @@ fn codegen_expr<'a>(
                 ),
                 FloatBinOp::Div => Some(
                     builder
-                        .build_float_mul(val1.into_float_value(), val2.into_float_value(), "mul")
+                        .build_float_div(val1.into_float_value(), val2.into_float_value(), "div")
                         .unwrap()
                         .into(),
                 ),
@@ -363,7 +363,7 @@ fn codegen_expr<'a>(
             let val = use_var(ctx, context, *var, import_env, fun_env, local_env, builder);
             Some(
                 builder
-                    .build_int_neg(val.into_int_value(), "neg")
+                    .build_float_neg(val.into_float_value(), "neg")
                     .unwrap()
                     .into(),
             )
