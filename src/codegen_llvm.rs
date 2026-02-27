@@ -81,16 +81,10 @@ pub fn codegen(ctx: &mut Ctx, funs: &[lower::Fun], main_id: VarId, dump: bool) -
 
         let name_str = ctx.get_var(*name).name();
 
-        let is_main = *name == main_id;
-
         let fun_id = module.add_function(
             &*name_str,
             fun_type,
-            Some(if is_main {
-                inkwell::module::Linkage::External
-            } else {
-                inkwell::module::Linkage::Internal
-            }),
+            Some(inkwell::module::Linkage::Internal),
         );
 
         if *name == main_id {
