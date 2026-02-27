@@ -10,6 +10,7 @@ use inkwell::values::{BasicValueEnum, FunctionValue, GlobalValue, PointerValue};
 use fxhash::{FxHashMap, FxHashSet};
 
 use crate::cg_types::RepType;
+use crate::common::{BinOp, Cmp, FloatBinOp, IntBinOp};
 use crate::ctx::{Ctx, VarId};
 use crate::lower;
 
@@ -22,7 +23,7 @@ pub fn codegen(ctx: &mut Ctx, funs: &[lower::Fun], main_id: VarId, dump: bool) -
     // TODO: I'm not sure what the "name" argument is for?
     let module = context.create_module("hi");
 
-    let mut global_env: FxHashMap<VarId, GlobalValue> = Default::default();
+    let mut import_env: FxHashMap<VarId, GlobalValue> = Default::default();
     let mut fun_env: FxHashMap<VarId, FunctionValue> = Default::default();
 
     // Declare `malloc`.
@@ -49,7 +50,7 @@ pub fn codegen(ctx: &mut Ctx, funs: &[lower::Fun], main_id: VarId, dump: bool) -
         let var = ctx.get_var(*builtin_var_id);
         let name = var.symbol_name();
         let builtin_id = module.add_global(static_closure_type, None, &*name);
-        let old = global_env.insert(*builtin_var_id, builtin_id);
+        let old = import_env.insert(*builtin_var_id, builtin_id);
         assert!(old.is_none());
     }
 
@@ -98,7 +99,7 @@ pub fn codegen(ctx: &mut Ctx, funs: &[lower::Fun], main_id: VarId, dump: bool) -
 
     // Generate code for functions.
     for fun in funs {
-        codegen_fun(ctx, &context, fun, malloc_id, &fun_env, false);
+        codegen_fun(ctx, &context, fun, malloc_id, &import_env, &fun_env, false);
     }
 
     todo!();
@@ -109,6 +110,7 @@ fn codegen_fun(
     context: &Context,
     fun: &lower::Fun,
     malloc_id: FunctionValue,
+    import_env: &FxHashMap<VarId, GlobalValue>,
     fun_env: &FxHashMap<VarId, FunctionValue>,
     dump: bool,
 ) {
@@ -149,7 +151,7 @@ fn codegen_fun(
     let entry_block = *label_to_block.get(&lower::BlockIdx::new(0)).unwrap();
     builder.position_at_end(entry_block);
 
-    let mut locals: FxHashMap<VarId, PointerValue> = Default::default();
+    let mut local_env: FxHashMap<VarId, PointerValue> = Default::default();
 
     // Add arguments to env.
     for (arg_idx, arg) in args.iter().enumerate() {
@@ -159,7 +161,7 @@ fn codegen_fun(
             .build_alloca(arg_val.get_type(), &*arg_name)
             .unwrap();
         builder.build_store(arg_ptr, arg_val).unwrap();
-        let old = locals.insert(*arg, arg_ptr);
+        let old = local_env.insert(*arg, arg_ptr);
         assert!(old.is_none());
     }
 
@@ -178,7 +180,7 @@ fn codegen_fun(
                             RepType::Float => context.f64_type().into(),
                         };
                         let ptr = builder.build_alloca(ty, &*arg_name).unwrap();
-                        locals.insert(*lhs, ptr);
+                        local_env.insert(*lhs, ptr);
                     }
                 }
                 lower::Stmt::Expr(_) => {}
@@ -201,8 +203,16 @@ fn codegen_fun(
         for stmt in stmts {
             match stmt {
                 lower::Stmt::Asgn(lower::Asgn { lhs, rhs }) => {
-                    let (block, val) =
-                        codegen_expr(ctx, context, &builder, basic_block, &locals, rhs);
+                    let (block, val) = codegen_expr(
+                        ctx,
+                        context,
+                        &builder,
+                        basic_block,
+                        import_env,
+                        fun_env,
+                        &local_env,
+                        rhs,
+                    );
                 }
 
                 lower::Stmt::Expr(expr) => {}
@@ -216,7 +226,9 @@ fn codegen_expr<'a>(
     context: &'a Context,
     builder: &Builder<'a>,
     block: BasicBlock<'a>,
-    locals: &FxHashMap<VarId, PointerValue<'a>>,
+    import_env: &FxHashMap<VarId, GlobalValue<'a>>,
+    fun_env: &FxHashMap<VarId, FunctionValue<'a>>,
+    local_env: &FxHashMap<VarId, PointerValue<'a>>,
     expr: &lower::Expr,
 ) -> (BasicBlock<'a>, Option<BasicValueEnum<'a>>) {
     match expr {
@@ -234,7 +246,7 @@ fn codegen_expr<'a>(
         }
 
         lower::Expr::Atom(lower::Atom::Var(var)) => {
-            let var_alloca = locals.get(var).unwrap();
+            let var_alloca = local_env.get(var).unwrap();
             let var_rep_type = ctx.var_rep_type(*var);
             let var_type: BasicTypeEnum = match var_rep_type {
                 RepType::Word => context.i64_type().into(),
@@ -247,13 +259,115 @@ fn codegen_expr<'a>(
             (block, Some(val))
         }
 
-        lower::Expr::IBinOp(bin_op) => todo!(),
+        lower::Expr::IBinOp(BinOp { op, arg1, arg2 }) => {
+            let val1 = use_var(ctx, context, *arg1, import_env, fun_env, local_env, builder);
+            let val2 = use_var(ctx, context, *arg2, import_env, fun_env, local_env, builder);
+            match op {
+                IntBinOp::Add => (
+                    block,
+                    Some(
+                        builder
+                            .build_int_add(val1.into_int_value(), val2.into_int_value(), "sum")
+                            .unwrap()
+                            .into(),
+                    ),
+                ),
+                IntBinOp::Sub => (
+                    block,
+                    Some(
+                        builder
+                            .build_int_sub(val1.into_int_value(), val2.into_int_value(), "sum")
+                            .unwrap()
+                            .into(),
+                    ),
+                ),
+            }
+        }
 
-        lower::Expr::FBinOp(bin_op) => todo!(),
+        lower::Expr::FBinOp(BinOp { op, arg1, arg2 }) => {
+            let val1 = use_var(ctx, context, *arg1, import_env, fun_env, local_env, builder);
+            let val2 = use_var(ctx, context, *arg2, import_env, fun_env, local_env, builder);
+            match op {
+                FloatBinOp::Add => (
+                    block,
+                    Some(
+                        builder
+                            .build_float_add(
+                                val1.into_float_value(),
+                                val2.into_float_value(),
+                                "add",
+                            )
+                            .unwrap()
+                            .into(),
+                    ),
+                ),
+                FloatBinOp::Sub => (
+                    block,
+                    Some(
+                        builder
+                            .build_float_sub(
+                                val1.into_float_value(),
+                                val2.into_float_value(),
+                                "sub",
+                            )
+                            .unwrap()
+                            .into(),
+                    ),
+                ),
+                FloatBinOp::Mul => (
+                    block,
+                    Some(
+                        builder
+                            .build_float_mul(
+                                val1.into_float_value(),
+                                val2.into_float_value(),
+                                "mul",
+                            )
+                            .unwrap()
+                            .into(),
+                    ),
+                ),
+                FloatBinOp::Div => (
+                    block,
+                    Some(
+                        builder
+                            .build_float_mul(
+                                val1.into_float_value(),
+                                val2.into_float_value(),
+                                "mul",
+                            )
+                            .unwrap()
+                            .into(),
+                    ),
+                ),
+            }
+        }
 
-        lower::Expr::Neg(var_id) => todo!(),
+        lower::Expr::Neg(var) => {
+            let val = use_var(ctx, context, *var, import_env, fun_env, local_env, builder);
+            (
+                block,
+                Some(
+                    builder
+                        .build_int_neg(val.into_int_value(), "neg")
+                        .unwrap()
+                        .into(),
+                ),
+            )
+        }
 
-        lower::Expr::FNeg(var_id) => todo!(),
+        lower::Expr::FNeg(var) => {
+            let val = use_var(ctx, context, *var, import_env, fun_env, local_env, builder);
+            (
+                block,
+                Some(
+                    builder
+                        .build_int_neg(val.into_int_value(), "neg")
+                        .unwrap()
+                        .into(),
+                ),
+            )
+        }
 
         lower::Expr::App(var_id, var_ids, rep_type) => todo!(),
 
@@ -269,4 +383,44 @@ fn codegen_expr<'a>(
 
         lower::Expr::ArrayPut(var_id, var_id1, var_id2) => todo!(),
     }
+}
+
+// In the Cranelift backend we have an `Env` that maps `VarId`s to one of: imports, local functions,
+// local variables. I'm too lazy to do the same here but it's actually a good idea and we should do
+// it later.
+fn use_var<'a>(
+    ctx: &mut Ctx,
+    context: &'a Context,
+    var: VarId,
+
+    // Imported closures.
+    import_env: &FxHashMap<VarId, GlobalValue<'a>>,
+
+    // Functions in the compilation unit.
+    fun_env: &FxHashMap<VarId, FunctionValue<'a>>,
+
+    // Function locals.
+    local_env: &FxHashMap<VarId, PointerValue<'a>>,
+
+    builder: &Builder<'a>,
+) -> BasicValueEnum<'a> {
+    let var_name = ctx.get_var(var).name();
+    let var_rep_type = ctx.var_rep_type(var);
+    let var_type: BasicTypeEnum = match var_rep_type {
+        RepType::Word => context.i64_type().into(),
+        RepType::Float => context.f64_type().into(),
+    };
+    if let Some(ptr) = local_env.get(&var) {
+        return builder.build_load(var_type, *ptr, &*var_name).unwrap();
+    }
+
+    if let Some(fun) = fun_env.get(&var) {
+        return fun.as_global_value().as_pointer_value().into();
+    }
+
+    if let Some(import) = import_env.get(&var) {
+        return import.as_pointer_value().into();
+    }
+
+    panic!("Unbound variable");
 }
