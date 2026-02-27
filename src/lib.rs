@@ -3,6 +3,7 @@ mod ast;
 mod cg_types;
 mod closure_convert;
 mod codegen;
+mod codegen_llvm;
 mod common;
 mod ctx;
 mod interner;
