@@ -101,7 +101,16 @@ pub fn codegen(ctx: &mut Ctx, funs: &[lower::Fun], main_id: VarId, dump: bool) -
 
     // Generate code for functions.
     for fun in funs {
-        codegen_fun(ctx, &context, fun, malloc_id, &import_env, &fun_env, false);
+        codegen_fun(
+            ctx,
+            &context,
+            fun,
+            malloc_id,
+            &import_env,
+            &fun_env,
+            malloc_id,
+            false,
+        );
     }
 
     todo!();
@@ -114,6 +123,7 @@ fn codegen_fun(
     malloc_id: FunctionValue,
     import_env: &FxHashMap<VarId, GlobalValue>,
     fun_env: &FxHashMap<VarId, FunctionValue>,
+    malloc: FunctionValue,
     dump: bool,
 ) {
     let lower::Fun {
@@ -213,6 +223,7 @@ fn codegen_fun(
                         import_env,
                         fun_env,
                         &local_env,
+                        malloc,
                         rhs,
                     );
                 }
@@ -231,6 +242,7 @@ fn codegen_expr<'a>(
     import_env: &FxHashMap<VarId, GlobalValue<'a>>,
     fun_env: &FxHashMap<VarId, FunctionValue<'a>>,
     local_env: &FxHashMap<VarId, PointerValue<'a>>,
+    malloc: FunctionValue<'a>,
     expr: &lower::Expr,
 ) -> (BasicBlock<'a>, Option<BasicValueEnum<'a>>) {
     match expr {
@@ -401,25 +413,157 @@ fn codegen_expr<'a>(
                 .build_indirect_call(fun_type, fun_ptr, &arg_vals, "call")
                 .unwrap();
 
-            let ret_val = match call.try_as_basic_value() {
-                ValueKind::Basic(v) => v,
-                _ => panic!("Expected basic value from call"),
-            };
+            let ret_val = call.try_as_basic_value().expect_basic("welp");
 
             (block, Some(ret_val))
         }
 
-        lower::Expr::Tuple { len } => todo!(),
+        lower::Expr::Tuple { len } => {
+            let malloc_arg = context.i64_type().const_int((len * 8) as u64, false);
+            let malloc_call = builder
+                .build_direct_call(malloc, &[malloc_arg.into()], "malloc")
+                .unwrap();
+            (
+                block,
+                Some(malloc_call.try_as_basic_value().expect_basic("welp")),
+            )
+        }
 
-        lower::Expr::TupleGet(var_id, _, rep_type) => todo!(),
+        lower::Expr::TupleGet(tuple, idx, elem_type) => {
+            let elem_type: BasicTypeEnum = match elem_type {
+                RepType::Word => context.i64_type().into(),
+                RepType::Float => context.f64_type().into(),
+            };
+            let tuple = use_var(
+                ctx, context, *tuple, import_env, fun_env, local_env, builder,
+            );
+            let elem_ptr = unsafe {
+                builder
+                    .build_gep(
+                        context.i64_type(),
+                        tuple.into_pointer_value(),
+                        &[context.i64_type().const_int(*idx as u64, false)],
+                        "tuple.get idx",
+                    )
+                    .unwrap()
+            };
+            let val = builder
+                .build_load(elem_type, elem_ptr, "tuple.get")
+                .unwrap();
+            (block, Some(val))
+        }
 
-        lower::Expr::TuplePut(var_id, _, var_id1) => todo!(),
+        lower::Expr::TuplePut(tuple, idx, val) => {
+            let elem_type: BasicTypeEnum = match ctx.var_rep_type(*val) {
+                RepType::Word => context.i64_type().into(),
+                RepType::Float => context.f64_type().into(),
+            };
+            let tuple = use_var(
+                ctx, context, *tuple, import_env, fun_env, local_env, builder,
+            );
+            let elem_ptr = unsafe {
+                builder
+                    .build_gep(
+                        context.i64_type(),
+                        tuple.into_pointer_value(),
+                        &[context.i64_type().const_int(*idx as u64, false)],
+                        "tuple.set idx",
+                    )
+                    .unwrap()
+            };
+            let val = use_var(ctx, context, *val, import_env, fun_env, local_env, builder);
+            builder.build_store(elem_ptr, val).unwrap();
+            (block, None)
+        }
 
-        lower::Expr::ArrayAlloc { len } => todo!(),
+        lower::Expr::ArrayAlloc { len } => {
+            let len = use_var(ctx, context, *len, import_env, fun_env, local_env, builder);
+            let word_size = context.i64_type().const_int(8, false);
+            let size_val = builder
+                .build_int_mul(len.into_int_value(), word_size.into(), "size")
+                .unwrap();
+            let malloc_call = builder
+                .build_direct_call(malloc, &[size_val.into()], "array.new")
+                .unwrap()
+                .try_as_basic_value()
+                .expect_basic("welp");
+            (block, Some(malloc_call))
+        }
 
-        lower::Expr::ArrayGet(var_id, var_id1) => todo!(),
+        lower::Expr::ArrayGet(array, idx) => {
+            let var_type = ctx.var_type(*array);
+            let elem_type: BasicTypeEnum = match &*var_type {
+                crate::type_check::Type::Array(elem_type) => match RepType::from(&**elem_type) {
+                    RepType::Word => context.i64_type().into(),
+                    RepType::Float => context.f64_type().into(),
+                },
+                other => panic!(
+                    "Non-array {} in array location: {:?}",
+                    ctx.get_var(*array),
+                    other
+                ),
+            };
 
-        lower::Expr::ArrayPut(var_id, var_id1, var_id2) => todo!(),
+            let array = use_var(
+                ctx, context, *array, import_env, fun_env, local_env, builder,
+            );
+            let idx = use_var(ctx, context, *idx, import_env, fun_env, local_env, builder);
+            let word_size = context.i64_type().const_int(8, false);
+            let offset = builder
+                .build_int_mul(idx.into_int_value(), word_size.into(), "size")
+                .unwrap();
+            let elem_ptr = unsafe {
+                builder
+                    .build_gep(
+                        context.i64_type(),
+                        array.into_pointer_value(),
+                        &[offset],
+                        "array.get offset",
+                    )
+                    .unwrap()
+            };
+            let ret = builder
+                .build_load(elem_type, elem_ptr, "array.get")
+                .unwrap();
+            (block, Some(ret))
+        }
+
+        lower::Expr::ArrayPut(array, idx, val) => {
+            let var_type = ctx.var_type(*array);
+            let elem_type: BasicTypeEnum = match &*var_type {
+                crate::type_check::Type::Array(elem_type) => match RepType::from(&**elem_type) {
+                    RepType::Word => context.i64_type().into(),
+                    RepType::Float => context.f64_type().into(),
+                },
+                other => panic!(
+                    "Non-array {} in array location: {:?}",
+                    ctx.get_var(*array),
+                    other
+                ),
+            };
+
+            let array = use_var(
+                ctx, context, *array, import_env, fun_env, local_env, builder,
+            );
+            let idx = use_var(ctx, context, *idx, import_env, fun_env, local_env, builder);
+            let word_size = context.i64_type().const_int(8, false);
+            let offset = builder
+                .build_int_mul(idx.into_int_value(), word_size.into(), "size")
+                .unwrap();
+            let elem_ptr = unsafe {
+                builder
+                    .build_gep(
+                        context.i64_type(),
+                        array.into_pointer_value(),
+                        &[offset],
+                        "array.get offset",
+                    )
+                    .unwrap()
+            };
+            let val = use_var(ctx, context, *val, import_env, fun_env, local_env, builder);
+            builder.build_store(elem_ptr, val).unwrap();
+            (block, None)
+        }
     }
 }
 
