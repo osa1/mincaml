@@ -1,6 +1,7 @@
 use cranelift_codegen::entity::EntityRef;
 use inkwell::AddressSpace;
 use inkwell::basic_block::BasicBlock;
+use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Linkage;
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
@@ -183,5 +184,89 @@ fn codegen_fun(
                 lower::Stmt::Expr(_) => {}
             }
         }
+    }
+
+    // Generate code for blocks.
+    for block in blocks_sorted.iter() {
+        let lower::Block {
+            idx,
+            comment: _,
+            stmts,
+            exit,
+        } = block;
+
+        let basic_block = *label_to_block.get(idx).unwrap();
+        builder.position_at_end(basic_block);
+
+        for stmt in stmts {
+            match stmt {
+                lower::Stmt::Asgn(lower::Asgn { lhs, rhs }) => {
+                    let (block, val) =
+                        codegen_expr(ctx, context, &builder, basic_block, &locals, rhs);
+                }
+
+                lower::Stmt::Expr(expr) => {}
+            }
+        }
+    }
+}
+
+fn codegen_expr<'a>(
+    ctx: &mut Ctx,
+    context: &'a Context,
+    builder: &Builder<'a>,
+    block: BasicBlock<'a>,
+    locals: &FxHashMap<VarId, PointerValue<'a>>,
+    expr: &lower::Expr,
+) -> (BasicBlock<'a>, Option<BasicValueEnum<'a>>) {
+    match expr {
+        lower::Expr::Atom(lower::Atom::Unit) => {
+            (block, Some(context.i64_type().const_int(0, false).into()))
+        }
+
+        lower::Expr::Atom(lower::Atom::Int(i)) => (
+            block,
+            Some(context.i64_type().const_int(*i as u64, false).into()),
+        ),
+
+        lower::Expr::Atom(lower::Atom::Float(f)) => {
+            (block, Some(context.f64_type().const_float(*f).into()))
+        }
+
+        lower::Expr::Atom(lower::Atom::Var(var)) => {
+            let var_alloca = locals.get(var).unwrap();
+            let var_rep_type = ctx.var_rep_type(*var);
+            let var_type: BasicTypeEnum = match var_rep_type {
+                RepType::Word => context.i64_type().into(),
+                RepType::Float => context.f64_type().into(),
+            };
+            let var_name = ctx.get_var(*var).name();
+            let val = builder
+                .build_load(var_type, *var_alloca, &*var_name)
+                .unwrap();
+            (block, Some(val))
+        }
+
+        lower::Expr::IBinOp(bin_op) => todo!(),
+
+        lower::Expr::FBinOp(bin_op) => todo!(),
+
+        lower::Expr::Neg(var_id) => todo!(),
+
+        lower::Expr::FNeg(var_id) => todo!(),
+
+        lower::Expr::App(var_id, var_ids, rep_type) => todo!(),
+
+        lower::Expr::Tuple { len } => todo!(),
+
+        lower::Expr::TupleGet(var_id, _, rep_type) => todo!(),
+
+        lower::Expr::TuplePut(var_id, _, var_id1) => todo!(),
+
+        lower::Expr::ArrayAlloc { len } => todo!(),
+
+        lower::Expr::ArrayGet(var_id, var_id1) => todo!(),
+
+        lower::Expr::ArrayPut(var_id, var_id1, var_id2) => todo!(),
     }
 }
