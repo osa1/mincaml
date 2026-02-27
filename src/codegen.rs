@@ -7,6 +7,7 @@ use cranelift_codegen::ir::types::*;
 use cranelift_codegen::ir::{AbiParam, InstBuilder, Signature};
 use cranelift_codegen::isa::CallConv;
 use cranelift_codegen::settings;
+use cranelift_codegen::settings::Configurable;
 use cranelift_codegen::verifier::verify_function;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use cranelift_module::{DataId, FuncId, Linkage, Module, default_libcall_names};
@@ -23,7 +24,9 @@ use crate::type_check;
 pub fn codegen(ctx: &mut Ctx, funs: &[lower::Fun], main_id: VarId, dump: bool) -> Vec<u8> {
     // Module and FunctionBuilderContext are used for the whole compilation unit. Each function
     // gets its own FunctionBuilder.
-    let codegen_flags: settings::Flags = settings::Flags::new(settings::builder());
+    let mut settings_builder = settings::builder();
+    settings_builder.enable("is_pic").unwrap();
+    let codegen_flags: settings::Flags = settings::Flags::new(settings_builder);
     let mut module: ObjectModule = ObjectModule::new(
         ObjectBuilder::new(
             // How does this know I'm building for x86_64 Linux?
