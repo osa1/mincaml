@@ -454,10 +454,6 @@ fn codegen_expr<'a>(
         }
 
         lower::Expr::TuplePut(tuple, idx, val) => {
-            let elem_type: BasicTypeEnum = match ctx.var_rep_type(*val) {
-                RepType::Word => context.i64_type().into(),
-                RepType::Float => context.f64_type().into(),
-            };
             let tuple = use_var(
                 ctx, context, *tuple, import_env, fun_env, local_env, builder,
             );
@@ -508,16 +504,12 @@ fn codegen_expr<'a>(
                 ctx, context, *array, import_env, fun_env, local_env, builder,
             );
             let idx = use_var(ctx, context, *idx, import_env, fun_env, local_env, builder);
-            let word_size = context.i64_type().const_int(8, false);
-            let offset = builder
-                .build_int_mul(idx.into_int_value(), word_size.into(), "size")
-                .unwrap();
             let elem_ptr = unsafe {
                 builder
                     .build_gep(
                         context.i64_type(),
                         array.into_pointer_value(),
-                        &[offset],
+                        &[idx.into_int_value()],
                         "array.get offset",
                     )
                     .unwrap()
@@ -530,32 +522,16 @@ fn codegen_expr<'a>(
 
         lower::Expr::ArrayPut(array, idx, val) => {
             let var_type = ctx.var_type(*array);
-            let elem_type: BasicTypeEnum = match &*var_type {
-                crate::type_check::Type::Array(elem_type) => match RepType::from(&**elem_type) {
-                    RepType::Word => context.i64_type().into(),
-                    RepType::Float => context.f64_type().into(),
-                },
-                other => panic!(
-                    "Non-array {} in array location: {:?}",
-                    ctx.get_var(*array),
-                    other
-                ),
-            };
-
             let array = use_var(
                 ctx, context, *array, import_env, fun_env, local_env, builder,
             );
             let idx = use_var(ctx, context, *idx, import_env, fun_env, local_env, builder);
-            let word_size = context.i64_type().const_int(8, false);
-            let offset = builder
-                .build_int_mul(idx.into_int_value(), word_size.into(), "size")
-                .unwrap();
             let elem_ptr = unsafe {
                 builder
                     .build_gep(
                         context.i64_type(),
                         array.into_pointer_value(),
-                        &[offset],
+                        &[idx.into_int_value()],
                         "array.get offset",
                     )
                     .unwrap()
