@@ -1,11 +1,12 @@
+use cranelift_codegen::entity::EntityRef;
 use inkwell::AddressSpace;
 use inkwell::basic_block::BasicBlock;
 use inkwell::context::Context;
 use inkwell::module::Linkage;
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
-use inkwell::values::{BasicValueEnum, FunctionValue, GlobalValue};
+use inkwell::values::{BasicValueEnum, FunctionValue, GlobalValue, PointerValue};
 
-use fxhash::FxHashMap;
+use fxhash::{FxHashMap, FxHashSet};
 
 use crate::cg_types::RepType;
 use crate::ctx::{Ctx, VarId};
@@ -136,12 +137,51 @@ fn codegen_fun(
         label_to_block.insert(block.idx, basic_block);
     }
 
+    let builder = context.create_builder();
+
+    // Stack-allocate all arguments and locals. AFAIU this is different from Cranelift: in LLVM we
+    // don't have a non-SSA IR for front-ends, we directly generate SSA form. To avoid dealing with
+    // SSA-ification here we stack-allocate all arguments and locals, then run the `mem2reg` pass
+    // which moves those stack allocated values to locals/register and handles SSA-ification.
+    //
+    // Allocas must be in the entry block for `mem2reg` to promote them.
+    let entry_block = *label_to_block.get(&lower::BlockIdx::new(0)).unwrap();
+    builder.position_at_end(entry_block);
+
+    let mut locals: FxHashMap<VarId, PointerValue> = Default::default();
+
     // Add arguments to env.
-    let mut locals: FxHashMap<VarId, BasicValueEnum> = Default::default();
     for (arg_idx, arg) in args.iter().enumerate() {
-        let arg_type: BasicValueEnum = fun_val.get_nth_param(arg_idx as u32).unwrap();
-        locals.insert(*arg, arg_type);
+        let arg_name = ctx.get_var(*arg).name();
+        let arg_val: BasicValueEnum = fun_val.get_nth_param(arg_idx as u32).unwrap();
+        let arg_ptr: PointerValue = builder
+            .build_alloca(arg_val.get_type(), &*arg_name)
+            .unwrap();
+        builder.build_store(arg_ptr, arg_val).unwrap();
+        let old = locals.insert(*arg, arg_ptr);
+        assert!(old.is_none());
     }
 
-    let builder = context.create_builder();
+    // Add locals to env.
+    let mut declared: FxHashSet<VarId> = Default::default();
+    for lower::Block { stmts, .. } in blocks_sorted.iter() {
+        for stmt in stmts {
+            match stmt {
+                lower::Stmt::Asgn(lower::Asgn { lhs, rhs: _ }) => {
+                    if !declared.contains(lhs) {
+                        let arg_name = ctx.get_var(*lhs).name();
+                        declared.insert(*lhs);
+                        let var_rep_type = ctx.var_rep_type(*lhs);
+                        let ty: BasicTypeEnum = match var_rep_type {
+                            RepType::Word => context.i64_type().into(),
+                            RepType::Float => context.f64_type().into(),
+                        };
+                        let ptr = builder.build_alloca(ty, &*arg_name).unwrap();
+                        locals.insert(*lhs, ptr);
+                    }
+                }
+                lower::Stmt::Expr(_) => {}
+            }
+        }
+    }
 }
