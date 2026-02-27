@@ -1,8 +1,9 @@
 use inkwell::AddressSpace;
+use inkwell::basic_block::BasicBlock;
 use inkwell::context::Context;
 use inkwell::module::Linkage;
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
-use inkwell::values::{FunctionValue, GlobalValue};
+use inkwell::values::{BasicValueEnum, FunctionValue, GlobalValue};
 
 use fxhash::FxHashMap;
 
@@ -27,11 +28,7 @@ pub fn codegen(ctx: &mut Ctx, funs: &[lower::Fun], main_id: VarId, dump: bool) -
     // It's a bit strange that function types are created via a method on the return type. I think
     // this is an `inkwell` thing rather than LLVM.
     let malloc_type = i64_type.fn_type(&[i64_type.into()], false);
-    let malloc_id = module.add_function(
-        "malloc",
-        malloc_type,
-        Some(inkwell::module::Linkage::External),
-    );
+    let malloc_id = module.add_function("malloc", malloc_type, Some(Linkage::External));
 
     // Declare built-ins.
     //
@@ -65,15 +62,15 @@ pub fn codegen(ctx: &mut Ctx, funs: &[lower::Fun], main_id: VarId, dump: bool) -
     } in funs
     {
         let ret: BasicTypeEnum = match return_type {
-            crate::cg_types::RepType::Word => context.i64_type().into(),
-            crate::cg_types::RepType::Float => context.f64_type().into(),
+            RepType::Word => context.i64_type().into(),
+            RepType::Float => context.f64_type().into(),
         };
 
         let args: Vec<BasicMetadataTypeEnum> = args
             .iter()
             .map(|arg| match ctx.var_rep_type(*arg) {
-                crate::cg_types::RepType::Word => context.i64_type().into(),
-                crate::cg_types::RepType::Float => context.f64_type().into(),
+                RepType::Word => context.i64_type().into(),
+                RepType::Float => context.f64_type().into(),
             })
             .collect();
 
@@ -97,7 +94,54 @@ pub fn codegen(ctx: &mut Ctx, funs: &[lower::Fun], main_id: VarId, dump: bool) -
         assert!(old.is_none());
     }
 
+    // Generate code for functions.
+    for fun in funs {
+        codegen_fun(ctx, &context, fun, malloc_id, &fun_env, false);
+    }
+
     todo!();
 }
 
-fn codegen_fun() {}
+fn codegen_fun(
+    ctx: &mut Ctx,
+    context: &Context,
+    fun: &lower::Fun,
+    malloc_id: FunctionValue,
+    fun_env: &FxHashMap<VarId, FunctionValue>,
+    dump: bool,
+) {
+    let lower::Fun {
+        name,
+        args,
+        blocks,
+        return_type,
+    } = fun;
+
+    let fun_val = *fun_env.get(name).unwrap();
+
+    let mut label_to_block: FxHashMap<lower::BlockIdx, BasicBlock> = Default::default();
+
+    // First block implicitly becomes the entry block in LLVM, so sort the based on index. (index 0
+    // is the entry block)
+    // TODO: We also don't seem to explicitly set the entry block in Cranelift?
+    let mut blocks_sorted: Vec<&lower::Block> = blocks
+        .values()
+        .filter_map(lower::BlockData::get_block)
+        .collect();
+
+    blocks_sorted.sort_by_key(|b| b.idx);
+
+    for (block_idx, block) in blocks_sorted.iter().enumerate() {
+        let basic_block = context.append_basic_block(fun_val, &format!("b{block_idx}"));
+        label_to_block.insert(block.idx, basic_block);
+    }
+
+    // Add arguments to env.
+    let mut locals: FxHashMap<VarId, BasicValueEnum> = Default::default();
+    for (arg_idx, arg) in args.iter().enumerate() {
+        let arg_type: BasicValueEnum = fun_val.get_nth_param(arg_idx as u32).unwrap();
+        locals.insert(*arg, arg_type);
+    }
+
+    let builder = context.create_builder();
+}
