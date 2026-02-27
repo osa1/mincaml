@@ -1,13 +1,13 @@
 use cranelift_codegen::entity::EntityRef;
-use inkwell::AddressSpace;
 use inkwell::basic_block::BasicBlock;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Linkage;
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
 use inkwell::values::{
-    BasicMetadataValueEnum, BasicValueEnum, FunctionValue, GlobalValue, PointerValue, ValueKind,
+    BasicMetadataValueEnum, BasicValueEnum, FunctionValue, GlobalValue, PointerValue,
 };
+use inkwell::{AddressSpace, IntPredicate};
 
 use fxhash::{FxHashMap, FxHashSet};
 
@@ -16,6 +16,7 @@ use crate::common::{BinOp, Cmp, FloatBinOp, IntBinOp};
 use crate::ctx::{Ctx, VarId};
 use crate::lower;
 
+#[allow(unused)]
 pub fn codegen(ctx: &mut Ctx, funs: &[lower::Fun], main_id: VarId, dump: bool) -> Vec<u8> {
     // `Context` is a container for all LLVM entities, including modules (compilation units).
     let context = Context::create();
@@ -101,16 +102,7 @@ pub fn codegen(ctx: &mut Ctx, funs: &[lower::Fun], main_id: VarId, dump: bool) -
 
     // Generate code for functions.
     for fun in funs {
-        codegen_fun(
-            ctx,
-            &context,
-            fun,
-            malloc_id,
-            &import_env,
-            &fun_env,
-            malloc_id,
-            false,
-        );
+        codegen_fun(ctx, &context, fun, &import_env, &fun_env, malloc_id, false);
     }
 
     todo!();
@@ -120,7 +112,6 @@ fn codegen_fun(
     ctx: &mut Ctx,
     context: &Context,
     fun: &lower::Fun,
-    malloc_id: FunctionValue,
     import_env: &FxHashMap<VarId, GlobalValue>,
     fun_env: &FxHashMap<VarId, FunctionValue>,
     malloc: FunctionValue,
@@ -217,10 +208,58 @@ fn codegen_fun(
                 lower::Stmt::Asgn(lower::Asgn { lhs, rhs }) => {
                     let val = codegen_expr(
                         ctx, context, &builder, import_env, fun_env, &local_env, malloc, rhs,
-                    );
+                    )
+                    .unwrap();
+                    let lhs_alloca = local_env.get(lhs).unwrap();
+                    builder.build_store(*lhs_alloca, val).unwrap();
                 }
 
-                lower::Stmt::Expr(expr) => {}
+                lower::Stmt::Expr(expr) => {
+                    codegen_expr(
+                        ctx, context, &builder, import_env, fun_env, &local_env, malloc, expr,
+                    );
+                }
+            }
+        }
+
+        match exit {
+            lower::Exit::Return(var) => {
+                let ret = use_var(
+                    ctx, context, *var, import_env, fun_env, &local_env, &builder,
+                );
+                builder.build_return(Some(&ret)).unwrap();
+            }
+
+            lower::Exit::Branch {
+                v1,
+                v2,
+                cond,
+                then_block,
+                else_block,
+            } => {
+                let pred = match cond {
+                    Cmp::Equal => IntPredicate::EQ,
+                    Cmp::NotEqual => IntPredicate::NE,
+                    Cmp::LessThan => IntPredicate::SLT,
+                    Cmp::LessThanOrEqual => IntPredicate::SLE,
+                    Cmp::GreaterThan => IntPredicate::SGT,
+                    Cmp::GreaterThanOrEqual => IntPredicate::SGE,
+                };
+                let v1 = use_var(ctx, context, *v1, import_env, fun_env, &local_env, &builder);
+                let v2 = use_var(ctx, context, *v2, import_env, fun_env, &local_env, &builder);
+                let cmp = builder
+                    .build_int_compare(pred, v1.into_int_value(), v2.into_int_value(), "exit")
+                    .unwrap();
+                let then_ll = *label_to_block.get(then_block).unwrap();
+                let else_ll = *label_to_block.get(else_block).unwrap();
+                builder
+                    .build_conditional_branch(cmp, then_ll, else_ll)
+                    .unwrap();
+            }
+
+            lower::Exit::Jump(block_idx) => {
+                let ll_block = *label_to_block.get(block_idx).unwrap();
+                builder.build_unconditional_branch(ll_block).unwrap();
             }
         }
     }
