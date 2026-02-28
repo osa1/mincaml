@@ -2,7 +2,7 @@ mod anormal;
 mod ast;
 mod cg_types;
 mod closure_convert;
-mod codegen;
+mod codegen_cranelift;
 mod codegen_llvm;
 mod common;
 mod ctx;
@@ -19,7 +19,6 @@ mod var;
 
 use anormal::anormal;
 use closure_convert::closure_convert;
-use codegen::codegen;
 use lexer::{Token, tokenize};
 use lower::lower_fun;
 use type_check::type_check_pgm;
@@ -117,7 +116,7 @@ fn compile_expr(
     }
 
     let object_code = record_pass_stats(&mut pass_stats, "codegen", || match backend {
-        Backend::Cranelift => codegen(&mut ctx, &funs, main, dump_cg),
+        Backend::Cranelift => codegen_cranelift::codegen(&mut ctx, &funs, main, dump_cg),
         Backend::LLVM => codegen_llvm::codegen(&mut ctx, &funs, main, dump_cg),
     });
 
