@@ -1,4 +1,3 @@
-use cranelift_codegen::binemit::{NullStackMapSink, NullTrapSink};
 use cranelift_codegen::entity::EntityRef;
 use cranelift_codegen::ir::MemFlags;
 use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
@@ -415,14 +414,7 @@ fn codegen_fun(
         println!("{}", errors);
     }
 
-    module
-        .define_function(
-            func_id,
-            &mut context,
-            &mut NullTrapSink {},
-            &mut NullStackMapSink {},
-        )
-        .unwrap();
+    module.define_function(func_id, &mut context).unwrap();
     module.clear_context(&mut context);
 }
 
@@ -621,14 +613,7 @@ fn make_main(
         println!("{}", errors);
     }
 
-    module
-        .define_function(
-            main_func_id,
-            &mut context,
-            &mut NullTrapSink {},
-            &mut NullStackMapSink {},
-        )
-        .unwrap();
+    module.define_function(main_func_id, &mut context).unwrap();
     module.clear_context(&mut context);
 }
 
