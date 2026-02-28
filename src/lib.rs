@@ -65,8 +65,8 @@ pub fn compile_file(opts: CompileOptions) -> i32 {
         &contents,
         opts.backend,
         opts.dump_cc,
-        opts.dump_cg,
         opts.dump_lower,
+        opts.dump_cg,
         opts.show_pass_stats,
     ) {
         None => 1,

@@ -9,7 +9,7 @@ use inkwell::targets::{
 };
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
 use inkwell::values::{
-    BasicMetadataValueEnum, BasicValueEnum, FunctionValue, GlobalValue, PointerValue,
+    AnyValue, BasicMetadataValueEnum, BasicValueEnum, FunctionValue, GlobalValue, PointerValue,
 };
 use inkwell::{AddressSpace, FloatPredicate, IntPredicate};
 
@@ -20,7 +20,6 @@ use crate::common::{BinOp, Cmp, FloatBinOp, IntBinOp};
 use crate::ctx::{Ctx, VarId};
 use crate::lower;
 
-#[allow(unused)]
 pub fn codegen(ctx: &mut Ctx, funs: &[lower::Fun], main_id: VarId, dump: bool) -> Vec<u8> {
     // `Context` is a container for all LLVM entities, including modules (compilation units).
     let context = Context::create();
@@ -106,7 +105,7 @@ pub fn codegen(ctx: &mut Ctx, funs: &[lower::Fun], main_id: VarId, dump: bool) -
 
     // Generate code for functions.
     for fun in funs {
-        codegen_fun(ctx, &context, fun, &import_env, &fun_env, malloc_id, false);
+        codegen_fun(ctx, &context, fun, &import_env, &fun_env, malloc_id, dump);
     }
 
     make_main(&context, &module, main_fun_id.unwrap());
@@ -316,6 +315,10 @@ fn codegen_fun(
                 builder.build_unconditional_branch(ll_block).unwrap();
             }
         }
+    }
+
+    if dump {
+        println!("{}", fun_val.print_to_string().to_string());
     }
 }
 
