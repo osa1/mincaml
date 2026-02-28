@@ -2,7 +2,7 @@ use std::process::exit;
 
 use clap::{Arg, Command};
 
-use libmc::CompileOptions;
+use libmc::{Backend, CompileOptions};
 
 fn main() {
     let matches = Command::new("mc")
@@ -43,11 +43,23 @@ fn main() {
                 .action(clap::ArgAction::SetTrue)
                 .help("Report runtime and allocations of passes"),
         )
+        .arg(
+            Arg::new("backend")
+                .long("backend")
+                .value_name("BACKEND")
+                .default_value("cranelift")
+                .value_parser(["cranelift", "llvm"])
+                .help("Code generation backend"),
+        )
         .get_matches();
 
     let opts = CompileOptions {
         path: matches.get_one::<String>("file").unwrap().clone(),
         out_dir: matches.get_one::<String>("out-dir").cloned(),
+        backend: match matches.get_one::<String>("backend").unwrap().as_str() {
+            "llvm" => Backend::LLVM,
+            _ => Backend::Cranelift,
+        },
         dump_cc: matches.get_flag("dump-cc"),
         dump_lower: matches.get_flag("dump-lower"),
         dump_cg: matches.get_flag("dump-cg"),

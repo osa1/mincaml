@@ -39,6 +39,8 @@ pub struct CompileOptions {
     /// directory.
     pub out_dir: Option<String>,
 
+    pub backend: Backend,
+
     /// Dump closure converted program.
     pub dump_cc: bool,
 
@@ -50,6 +52,12 @@ pub struct CompileOptions {
 
     /// Report runtime and allocations of passes.
     pub show_pass_stats: bool,
+}
+
+#[derive(Debug, Clone)]
+pub enum Backend {
+    Cranelift,
+    LLVM,
 }
 
 pub fn compile_file(opts: CompileOptions) -> i32 {

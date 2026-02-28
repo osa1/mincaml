@@ -39,6 +39,7 @@ fn run_mc(file_path_str: &str) -> Result<String, McError> {
     let opts = libmc::CompileOptions {
         path: file_path_str.to_string(),
         out_dir: Some("_test".to_string()),
+        backend: libmc::Backend::Cranelift,
         dump_cc: false,
         dump_lower: false,
         dump_cg: false,
