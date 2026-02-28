@@ -11,7 +11,7 @@ use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
 use inkwell::values::{
     BasicMetadataValueEnum, BasicValueEnum, FunctionValue, GlobalValue, PointerValue,
 };
-use inkwell::{AddressSpace, IntPredicate};
+use inkwell::{AddressSpace, FloatPredicate, IntPredicate};
 
 use fxhash::{FxHashMap, FxHashSet};
 
@@ -263,21 +263,49 @@ fn codegen_fun(
                 then_block,
                 else_block,
             } => {
-                let pred = match cond {
-                    Cmp::Equal => IntPredicate::EQ,
-                    Cmp::NotEqual => IntPredicate::NE,
-                    Cmp::LessThan => IntPredicate::SLT,
-                    Cmp::LessThanOrEqual => IntPredicate::SLE,
-                    Cmp::GreaterThan => IntPredicate::SGT,
-                    Cmp::GreaterThanOrEqual => IntPredicate::SGE,
-                };
+                let comp_type = ctx.var_rep_type(*v1);
                 let v1 = use_var(ctx, context, *v1, import_env, fun_env, &local_env, &builder);
                 let v2 = use_var(ctx, context, *v2, import_env, fun_env, &local_env, &builder);
-                let cmp = builder
-                    .build_int_compare(pred, v1.into_int_value(), v2.into_int_value(), "exit")
-                    .unwrap();
                 let then_ll = *label_to_block.get(then_block).unwrap();
                 let else_ll = *label_to_block.get(else_block).unwrap();
+                let cmp = match comp_type {
+                    RepType::Word => {
+                        let pred = match cond {
+                            Cmp::Equal => IntPredicate::EQ,
+                            Cmp::NotEqual => IntPredicate::NE,
+                            Cmp::LessThan => IntPredicate::SLT,
+                            Cmp::LessThanOrEqual => IntPredicate::SLE,
+                            Cmp::GreaterThan => IntPredicate::SGT,
+                            Cmp::GreaterThanOrEqual => IntPredicate::SGE,
+                        };
+                        builder
+                            .build_int_compare(
+                                pred,
+                                v1.into_int_value(),
+                                v2.into_int_value(),
+                                "exit",
+                            )
+                            .unwrap()
+                    }
+                    RepType::Float => {
+                        let pred = match cond {
+                            Cmp::Equal => FloatPredicate::OEQ,
+                            Cmp::NotEqual => FloatPredicate::ONE,
+                            Cmp::LessThan => FloatPredicate::OLT,
+                            Cmp::LessThanOrEqual => FloatPredicate::OLE,
+                            Cmp::GreaterThan => FloatPredicate::OGT,
+                            Cmp::GreaterThanOrEqual => FloatPredicate::OGE,
+                        };
+                        builder
+                            .build_float_compare(
+                                pred,
+                                v1.into_float_value(),
+                                v2.into_float_value(),
+                                "exit",
+                            )
+                            .unwrap()
+                    }
+                };
                 builder
                     .build_conditional_branch(cmp, then_ll, else_ll)
                     .unwrap();
@@ -577,6 +605,7 @@ fn use_var<'a>(
         RepType::Float => context.f64_type().into(),
     };
     if let Some(ptr) = local_env.get(&var) {
+        // Reminder: locals are `alloca` addresses holding the values.
         return builder.build_load(var_type, *ptr, &*var_name).unwrap();
     }
 
