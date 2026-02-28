@@ -121,7 +121,7 @@ impl Env {
     fn use_var(
         &mut self,
         ctx: &Ctx,
-        module: &ObjectModule,
+        module: &mut ObjectModule,
         builder: &mut FunctionBuilder,
         var: VarId,
     ) -> Value {
@@ -367,7 +367,8 @@ fn codegen_fun(
                 match comp_type {
                     RepType::Word => {
                         let cond = word_cond(*cond);
-                        builder.ins().br_icmp(cond, v1, v2, then_block, &[]);
+                        let cmp = builder.ins().icmp(cond, v1, v2);
+                        builder.ins().brnz(cmp, then_block, &[]);
                     }
                     RepType::Float => {
                         let cond = float_cond(*cond);
@@ -423,7 +424,7 @@ fn codegen_fun(
 
 fn codegen_expr(
     ctx: &mut Ctx,
-    module: &ObjectModule,
+    module: &mut ObjectModule,
     builder: &mut FunctionBuilder,
     env: &mut Env,
     malloc: FuncRef,
