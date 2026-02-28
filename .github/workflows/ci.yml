@@ -9,13 +9,6 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
-      - name: Get nightly toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-            toolchain: nightly
-            components: rustfmt
-            override: true
-
       - name: Build
         run: cargo build --verbose
 
