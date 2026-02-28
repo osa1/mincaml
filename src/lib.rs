@@ -53,7 +53,7 @@ pub struct CompileOptions {
     pub show_pass_stats: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum Backend {
     Cranelift,
     LLVM,

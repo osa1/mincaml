@@ -21,5 +21,8 @@ jobs:
       - name: Install reference compiler (ocaml)
         run: sudo apt-get install ocaml
 
-      - name: Run test programs
-        run: RUST_BACKTRACE=1 ./target/debug/test
+      - name: Test cranelift backend
+        run: RUST_BACKTRACE=1 ./target/debug/test --backend=cranelift
+
+      - name: Test LLVM backend
+        run: RUST_BACKTRACE=1 ./target/debug/test --backend=llvm
