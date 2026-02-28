@@ -70,11 +70,7 @@ pub fn compile_file(opts: CompileOptions) -> i32 {
         opts.show_pass_stats,
     ) {
         None => 1,
-        Some(object_code) => link(
-            &opts.path,
-            opts.out_dir.as_ref().map(|s| s.as_str()),
-            object_code,
-        ),
+        Some(object_code) => link(&opts.path, opts.out_dir.as_deref(), object_code),
     }
 }
 

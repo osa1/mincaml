@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments)]
+
 use cranelift_codegen::entity::EntityRef;
 use inkwell::OptimizationLevel;
 use inkwell::basic_block::BasicBlock;
@@ -55,7 +57,7 @@ pub fn codegen(ctx: &mut Ctx, funs: &[lower::Fun], main_id: VarId, dump: bool) -
     for (builtin_var_id, _ty_id) in ctx.builtins() {
         let var = ctx.get_var(*builtin_var_id);
         let name = var.symbol_name();
-        let builtin_id = module.add_global(static_closure_type, None, &*name);
+        let builtin_id = module.add_global(static_closure_type, None, &name);
         let old = import_env.insert(*builtin_var_id, builtin_id);
         assert!(old.is_none());
     }
@@ -88,7 +90,7 @@ pub fn codegen(ctx: &mut Ctx, funs: &[lower::Fun], main_id: VarId, dump: bool) -
         let name_str = ctx.get_var(*name).name();
 
         let fun_id = module.add_function(
-            &*name_str,
+            &name_str,
             fun_type,
             Some(inkwell::module::Linkage::Internal),
         );
@@ -146,7 +148,7 @@ fn codegen_fun(
         name,
         args,
         blocks,
-        return_type,
+        return_type: _,
     } = fun;
 
     let fun_val = *fun_env.get(name).unwrap();
@@ -185,9 +187,7 @@ fn codegen_fun(
     for (arg_idx, arg) in args.iter().enumerate() {
         let arg_name = ctx.get_var(*arg).name();
         let arg_val: BasicValueEnum = fun_val.get_nth_param(arg_idx as u32).unwrap();
-        let arg_ptr: PointerValue = builder
-            .build_alloca(arg_val.get_type(), &*arg_name)
-            .unwrap();
+        let arg_ptr: PointerValue = builder.build_alloca(arg_val.get_type(), &arg_name).unwrap();
         builder.build_store(arg_ptr, arg_val).unwrap();
         let old = local_env.insert(*arg, arg_ptr);
         assert!(old.is_none());
@@ -207,7 +207,7 @@ fn codegen_fun(
                             RepType::Word => context.i64_type().into(),
                             RepType::Float => context.f64_type().into(),
                         };
-                        let ptr = builder.build_alloca(ty, &*arg_name).unwrap();
+                        let ptr = builder.build_alloca(ty, &arg_name).unwrap();
                         local_env.insert(*lhs, ptr);
                     }
                 }
@@ -350,7 +350,7 @@ fn codegen_expr<'a>(
             let var_name = ctx.get_var(*var).name();
             let var_alloca = use_var(ctx, context, *var, import_env, fun_env, local_env, builder);
             let val = builder
-                .build_load(var_type, var_alloca.into_pointer_value(), &*var_name)
+                .build_load(var_type, var_alloca.into_pointer_value(), &var_name)
                 .unwrap();
             Some(val)
         }
@@ -516,7 +516,7 @@ fn codegen_expr<'a>(
             let len = use_var(ctx, context, *len, import_env, fun_env, local_env, builder);
             let word_size = context.i64_type().const_int(8, false);
             let size_val = builder
-                .build_int_mul(len.into_int_value(), word_size.into(), "size")
+                .build_int_mul(len.into_int_value(), word_size, "size")
                 .unwrap();
             let malloc_call = builder
                 .build_direct_call(malloc, &[size_val.into()], "array.new")
@@ -609,7 +609,7 @@ fn use_var<'a>(
     };
     if let Some(ptr) = local_env.get(&var) {
         // Reminder: locals are `alloca` addresses holding the values.
-        return builder.build_load(var_type, *ptr, &*var_name).unwrap();
+        return builder.build_load(var_type, *ptr, &var_name).unwrap();
     }
 
     if let Some(fun) = fun_env.get(&var) {
