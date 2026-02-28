@@ -2,7 +2,7 @@ use cranelift_codegen::entity::EntityRef;
 use inkwell::basic_block::BasicBlock;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
-use inkwell::module::Linkage;
+use inkwell::module::{Linkage, Module};
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
 use inkwell::values::{
     BasicMetadataValueEnum, BasicValueEnum, FunctionValue, GlobalValue, PointerValue,
@@ -104,6 +104,8 @@ pub fn codegen(ctx: &mut Ctx, funs: &[lower::Fun], main_id: VarId, dump: bool) -
     for fun in funs {
         codegen_fun(ctx, &context, fun, &import_env, &fun_env, malloc_id, false);
     }
+
+    make_main(&context, &module, main_fun_id.unwrap());
 
     todo!();
 }
@@ -563,4 +565,19 @@ fn use_var<'a>(
     }
 
     panic!("Unbound variable");
+}
+
+fn make_main<'a>(context: &'a Context, module: &Module<'a>, main: FunctionValue<'a>) {
+    let i32_type = context.i32_type();
+    let main_type = i32_type.fn_type(&[], false);
+    let main_fn = module.add_function("main", main_type, Some(Linkage::External));
+
+    let builder = context.create_builder();
+    let block = context.append_basic_block(main_fn, "entry");
+    builder.position_at_end(block);
+
+    builder.build_direct_call(main, &[], "").unwrap();
+    builder
+        .build_return(Some(&i32_type.const_int(0, false)))
+        .unwrap();
 }
