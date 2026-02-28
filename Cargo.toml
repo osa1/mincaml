@@ -18,12 +18,12 @@ path = "bin/test.rs"
 
 [dependencies]
 clap = { version = "4.5.60", default-features = false, features = ["std", "help", "usage", "error-context"] }
-cranelift-codegen = "0.72"
-cranelift-entity = "0.72"
-cranelift-frontend = "0.72"
-cranelift-module = "0.72"
-cranelift-native = "0.72"
-cranelift-object = "0.72"
+cranelift-codegen = "0.80"
+cranelift-entity = "0.80"
+cranelift-frontend = "0.80"
+cranelift-module = "0.80"
+cranelift-native = "0.80"
+cranelift-object = "0.80"
 elegance = "0.4.0"
 fxhash = "0.2.1"
 inkwell = { version = "0.8.0", features = ["llvm20-1"] }
