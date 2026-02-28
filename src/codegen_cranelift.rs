@@ -364,24 +364,18 @@ fn codegen_fun(
                 let then_block = *label_to_block.get(then_block).unwrap();
                 let else_block = *label_to_block.get(else_block).unwrap();
 
-                match comp_type {
+                let cmp = match comp_type {
                     RepType::Word => {
                         let cond = word_cond(*cond);
-                        let cmp = builder.ins().icmp(cond, v1, v2);
-                        builder.ins().brnz(cmp, then_block, &[]);
+                        builder.ins().icmp(cond, v1, v2)
                     }
                     RepType::Float => {
                         let cond = float_cond(*cond);
-                        let cmp = builder.ins().fcmp(cond, v1, v2);
-                        builder.ins().brnz(cmp, then_block, &[]);
-                        // NB: For some reason the code below doesn't work. Would be good to know
-                        // why.
-                        // let flags = builder.ins().ffcmp(v1, v2);
-                        // builder.ins().brff(cond, flags, then_block, &[]);
+                        builder.ins().fcmp(cond, v1, v2)
                     }
-                }
+                };
 
-                builder.ins().jump(else_block, &[]);
+                builder.ins().brif(cmp, then_block, &[], else_block, &[]);
             }
             lower::Exit::Jump(label) => {
                 let cl_block = *label_to_block.get(label).unwrap();
