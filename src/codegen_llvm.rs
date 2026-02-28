@@ -1,8 +1,12 @@
 use cranelift_codegen::entity::EntityRef;
+use inkwell::OptimizationLevel;
 use inkwell::basic_block::BasicBlock;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::{Linkage, Module};
+use inkwell::targets::{
+    CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine,
+};
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum};
 use inkwell::values::{
     BasicMetadataValueEnum, BasicValueEnum, FunctionValue, GlobalValue, PointerValue,
@@ -107,7 +111,27 @@ pub fn codegen(ctx: &mut Ctx, funs: &[lower::Fun], main_id: VarId, dump: bool) -
 
     make_main(&context, &module, main_fun_id.unwrap());
 
-    todo!();
+    // TODO: Not sure what this does...
+    Target::initialize_native(&InitializationConfig::default()).unwrap();
+
+    let triple = TargetMachine::get_default_triple();
+    let target = Target::from_triple(&triple).unwrap();
+    let machine = target
+        .create_target_machine(
+            &triple,
+            "generic", // cpu
+            "",        // features
+            OptimizationLevel::Default,
+            RelocMode::PIC,
+            CodeModel::Default,
+        )
+        .unwrap();
+
+    let buf = machine
+        .write_to_memory_buffer(&module, FileType::Object)
+        .unwrap();
+
+    buf.as_slice().to_vec()
 }
 
 fn codegen_fun(
