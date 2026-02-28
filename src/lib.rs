@@ -30,18 +30,43 @@ use std::path::Path;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-pub fn compile_file(
-    path: &str,
-    out_dir: Option<&str>,
-    dump_cc: bool,
-    dump_cg: bool,
-    dump_lower: bool,
-    show_pass_stats: bool,
-) -> i32 {
-    let contents = std::fs::read_to_string(path).unwrap();
-    match compile_expr(&contents, dump_cc, dump_cg, dump_lower, show_pass_stats) {
+#[derive(Debug, Clone)]
+pub struct CompileOptions {
+    /// Compiled program path.
+    pub path: String,
+
+    /// Directory where the compilation outputs will be generated. Defaults to the working
+    /// directory.
+    pub out_dir: Option<String>,
+
+    /// Dump closure converted program.
+    pub dump_cc: bool,
+
+    /// Dump lowered program.
+    pub dump_lower: bool,
+
+    /// Dump code generated program.
+    pub dump_cg: bool,
+
+    /// Report runtime and allocations of passes.
+    pub show_pass_stats: bool,
+}
+
+pub fn compile_file(opts: CompileOptions) -> i32 {
+    let contents = std::fs::read_to_string(&opts.path).unwrap();
+    match compile_expr(
+        &contents,
+        opts.dump_cc,
+        opts.dump_cg,
+        opts.dump_lower,
+        opts.show_pass_stats,
+    ) {
         None => 1,
-        Some(object_code) => link(path, out_dir, object_code),
+        Some(object_code) => link(
+            &opts.path,
+            opts.out_dir.as_ref().map(|s| s.as_str()),
+            object_code,
+        ),
     }
 }
 

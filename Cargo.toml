@@ -17,6 +17,7 @@ name = "test"
 path = "bin/test.rs"
 
 [dependencies]
+clap = { version = "4.5.60", default-features = false, features = ["std", "help", "usage", "error-context"] }
 cranelift-codegen = "0.72"
 cranelift-entity = "0.72"
 cranelift-frontend = "0.72"

@@ -36,7 +36,15 @@ fn run_mc(file_path_str: &str) -> Result<String, McError> {
     let file_stem = file_path.file_stem().unwrap();
     let file_stem_str = file_stem.to_str().unwrap();
 
-    let ret = libmc::compile_file(file_path_str, Some("_test"), false, false, false, false);
+    let opts = libmc::CompileOptions {
+        path: file_path_str.to_string(),
+        out_dir: Some("_test".to_string()),
+        dump_cc: false,
+        dump_lower: false,
+        dump_cg: false,
+        show_pass_stats: false,
+    };
+    let ret = libmc::compile_file(opts);
 
     if ret != 0 {
         return Err(McError::CompileError);
