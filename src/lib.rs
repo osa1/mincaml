@@ -2,7 +2,8 @@ mod anormal;
 mod ast;
 mod cg_types;
 mod closure_convert;
-mod codegen;
+mod codegen_cranelift;
+mod codegen_llvm;
 mod common;
 mod ctx;
 mod interner;
@@ -18,7 +19,6 @@ mod var;
 
 use anormal::anormal;
 use closure_convert::closure_convert;
-use codegen::codegen;
 use lexer::{Token, tokenize};
 use lower::lower_fun;
 use type_check::type_check_pgm;
@@ -29,18 +29,48 @@ use std::path::Path;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-pub fn compile_file(
-    path: &str,
-    out_dir: Option<&str>,
-    dump_cc: bool,
-    dump_cg: bool,
-    dump_lower: bool,
-    show_pass_stats: bool,
-) -> i32 {
-    let contents = std::fs::read_to_string(path).unwrap();
-    match compile_expr(&contents, dump_cc, dump_cg, dump_lower, show_pass_stats) {
+#[derive(Debug, Clone)]
+pub struct CompileOptions {
+    /// Compiled program path.
+    pub path: String,
+
+    /// Directory where the compilation outputs will be generated. Defaults to the working
+    /// directory.
+    pub out_dir: Option<String>,
+
+    pub backend: Backend,
+
+    /// Dump closure converted program.
+    pub dump_cc: bool,
+
+    /// Dump lowered program.
+    pub dump_lower: bool,
+
+    /// Dump code generated program.
+    pub dump_cg: bool,
+
+    /// Report runtime and allocations of passes.
+    pub show_pass_stats: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Backend {
+    Cranelift,
+    LLVM,
+}
+
+pub fn compile_file(opts: CompileOptions) -> i32 {
+    let contents = std::fs::read_to_string(&opts.path).unwrap();
+    match compile_expr(
+        &contents,
+        opts.backend,
+        opts.dump_cc,
+        opts.dump_lower,
+        opts.dump_cg,
+        opts.show_pass_stats,
+    ) {
         None => 1,
-        Some(object_code) => link(path, out_dir, object_code),
+        Some(object_code) => link(&opts.path, opts.out_dir.as_deref(), object_code),
     }
 }
 
@@ -48,6 +78,7 @@ type ObjectCode = Vec<u8>;
 
 fn compile_expr(
     expr_str: &str,
+    backend: Backend,
     dump_cc: bool,
     dump_lower: bool,
     dump_cg: bool,
@@ -80,8 +111,9 @@ fn compile_expr(
         println!("### Code generation:\n");
     }
 
-    let object_code = record_pass_stats(&mut pass_stats, "codegen", || {
-        codegen(&mut ctx, &funs, main, dump_cg)
+    let object_code = record_pass_stats(&mut pass_stats, "codegen", || match backend {
+        Backend::Cranelift => codegen_cranelift::codegen(&mut ctx, &funs, main, dump_cg),
+        Backend::LLVM => codegen_llvm::codegen(&mut ctx, &funs, main, dump_cg),
     });
 
     if show_pass_stats {

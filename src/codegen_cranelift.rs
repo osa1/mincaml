@@ -31,6 +31,7 @@ pub fn codegen(ctx: &mut Ctx, funs: &[lower::Fun], main_id: VarId, dump: bool) -
         ObjectBuilder::new(
             // How does this know I'm building for x86_64 Linux?
             cranelift_native::builder().unwrap().finish(codegen_flags),
+            // What is this name for?
             "mincaml",
             default_libcall_names(),
         )
@@ -496,7 +497,9 @@ fn codegen_expr(
                 .iter()
                 .map(|arg| env.use_var(ctx, module, builder, *arg))
                 .collect();
+
             let call = builder.ins().call_indirect(fun_sig_ref, callee, &arg_vals);
+
             Some(builder.inst_results(call)[0])
         }
 

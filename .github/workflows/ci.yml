@@ -3,11 +3,21 @@ name: CI
 on: [push, pull_request]
 
 jobs:
-  Linux_default:
-    name: 'Build and test'
+  test:
+    name: '${{ matrix.backend }} backend'
+
     runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [cranelift, llvm]
+
     steps:
       - uses: actions/checkout@v2
+
+      - name: Install LLVM
+        run: sudo apt-get install llvm-20 llvm-20-dev llvm-20-linker-tools libpolly-20-dev
 
       - name: Build
         run: cargo build --verbose
@@ -18,5 +28,5 @@ jobs:
       - name: Install reference compiler (ocaml)
         run: sudo apt-get install ocaml
 
-      - name: Run test programs
-        run: RUST_BACKTRACE=1 ./target/debug/test
+      - name: Test ${{ matrix.backend }} backend
+        run: RUST_BACKTRACE=1 ./target/debug/test --backend=${{ matrix.backend }}

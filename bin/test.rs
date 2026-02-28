@@ -1,9 +1,12 @@
-use std::env;
 use std::ffi::OsStr;
 use std::fs;
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, ExitStatus, Output, Stdio, exit};
+
+use clap::Arg;
+
+use libmc::Backend;
 
 fn run_ocaml(file_path: &str) -> String {
     let ret: Output = Command::new("ocaml")
@@ -31,12 +34,21 @@ enum McError {
     },
 }
 
-fn run_mc(file_path_str: &str) -> Result<String, McError> {
+fn run_mc(file_path_str: &str, backend: Backend) -> Result<String, McError> {
     let file_path = Path::new(file_path_str);
     let file_stem = file_path.file_stem().unwrap();
     let file_stem_str = file_stem.to_str().unwrap();
 
-    let ret = libmc::compile_file(file_path_str, Some("_test"), false, false, false, false);
+    let opts = libmc::CompileOptions {
+        path: file_path_str.to_string(),
+        out_dir: Some("_test".to_string()),
+        backend,
+        dump_cc: false,
+        dump_lower: false,
+        dump_cg: false,
+        show_pass_stats: false,
+    };
+    let ret = libmc::compile_file(opts);
 
     if ret != 0 {
         return Err(McError::CompileError);
@@ -72,10 +84,10 @@ enum TestResult {
     Fail(String),
 }
 
-fn run_test(path: &Path) -> TestResult {
+fn run_test(path: &Path, backend: Backend) -> TestResult {
     let path_str = path.to_str().unwrap();
     let ocaml_out = run_ocaml(path_str);
-    match run_mc(path_str) {
+    match run_mc(path_str, backend) {
         Ok(mc_out) => {
             if mc_out == ocaml_out {
                 TestResult::Pass
@@ -115,7 +127,7 @@ fn report(result: TestResult) -> bool {
 }
 
 // Run all .ml files in a directory as tests
-fn run_dir(dir: &Path) -> bool {
+fn run_dir(dir: &Path, backend: Backend) -> bool {
     let mut any_failed = false;
     for entry in fs::read_dir(dir).unwrap() {
         let entry = entry.unwrap();
@@ -124,9 +136,9 @@ fn run_dir(dir: &Path) -> bool {
             // println!("{:?}", path);
             print!("{} ... ", path.to_str().unwrap());
             let _ = ::std::io::stdout().lock().flush();
-            any_failed |= report(run_test(&path));
+            any_failed |= report(run_test(&path, backend));
         } else if entry.file_type().unwrap().is_dir() {
-            any_failed |= run_dir(&path);
+            any_failed |= run_dir(&path, backend);
         }
     }
     any_failed
@@ -141,25 +153,37 @@ fn create_dir(path: &str) {
 }
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
-    let fail = match &args[1..] {
-        [] => {
-            create_dir("_test");
-            run_dir(Path::new("programs"))
-        }
-        [target] => {
-            create_dir("_test");
-            let target_path = Path::new(target);
-            if target_path.is_file() {
-                report(run_test(target_path))
-            } else {
-                run_dir(target_path)
-            }
-        }
-        _ => {
-            println!("USAGE: test [target]");
-            true
-        }
+    let matches = clap::Command::new("test")
+        .about("MinCaml test runner")
+        .arg(
+            Arg::new("target")
+                .help("File or directory to test")
+                .default_value("programs"),
+        )
+        .arg(
+            Arg::new("backend")
+                .long("backend")
+                .value_name("BACKEND")
+                .default_value("cranelift")
+                .value_parser(["cranelift", "llvm"])
+                .help("Code generation backend"),
+        )
+        .get_matches();
+
+    let backend = match matches.get_one::<String>("backend").unwrap().as_str() {
+        "llvm" => Backend::LLVM,
+        _ => Backend::Cranelift,
+    };
+
+    create_dir("_test");
+
+    let target = matches.get_one::<String>("target").unwrap();
+    let target_path = Path::new(target);
+
+    let fail = if target_path.is_file() {
+        report(run_test(target_path, backend))
+    } else {
+        run_dir(target_path, backend)
     };
 
     if fail {
