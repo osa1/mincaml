@@ -23,7 +23,7 @@ pub fn lower_fun(ctx: &mut Ctx, fun: cc::Fun) -> Fun {
     } = fun;
 
     let block = ctx.create_block();
-    cc_block(&mut ctx, block, Sequel::Return, body);
+    lower_expr(&mut ctx, block, Sequel::Return, body);
 
     Fun {
         name,
@@ -170,8 +170,7 @@ impl<'ctx> LowerCtx<'ctx> {
     }
 }
 
-// Returns whether the added block was a fork (i.e. then or else branch of an if)
-fn cc_block(ctx: &mut LowerCtx, mut block: BlockBuilder, sequel: Sequel, expr: cc::Expr) {
+fn lower_expr(ctx: &mut LowerCtx, mut block: BlockBuilder, sequel: Sequel, expr: cc::Expr) {
     match expr {
         cc::Expr::Unit => ctx.finish_block(block, sequel, Atom::Unit),
 
@@ -218,8 +217,8 @@ fn cc_block(ctx: &mut LowerCtx, mut block: BlockBuilder, sequel: Sequel, expr: c
                     else_block: else_block.idx,
                 },
             });
-            cc_block(ctx, then_block, sequel.clone(), *e1);
-            cc_block(ctx, else_block, sequel, *e2);
+            lower_expr(ctx, then_block, sequel.clone(), *e1);
+            lower_expr(ctx, else_block, sequel, *e2);
         }
 
         cc::Expr::Var(var) => {
@@ -231,8 +230,8 @@ fn cc_block(ctx: &mut LowerCtx, mut block: BlockBuilder, sequel: Sequel, expr: c
             // generates and avoid creating a block for the continuation.
             let cont_block = ctx.create_block();
             let rhs_sequel = Sequel::Asgn(id, cont_block.idx);
-            cc_block(ctx, block, rhs_sequel, *rhs);
-            cc_block(ctx, cont_block, sequel, *body)
+            lower_expr(ctx, block, rhs_sequel, *rhs);
+            lower_expr(ctx, cont_block, sequel, *body)
         }
 
         cc::Expr::App(fun, args, ret_ty) => {
