@@ -560,11 +560,8 @@ fn codegen_expr(
             let word_size = builder.ins().iconst(I64, i64::from(WORD_SIZE));
             let offset = builder.ins().imul(idx, word_size);
 
-            Some(
-                builder
-                    .ins()
-                    .load_complex(elem_type, MemFlags::new(), &[array, offset], 0),
-            )
+            let addr = builder.ins().iadd(array, offset);
+            Some(builder.ins().load(elem_type, MemFlags::new(), addr, 0))
         }
 
         lower::Expr::ArrayPut(array, idx, val) => {
@@ -573,9 +570,8 @@ fn codegen_expr(
             let val = env.use_var(ctx, module, builder, *val);
             let word_size = builder.ins().iconst(I64, 8);
             let offset = builder.ins().imul(idx, word_size);
-            builder
-                .ins()
-                .store_complex(MemFlags::new(), val, &[array, offset], 0);
+            let addr = builder.ins().iadd(array, offset);
+            builder.ins().store(MemFlags::new(), val, addr, 0);
             let ret = builder.ins().iconst(I64, 0);
             Some(ret)
         }
