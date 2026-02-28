@@ -29,7 +29,10 @@ pub fn codegen(ctx: &mut Ctx, funs: &[lower::Fun], main_id: VarId, dump: bool) -
     let mut module: ObjectModule = ObjectModule::new(
         ObjectBuilder::new(
             // How does this know I'm building for x86_64 Linux?
-            cranelift_native::builder().unwrap().finish(codegen_flags),
+            cranelift_native::builder()
+                .unwrap()
+                .finish(codegen_flags)
+                .unwrap(),
             // What is this name for?
             "mincaml",
             default_libcall_names(),
