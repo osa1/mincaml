@@ -341,19 +341,9 @@ fn codegen_expr<'a>(
 
         lower::Expr::Atom(lower::Atom::Float(f)) => Some(context.f64_type().const_float(*f).into()),
 
-        lower::Expr::Atom(lower::Atom::Var(var)) => {
-            let var_rep_type = ctx.var_rep_type(*var);
-            let var_type: BasicTypeEnum = match var_rep_type {
-                RepType::Word => context.i64_type().into(),
-                RepType::Float => context.f64_type().into(),
-            };
-            let var_name = ctx.get_var(*var).name();
-            let var_alloca = use_var(ctx, context, *var, import_env, fun_env, local_env, builder);
-            let val = builder
-                .build_load(var_type, var_alloca.into_pointer_value(), &var_name)
-                .unwrap();
-            Some(val)
-        }
+        lower::Expr::Atom(lower::Atom::Var(var)) => Some(use_var(
+            ctx, context, *var, import_env, fun_env, local_env, builder,
+        )),
 
         lower::Expr::IBinOp(BinOp { op, arg1, arg2 }) => {
             let val1 = use_var(ctx, context, *arg1, import_env, fun_env, local_env, builder);
@@ -442,8 +432,8 @@ fn codegen_expr<'a>(
 
             let fun_type = ret_type.fn_type(&param_types, false);
 
-            let fun_ptr = use_var(ctx, context, *fun, import_env, fun_env, local_env, builder)
-                .into_pointer_value();
+            let fun_val = use_var(ctx, context, *fun, import_env, fun_env, local_env, builder);
+            let fun_ptr = as_ptr(context, builder, fun_val);
 
             let arg_vals: Vec<BasicMetadataValueEnum> = args
                 .iter()
@@ -477,11 +467,12 @@ fn codegen_expr<'a>(
             let tuple = use_var(
                 ctx, context, *tuple, import_env, fun_env, local_env, builder,
             );
+            let tuple_ptr = as_ptr(context, builder, tuple);
             let elem_ptr = unsafe {
                 builder
                     .build_gep(
                         context.i64_type(),
-                        tuple.into_pointer_value(),
+                        tuple_ptr,
                         &[context.i64_type().const_int(*idx as u64, false)],
                         "tuple.get idx",
                     )
@@ -497,11 +488,12 @@ fn codegen_expr<'a>(
             let tuple = use_var(
                 ctx, context, *tuple, import_env, fun_env, local_env, builder,
             );
+            let tuple_ptr = as_ptr(context, builder, tuple);
             let elem_ptr = unsafe {
                 builder
                     .build_gep(
                         context.i64_type(),
-                        tuple.into_pointer_value(),
+                        tuple_ptr,
                         &[context.i64_type().const_int(*idx as u64, false)],
                         "tuple.set idx",
                     )
@@ -543,12 +535,13 @@ fn codegen_expr<'a>(
             let array = use_var(
                 ctx, context, *array, import_env, fun_env, local_env, builder,
             );
+            let array_ptr = as_ptr(context, builder, array);
             let idx = use_var(ctx, context, *idx, import_env, fun_env, local_env, builder);
             let elem_ptr = unsafe {
                 builder
                     .build_gep(
                         context.i64_type(),
-                        array.into_pointer_value(),
+                        array_ptr,
                         &[idx.into_int_value()],
                         "array.get offset",
                     )
@@ -564,12 +557,13 @@ fn codegen_expr<'a>(
             let array = use_var(
                 ctx, context, *array, import_env, fun_env, local_env, builder,
             );
+            let array_ptr = as_ptr(context, builder, array);
             let idx = use_var(ctx, context, *idx, import_env, fun_env, local_env, builder);
             let elem_ptr = unsafe {
                 builder
                     .build_gep(
                         context.i64_type(),
-                        array.into_pointer_value(),
+                        array_ptr,
                         &[idx.into_int_value()],
                         "array.get offset",
                     )
@@ -579,6 +573,23 @@ fn codegen_expr<'a>(
             builder.build_store(elem_ptr, val).unwrap();
             None
         }
+    }
+}
+
+fn as_ptr<'a>(
+    context: &'a Context,
+    builder: &Builder<'a>,
+    val: BasicValueEnum<'a>,
+) -> PointerValue<'a> {
+    match val {
+        BasicValueEnum::PointerValue(ptr) => ptr,
+        _ => builder
+            .build_int_to_ptr(
+                val.into_int_value(),
+                context.ptr_type(AddressSpace::default()),
+                "ptr",
+            )
+            .unwrap(),
     }
 }
 
