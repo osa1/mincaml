@@ -64,6 +64,7 @@ pub fn compile_file(opts: CompileOptions) -> i32 {
     let contents = std::fs::read_to_string(&opts.path).unwrap();
     match compile_expr(
         &contents,
+        opts.backend,
         opts.dump_cc,
         opts.dump_cg,
         opts.dump_lower,
@@ -82,6 +83,7 @@ type ObjectCode = Vec<u8>;
 
 fn compile_expr(
     expr_str: &str,
+    backend: Backend,
     dump_cc: bool,
     dump_lower: bool,
     dump_cg: bool,
@@ -114,8 +116,9 @@ fn compile_expr(
         println!("### Code generation:\n");
     }
 
-    let object_code = record_pass_stats(&mut pass_stats, "codegen", || {
-        codegen(&mut ctx, &funs, main, dump_cg)
+    let object_code = record_pass_stats(&mut pass_stats, "codegen", || match backend {
+        Backend::Cranelift => codegen(&mut ctx, &funs, main, dump_cg),
+        Backend::LLVM => codegen_llvm::codegen(&mut ctx, &funs, main, dump_cg),
     });
 
     if show_pass_stats {
