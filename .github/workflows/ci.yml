@@ -10,7 +10,7 @@ jobs:
       - uses: actions/checkout@v2
 
       - name: Install LLVM
-        run: sudo apt-get install llvm-20 llvm-20-dev
+        run: sudo apt-get install llvm-20 llvm-20-dev llvm-20-linker-tools libpolly-20-dev
 
       - name: Build
         run: cargo build --verbose
