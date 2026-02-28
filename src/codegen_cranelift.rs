@@ -12,7 +12,7 @@ use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use cranelift_module::{DataId, FuncId, Linkage, Module, default_libcall_names};
 use cranelift_object::{ObjectBuilder, ObjectModule, ObjectProduct};
 
-use fxhash::{FxHashMap, FxHashSet};
+use fxhash::FxHashMap;
 
 use crate::cg_types::RepType;
 use crate::common::{BinOp, Cmp, FloatBinOp, IntBinOp};
@@ -120,9 +120,9 @@ impl Env {
 
     fn use_var(
         &mut self,
-        ctx: &Ctx,
         module: &mut ObjectModule,
         builder: &mut FunctionBuilder,
+        var_map: &FxHashMap<VarId, Variable>,
         var: VarId,
     ) -> Value {
         let val = self.0.get(&var).cloned();
@@ -142,20 +142,16 @@ impl Env {
             Some(VarVal::Arg(arg)) => arg,
             Some(VarVal::Fun(fun_id)) => {
                 let fun_ref = module.declare_func_in_func(fun_id, builder.func);
-                // self.0.insert(var, VarVal::KnownFun(fun_ref));
                 builder.ins().func_addr(I64, fun_ref)
             }
             Some(VarVal::Data(data_id)) => {
                 let data_ref = module.declare_data_in_func(data_id, builder.func);
-                #[allow(clippy::let_and_return)]
-                let val = builder.ins().global_value(I64, data_ref);
-                // self.0.insert(var, VarVal::Known(val));
-                val
+                builder.ins().global_value(I64, data_ref)
             }
             None => {
                 // Should be a variable declared and defined before.
-                let var = Variable::new(ctx.get_var(var).get_uniq().0.get() as usize);
-                builder.use_var(var)
+                let cl_var = *var_map.get(&var).expect("Unbound variable in var_map");
+                builder.use_var(cl_var)
             }
         }
     }
@@ -295,21 +291,15 @@ fn codegen_fun(
     }
 
     // Declare locals (TODO: we should probably have these readily available in lower::Fun)
-    let mut declared: FxHashSet<VarId> = Default::default();
+    let mut var_map: FxHashMap<VarId, Variable> = Default::default();
     for lower::Block { stmts, .. } in blocks.values().filter_map(lower::BlockData::get_block) {
         for stmt in stmts {
-            // let mut s = String::new();
-            // asgn.pp(&ctx, &mut s);
-            // println!("stmt: {}", s);
-
             match stmt {
                 lower::Stmt::Asgn(lower::Asgn { lhs, rhs: _ }) => {
-                    if !declared.contains(lhs) {
-                        declared.insert(*lhs);
-                        let lhs_cl_var =
-                            Variable::new(ctx.get_var(*lhs).get_uniq().0.get() as usize);
+                    if !var_map.contains_key(lhs) {
                         let lhs_abi_type = rep_type_abi(ctx.var_rep_type(*lhs));
-                        builder.declare_var(lhs_cl_var, lhs_abi_type);
+                        let cl_var = builder.declare_var(lhs_abi_type);
+                        var_map.insert(*lhs, cl_var);
                     }
                 }
                 lower::Stmt::Expr(_) => {}
@@ -335,19 +325,20 @@ fn codegen_fun(
 
             match stmt {
                 lower::Stmt::Asgn(lower::Asgn { lhs, rhs }) => {
-                    let val = codegen_expr(ctx, module, &mut builder, &mut env, malloc, rhs);
-                    let lhs_cl_var = Variable::new(ctx.get_var(*lhs).get_uniq().0.get() as usize);
+                    let val =
+                        codegen_expr(ctx, module, &mut builder, &mut env, malloc, &var_map, rhs);
+                    let lhs_cl_var = *var_map.get(lhs).unwrap();
                     builder.def_var(lhs_cl_var, val.unwrap());
                 }
                 lower::Stmt::Expr(expr) => {
-                    codegen_expr(ctx, module, &mut builder, &mut env, malloc, expr);
+                    codegen_expr(ctx, module, &mut builder, &mut env, malloc, &var_map, expr);
                 }
             }
         }
 
         match exit {
             lower::Exit::Return(var) => {
-                let var = env.use_var(ctx, module, &mut builder, *var);
+                let var = env.use_var(module, &mut builder, &var_map, *var);
                 builder.ins().return_(&[var]);
             }
             lower::Exit::Branch {
@@ -358,8 +349,8 @@ fn codegen_fun(
                 else_block,
             } => {
                 let comp_type = ctx.var_rep_type(*v1);
-                let v1 = env.use_var(ctx, module, &mut builder, *v1);
-                let v2 = env.use_var(ctx, module, &mut builder, *v2);
+                let v1 = env.use_var(module, &mut builder, &var_map, *v1);
+                let v2 = env.use_var(module, &mut builder, &var_map, *v2);
 
                 let then_block = *label_to_block.get(then_block).unwrap();
                 let else_block = *label_to_block.get(else_block).unwrap();
@@ -422,17 +413,20 @@ fn codegen_expr(
     builder: &mut FunctionBuilder,
     env: &mut Env,
     malloc: FuncRef,
+    var_map: &FxHashMap<VarId, Variable>,
     rhs: &lower::Expr,
 ) -> Option<Value> {
     match rhs {
         lower::Expr::Atom(lower::Atom::Unit) => Some(builder.ins().iconst(I64, 0)),
         lower::Expr::Atom(lower::Atom::Int(i)) => Some(builder.ins().iconst(I64, *i)),
         lower::Expr::Atom(lower::Atom::Float(f)) => Some(builder.ins().f64const(*f)),
-        lower::Expr::Atom(lower::Atom::Var(var)) => Some(env.use_var(ctx, module, builder, *var)),
+        lower::Expr::Atom(lower::Atom::Var(var)) => {
+            Some(env.use_var(module, builder, var_map, *var))
+        }
 
         lower::Expr::IBinOp(BinOp { op, arg1, arg2 }) => {
-            let arg1 = env.use_var(ctx, module, builder, *arg1);
-            let arg2 = env.use_var(ctx, module, builder, *arg2);
+            let arg1 = env.use_var(module, builder, var_map, *arg1);
+            let arg2 = env.use_var(module, builder, var_map, *arg2);
             let val = match op {
                 IntBinOp::Add => builder.ins().iadd(arg1, arg2),
                 IntBinOp::Sub => builder.ins().isub(arg1, arg2),
@@ -443,8 +437,8 @@ fn codegen_expr(
         }
 
         lower::Expr::FBinOp(BinOp { op, arg1, arg2 }) => {
-            let arg1 = env.use_var(ctx, module, builder, *arg1);
-            let arg2 = env.use_var(ctx, module, builder, *arg2);
+            let arg1 = env.use_var(module, builder, var_map, *arg1);
+            let arg2 = env.use_var(module, builder, var_map, *arg2);
             let val = match op {
                 FloatBinOp::Add => builder.ins().fadd(arg1, arg2),
                 FloatBinOp::Sub => builder.ins().fsub(arg1, arg2),
@@ -455,12 +449,12 @@ fn codegen_expr(
         }
 
         lower::Expr::Neg(var) => {
-            let arg = env.use_var(ctx, module, builder, *var);
+            let arg = env.use_var(module, builder, var_map, *var);
             Some(builder.ins().ineg(arg))
         }
 
         lower::Expr::FNeg(var) => {
-            let arg = env.use_var(ctx, module, builder, *var);
+            let arg = env.use_var(module, builder, var_map, *var);
             Some(builder.ins().fneg(arg))
         }
 
@@ -486,11 +480,11 @@ fn codegen_expr(
 
             let fun_sig_ref: SigRef = builder.import_signature(fun_sig);
 
-            let callee = env.use_var(ctx, module, builder, *fun);
+            let callee = env.use_var(module, builder, var_map, *fun);
 
             let arg_vals: Vec<Value> = args
                 .iter()
-                .map(|arg| env.use_var(ctx, module, builder, *arg))
+                .map(|arg| env.use_var(module, builder, var_map, *arg))
                 .collect();
 
             let call = builder.ins().call_indirect(fun_sig_ref, callee, &arg_vals);
@@ -508,8 +502,8 @@ fn codegen_expr(
         }
 
         lower::Expr::TuplePut(tuple, idx, val) => {
-            let tuple = env.use_var(ctx, module, builder, *tuple);
-            let arg = env.use_var(ctx, module, builder, *val);
+            let tuple = env.use_var(module, builder, var_map, *tuple);
+            let arg = env.use_var(module, builder, var_map, *val);
             builder.ins().store(
                 MemFlags::new(),
                 arg,
@@ -520,7 +514,7 @@ fn codegen_expr(
         }
 
         lower::Expr::TupleGet(tuple, idx, elem_type) => {
-            let tuple = env.use_var(ctx, module, builder, *tuple);
+            let tuple = env.use_var(module, builder, var_map, *tuple);
 
             let val = builder.ins().load(
                 rep_type_abi(*elem_type),
@@ -532,7 +526,7 @@ fn codegen_expr(
         }
 
         lower::Expr::ArrayAlloc { len } => {
-            let len_val = env.use_var(ctx, module, builder, *len);
+            let len_val = env.use_var(module, builder, var_map, *len);
             let word_size = builder.ins().iconst(I64, i64::from(WORD_SIZE));
             let size_val = builder.ins().imul(len_val, word_size);
             let malloc_call = builder.ins().call(malloc, &[size_val]);
@@ -550,8 +544,8 @@ fn codegen_expr(
                 ),
             };
 
-            let array = env.use_var(ctx, module, builder, *array);
-            let idx = env.use_var(ctx, module, builder, *idx);
+            let array = env.use_var(module, builder, var_map, *array);
+            let idx = env.use_var(module, builder, var_map, *idx);
             let word_size = builder.ins().iconst(I64, i64::from(WORD_SIZE));
             let offset = builder.ins().imul(idx, word_size);
 
@@ -560,9 +554,9 @@ fn codegen_expr(
         }
 
         lower::Expr::ArrayPut(array, idx, val) => {
-            let array = env.use_var(ctx, module, builder, *array);
-            let idx = env.use_var(ctx, module, builder, *idx);
-            let val = env.use_var(ctx, module, builder, *val);
+            let array = env.use_var(module, builder, var_map, *array);
+            let idx = env.use_var(module, builder, var_map, *idx);
+            let val = env.use_var(module, builder, var_map, *val);
             let word_size = builder.ins().iconst(I64, 8);
             let offset = builder.ins().imul(idx, word_size);
             let addr = builder.ins().iadd(array, offset);
