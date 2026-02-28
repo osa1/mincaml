@@ -571,7 +571,7 @@ fn codegen_expr<'a>(
             };
             let val = use_var(ctx, context, *val, import_env, fun_env, local_env, builder);
             builder.build_store(elem_ptr, val).unwrap();
-            None
+            Some(context.i64_type().const_int(0, false).into())
         }
     }
 }
