@@ -5,7 +5,6 @@ use crate::cg_types::RepType;
 use crate::closure_convert as cc;
 use crate::common::{BinOp, Cmp, IntBinOp};
 use crate::ctx::{Ctx, VarId};
-use crate::type_check::Type;
 use crate::var::CompilerPhase::ClosureConvert;
 
 pub use types::*;
@@ -23,32 +22,15 @@ pub fn lower_fun(ctx: &mut Ctx, fun: cc::Fun) -> Fun {
     } = fun;
 
     let block = ctx.create_block();
-    lower_expr(&mut ctx, block, Sequel::Return, body);
+    let ret_var = ctx.fresh_var(return_type);
+    let exit_block = lower_expr(&mut ctx, block, ret_var, body);
+    ctx.finish_block(exit_block, Atom::Var(ret_var));
 
     Fun {
         name,
         args,
         blocks: ctx.blocks,
         return_type,
-    }
-}
-
-#[derive(Debug, Clone)]
-enum Sequel {
-    Return,
-
-    /// Assign return value to this variable and jump to the label. Used when lowering let
-    /// bindings.
-    Asgn(VarId, BlockIdx),
-}
-
-impl Sequel {
-    fn get_ret_var(&self, ctx: &mut LowerCtx, ret_ty: RepType) -> VarId {
-        use Sequel::*;
-        match self {
-            Asgn(var, _) => *var,
-            Return => ctx.fresh_var(ret_ty),
-        }
     }
 }
 
@@ -68,8 +50,17 @@ impl BlockBuilder {
         }
     }
 
-    fn asgn(&mut self, lhs: VarId, rhs: Expr) {
+    fn asgn_(&mut self, lhs: VarId, rhs: Expr) {
         self.stmts.push(Stmt::Asgn(Asgn { lhs, rhs }));
+    }
+
+    fn asgn(mut self, lhs: VarId, rhs: Expr) -> BlockBuilder {
+        self.stmts.push(Stmt::Asgn(Asgn { lhs, rhs }));
+        self
+    }
+
+    fn asgn_atom(self, lhs: VarId, rhs: Atom) -> BlockBuilder {
+        self.asgn(lhs, Expr::Atom(rhs))
     }
 
     fn expr(&mut self, expr: Expr) {
@@ -102,55 +93,58 @@ impl<'ctx> LowerCtx<'ctx> {
         BlockBuilder::new(idx)
     }
 
-    fn finish_block(&mut self, block: BlockBuilder, sequel: Sequel, value: Atom) {
+    fn join(&mut self, b1: BlockBuilder, b2: BlockBuilder) -> BlockBuilder {
+        let cont = self.create_block();
+        let b1 = Block {
+            idx: b1.idx,
+            stmts: b1.stmts,
+            comment: b1.comment,
+            exit: Exit::Jump(cont.idx),
+        };
+        let b2 = Block {
+            idx: b2.idx,
+            stmts: b2.stmts,
+            comment: b2.comment,
+            exit: Exit::Jump(cont.idx),
+        };
+        self.finish_block_(b1);
+        self.finish_block_(b2);
+        cont
+    }
+
+    fn finish_block(&mut self, block: BlockBuilder, value: Atom) {
         let BlockBuilder {
             idx,
             mut stmts,
             comment,
         } = block;
 
-        let exit = match sequel {
-            Sequel::Return => match value {
-                Atom::Unit => {
-                    let tmp = self.fresh_var(RepType::Word);
-                    stmts.push(Stmt::Asgn(Asgn {
-                        lhs: tmp,
-                        rhs: Expr::Atom(Atom::Unit),
-                    }));
-                    Exit::Return(tmp)
-                }
-                Atom::Int(i) => {
-                    let tmp = self.fresh_var(RepType::Word);
-                    stmts.push(Stmt::Asgn(Asgn {
-                        lhs: tmp,
-                        rhs: Expr::Atom(Atom::Int(i)),
-                    }));
-                    Exit::Return(tmp)
-                }
-                Atom::Float(f) => {
-                    let tmp = self.fresh_var(RepType::Float);
-                    stmts.push(Stmt::Asgn(Asgn {
-                        lhs: tmp,
-                        rhs: Expr::Atom(Atom::Float(f)),
-                    }));
-                    Exit::Return(tmp)
-                }
-                Atom::Var(var) => Exit::Return(var),
-            },
-            Sequel::Asgn(lhs, label) => {
-                match value {
-                    // TODO: Should we handle this case in the call site? Or make it impossible to
-                    // happen somehow?
-                    Atom::Var(rhs) if lhs == rhs => {}
-                    _ => {
-                        stmts.push(Stmt::Asgn(Asgn {
-                            lhs,
-                            rhs: Expr::Atom(value),
-                        }));
-                    }
-                }
-                Exit::Jump(label)
+        let exit = match value {
+            Atom::Unit => {
+                let tmp = self.fresh_var(RepType::Word);
+                stmts.push(Stmt::Asgn(Asgn {
+                    lhs: tmp,
+                    rhs: Expr::Atom(Atom::Unit),
+                }));
+                Exit::Return(tmp)
             }
+            Atom::Int(i) => {
+                let tmp = self.fresh_var(RepType::Word);
+                stmts.push(Stmt::Asgn(Asgn {
+                    lhs: tmp,
+                    rhs: Expr::Atom(Atom::Int(i)),
+                }));
+                Exit::Return(tmp)
+            }
+            Atom::Float(f) => {
+                let tmp = self.fresh_var(RepType::Float);
+                stmts.push(Stmt::Asgn(Asgn {
+                    lhs: tmp,
+                    rhs: Expr::Atom(Atom::Float(f)),
+                }));
+                Exit::Return(tmp)
+            }
+            Atom::Var(var) => Exit::Return(var),
         };
 
         let block = Block {
@@ -170,41 +164,34 @@ impl<'ctx> LowerCtx<'ctx> {
     }
 }
 
-fn lower_expr(ctx: &mut LowerCtx, mut block: BlockBuilder, sequel: Sequel, expr: cc::Expr) {
+fn lower_expr(
+    ctx: &mut LowerCtx,
+    mut block: BlockBuilder,
+    var: VarId,
+    expr: cc::Expr,
+) -> BlockBuilder {
     match expr {
-        cc::Expr::Unit => ctx.finish_block(block, sequel, Atom::Unit),
+        cc::Expr::Unit => block.asgn_atom(var, Atom::Unit),
 
-        cc::Expr::Int(i) => ctx.finish_block(block, sequel, Atom::Int(i)),
+        cc::Expr::Int(i) => block.asgn_atom(var, Atom::Int(i)),
 
-        cc::Expr::Float(f) => ctx.finish_block(block, sequel, Atom::Float(f)),
+        cc::Expr::Float(f) => block.asgn_atom(var, Atom::Float(f)),
 
-        cc::Expr::Neg(var) => {
-            let tmp = ctx.fresh_var(RepType::Word);
-            block.asgn(tmp, Expr::Neg(var));
-            ctx.finish_block(block, sequel, Atom::Var(tmp));
-        }
+        cc::Expr::Neg(arg) => block.asgn(var, Expr::Neg(arg)),
 
-        cc::Expr::FNeg(var) => {
-            let tmp = ctx.fresh_var(RepType::Float);
-            block.asgn(tmp, Expr::FNeg(var));
-            ctx.finish_block(block, sequel, Atom::Var(tmp));
-        }
+        cc::Expr::FNeg(arg) => block.asgn(var, Expr::FNeg(arg)),
 
         cc::Expr::IBinOp(BinOp { op, arg1, arg2 }) => {
-            let tmp = sequel.get_ret_var(ctx, RepType::Word);
-            block.asgn(tmp, Expr::IBinOp(BinOp { op, arg1, arg2 }));
-            ctx.finish_block(block, sequel, Atom::Var(tmp));
+            block.asgn(var, Expr::IBinOp(BinOp { op, arg1, arg2 }))
         }
 
         cc::Expr::FBinOp(BinOp { op, arg1, arg2 }) => {
-            let tmp = sequel.get_ret_var(ctx, RepType::Float);
-            block.asgn(tmp, Expr::FBinOp(BinOp { op, arg1, arg2 }));
-            ctx.finish_block(block, sequel, Atom::Var(tmp));
+            block.asgn(var, Expr::FBinOp(BinOp { op, arg1, arg2 }))
         }
 
         cc::Expr::If(v1, v2, cmp, e1, e2) => {
-            let then_block = ctx.create_block();
-            let else_block = ctx.create_block();
+            let mut then_block = ctx.create_block();
+            let mut else_block = ctx.create_block();
             ctx.finish_block_(Block {
                 idx: block.idx,
                 comment: block.comment,
@@ -217,50 +204,37 @@ fn lower_expr(ctx: &mut LowerCtx, mut block: BlockBuilder, sequel: Sequel, expr:
                     else_block: else_block.idx,
                 },
             });
-            lower_expr(ctx, then_block, sequel.clone(), *e1);
-            lower_expr(ctx, else_block, sequel, *e2);
+            then_block = lower_expr(ctx, then_block, var, *e1);
+            else_block = lower_expr(ctx, else_block, var, *e2);
+            ctx.join(then_block, else_block)
         }
 
-        cc::Expr::Var(var) => {
-            ctx.finish_block(block, sequel, Atom::Var(var));
-        }
+        cc::Expr::Var(src) => block.asgn_atom(var, Atom::Var(src)),
 
         cc::Expr::Let { id, rhs, body } => {
-            // TODO: When the RHS is not if-then-else we can continue extending the last block RHS
-            // generates and avoid creating a block for the continuation.
-            let cont_block = ctx.create_block();
-            let rhs_sequel = Sequel::Asgn(id, cont_block.idx);
-            lower_expr(ctx, block, rhs_sequel, *rhs);
-            lower_expr(ctx, cont_block, sequel, *body)
+            block = lower_expr(ctx, block, id, *rhs);
+            lower_expr(ctx, block, var, *body)
         }
 
-        cc::Expr::App(fun, args, ret_ty) => {
-            let ret_tmp = sequel.get_ret_var(ctx, ret_ty);
-            block.asgn(ret_tmp, Expr::App(fun, args, ret_ty));
-            ctx.finish_block(block, sequel, Atom::Var(ret_tmp));
-        }
+        cc::Expr::App(fun, args, ret_ty) => block.asgn(var, Expr::App(fun, args, ret_ty)),
 
         cc::Expr::Tuple(args) => {
-            let ret_tmp = sequel.get_ret_var(ctx, RepType::Word);
-            block.asgn(ret_tmp, Expr::Tuple { len: args.len() });
+            block.asgn_(var, Expr::Tuple { len: args.len() });
             for (arg_idx, arg) in args.iter().enumerate() {
-                block.expr(Expr::TuplePut(ret_tmp, arg_idx, *arg));
+                block.expr(Expr::TuplePut(var, arg_idx, *arg));
             }
-            ctx.finish_block(block, sequel, Atom::Var(ret_tmp));
+            block
         }
 
         cc::Expr::TupleGet(tuple, idx, elem_ty) => {
-            let ret_tmp = sequel.get_ret_var(ctx, elem_ty);
-            block.asgn(ret_tmp, Expr::TupleGet(tuple, idx, elem_ty));
-            ctx.finish_block(block, sequel, Atom::Var(ret_tmp));
+            block.asgn(var, Expr::TupleGet(tuple, idx, elem_ty))
         }
 
         cc::Expr::ArrayAlloc { len, elem } => {
-            let array_tmp = sequel.get_ret_var(ctx, RepType::Word);
-            block.asgn(array_tmp, Expr::ArrayAlloc { len });
+            block.asgn_(var, Expr::ArrayAlloc { len });
 
             let idx_var = ctx.fresh_var(RepType::Word);
-            block.asgn(idx_var, Expr::Atom(Atom::Int(0)));
+            block.asgn_(idx_var, Expr::Atom(Atom::Int(0)));
 
             let loop_cond_block = ctx.create_block();
             let mut loop_body_block = ctx.create_block();
@@ -289,9 +263,9 @@ fn lower_expr(ctx: &mut LowerCtx, mut block: BlockBuilder, sequel: Sequel, expr:
 
             // loop_body
             let idx_inc_var = ctx.fresh_var(RepType::Word);
-            loop_body_block.expr(Expr::ArrayPut(array_tmp, idx_var, elem));
-            loop_body_block.asgn(idx_inc_var, Expr::Atom(Atom::Int(1)));
-            loop_body_block.asgn(
+            loop_body_block.expr(Expr::ArrayPut(var, idx_var, elem));
+            loop_body_block.asgn_(idx_inc_var, Expr::Atom(Atom::Int(1)));
+            loop_body_block.asgn_(
                 idx_var,
                 Expr::IBinOp(BinOp {
                     op: IntBinOp::Add,
@@ -306,33 +280,11 @@ fn lower_expr(ctx: &mut LowerCtx, mut block: BlockBuilder, sequel: Sequel, expr:
                 exit: Exit::Jump(loop_cond_block.idx),
             });
 
-            ctx.finish_block(cont_block, sequel, Atom::Var(array_tmp));
+            cont_block
         }
 
-        cc::Expr::ArrayGet(array, idx) => {
-            let elem_ty = match &*ctx.ctx.var_type(array) {
-                Type::Array(elem_ty) => RepType::from(&**elem_ty),
-                other => panic!(
-                    "Non-array type in array position: {:?} (type={:?})",
-                    array, other
-                ),
-            };
-            let ret_tmp = sequel.get_ret_var(ctx, elem_ty);
-            block.asgn(ret_tmp, Expr::ArrayGet(array, idx));
-            ctx.finish_block(block, sequel, Atom::Var(ret_tmp));
-        }
+        cc::Expr::ArrayGet(array, idx) => block.asgn(var, Expr::ArrayGet(array, idx)),
 
-        cc::Expr::ArrayPut(array, idx, val) => {
-            let elem_ty = match &*ctx.ctx.var_type(array) {
-                Type::Array(elem_ty) => RepType::from(&**elem_ty),
-                other => panic!(
-                    "Non-array type in array position: {:?} (type={:?})",
-                    array, other
-                ),
-            };
-            let ret_tmp = sequel.get_ret_var(ctx, elem_ty);
-            block.asgn(ret_tmp, Expr::ArrayPut(array, idx, val));
-            ctx.finish_block(block, sequel, Atom::Var(ret_tmp));
-        }
+        cc::Expr::ArrayPut(array, idx, val) => block.asgn(var, Expr::ArrayPut(array, idx, val)),
     }
 }
